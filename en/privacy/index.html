@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy Policy | AI API Doctor</title>
+  <meta name="description" content="AI API Doctor is a local diagnostic tool. API Keys are stored locally in your browser. No keys, raw quota, or reports are uploaded to AI API Doctor servers." />
+  <meta name="robots" content="index, follow" />
+  <link rel="canonical" href="https://aiapidoctor.com/en/privacy/" />
+  <link rel="alternate" hreflang="zh-CN" href="https://aiapidoctor.com/privacy/" />
+  <link rel="alternate" hreflang="en" href="https://aiapidoctor.com/en/privacy/" />
+  <link rel="alternate" hreflang="x-default" href="https://aiapidoctor.com/privacy/" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="stylesheet" href="/assets/site.css" />
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Privacy Policy | AI API Doctor" />
+  <meta property="og:description" content="AI API Doctor is a local diagnostic tool. API Keys are stored locally in your browser and never uploaded to AI API Doctor servers." />
+  <meta property="og:url" content="https://aiapidoctor.com/en/privacy/" />
+
+  <!-- JSON-LD -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebPage",
+    "name": "AI API Doctor Privacy Policy",
+    "description": "AI API Doctor is a local diagnostic tool. API Keys are stored locally in your browser. No keys, raw quota, or reports are uploaded to AI API Doctor servers.",
+    "url": "https://aiapidoctor.com/en/privacy/"
+  }
+  </script>
+</head>
+<body>
+
+<!-- Header -->
+<header class="site-header">
+  <div class="container site-header__inner">
+    <a href="/en/" class="site-logo">
+      <div class="site-logo__icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+        </svg>
+      </div>
+      AI API Doctor
+    </a>
+    <button class="nav-toggle" aria-label="Menu" onclick="document.querySelector('.site-nav').classList.toggle('open')">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+    <nav class="site-nav">
+      <a href="/en/">Home</a>
+      <a href="/en/report/">Generate Report</a>
+      <a href="/en/guides/billing-anomaly/">How It Works</a>
+      <a href="/en/faq/">FAQ</a>
+      <a href="/en/privacy/" class="active">Privacy</a>
+      <a href="/en/support/">Support</a>
+      <a href="https://chrome.google.com/webstore" target="_blank" rel="noopener">Get Extension</a>
+      <span class="lang-switcher">
+        <a href="/privacy/" class="lang-switcher__link">中文</a>
+        <span class="lang-switcher__sep">|</span>
+        <span class="lang-switcher__current">English</span>
+      </span>
+    </nav>
+  </div>
+</header>
+
+<!-- Hero -->
+<section class="hero" style="padding:56px 0 48px">
+  <div class="container">
+    <h1 class="hero__title" style="font-size:clamp(22px,4vw,32px)">Privacy Policy</h1>
+    <p class="hero__sub">Learn how AI API Doctor handles your data.</p>
+  </div>
+</section>
+
+<!-- Content -->
+<main>
+  <section class="section">
+    <div class="container container--narrow">
+      <article class="article">
+
+        <h2>1. What Data Does AI API Doctor Process?</h2>
+        <p>AI API Doctor is a local diagnostic tool. Data processed by the extension may include:</p>
+        <ul>
+          <li>Base URL entered by the user</li>
+          <li>API Key entered by the user</li>
+          <li>Model ID</li>
+          <li>Raw quota (from New API / One API)</li>
+          <li>Balance change records</li>
+          <li>HTTP status codes</li>
+          <li>Diagnostic report content</li>
+        </ul>
+
+        <h2>2. How API Keys Are Stored</h2>
+        <p>API Keys in the Chrome extension are stored locally in your browser via <code>chrome.storage.local</code>, used only to send diagnostic requests to the Base URL you provided.</p>
+        <p>The web report generator does not require you to enter an API Key. It only accepts public information such as raw quota, HTTP status, and model name.</p>
+
+        <h2>3. Scope of API Key Usage</h2>
+        <p>API Keys are used only to send user-initiated diagnostic requests to the Base URL provided by the user.</p>
+        <p>AI API Doctor does not upload API Keys, raw quota, or diagnostic reports to AI API Doctor servers.</p>
+
+        <h2>4. Automatic Report Desensitization</h2>
+        <p>When the extension generates a report, only the API Key prefix and suffix are displayed — for example: <code>sk-****abcd</code>. Full API Keys are never shown.</p>
+
+        <h2>5. Data Use Limitations</h2>
+        <p>AI API Doctor commits to the following:</p>
+        <ul>
+          <li>Will not upload API Keys to AI API Doctor servers</li>
+          <li>Will not sell user data</li>
+          <li>Will not use user data for advertising or profiling</li>
+          <li>Will not use user data for credit scoring or lending decisions</li>
+        </ul>
+
+        <h2>6. Chrome Web Store Limited Use Statement</h2>
+        <p>The use of information received from Chrome APIs will adhere to the Chrome Web Store User Data Policy, including the Limited Use requirements.</p>
+
+        <h2>7. Safety Boundaries</h2>
+        <p>AI API Doctor only shows reproducible signals from the diagnostic test. It does not prove intentional overbilling by the provider. Reports are best suited for troubleshooting, customer support communication, and owner repair — not as financial proof or legal grounds.</p>
+
+        <h2>8. Contact</h2>
+        <p>For privacy-related feedback, please contact us through:</p>
+        <ul>
+          <li>GitHub Issues: <a href="https://github.com/JustinXai/ai-api-doctor/issues" target="_blank" rel="noopener">github.com/JustinXai/ai-api-doctor/issues</a></li>
+          <li>X / Twitter: <a href="https://x.com/norike0718" target="_blank" rel="noopener">@norike0718</a></li>
+          <li>Email: <a href="mailto:leapassulihan@mail.com">leapassulihan@mail.com</a></li>
+        </ul>
+
+        <div class="callout callout--info" style="margin-top:24px">
+          <svg class="callout__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <span>This privacy policy was last updated on May 14, 2026. Significant changes will be announced on the homepage.</span>
+        </div>
+
+        <div class="action-row" style="margin-top:24px">
+          <a href="/en/report/" class="btn btn--primary">Generate Report</a>
+          <a href="/en/support/" class="btn btn--secondary">Support &amp; Feedback</a>
+          <a href="/en/faq/" class="btn btn--secondary">View FAQ</a>
+        </div>
+
+      </article>
+    </div>
+  </section>
+</main>
+
+<!-- Footer -->
+<footer class="site-footer">
+  <div class="container site-footer__inner">
+    <div class="site-logo" style="font-size:15px; margin-bottom:8px">
+      <div class="site-logo__icon" style="width:28px;height:28px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px">
+          <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+        </svg>
+      </div>
+      AI API Doctor
+    </div>
+    <div class="site-footer__links">
+      <a href="/en/">Home</a>
+      <a href="/en/report/">Generate Report</a>
+      <a href="/en/guides/billing-anomaly/">How It Works</a>
+      <a href="/en/faq/">FAQ</a>
+      <a href="/en/privacy/">Privacy</a>
+      <a href="/en/support/">Support</a>
+    </div>
+    <p class="site-footer__note">
+      This tool only shows reproducible signals and does not prove intentional overbilling. If in doubt, contact the provider or support team.
+    </p>
+    <p style="color:#9ca3af; font-size:12px; margin-top:4px">&copy; 2026 AI API Doctor &middot; aiapidoctor.com</p>
+  </div>
+</footer>
+
+</body>
+</html>

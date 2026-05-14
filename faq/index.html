@@ -7,6 +7,9 @@
   <meta name="description" content="了解 AI API Doctor 如何诊断 API Key、Base URL、模型权限、403 分组错误、Token 用量返回和客户端配置。默认本地存储 API Key，不做模型真假鉴定，不证明服务商故意多扣费。" />
   <meta name="robots" content="index, follow" />
   <link rel="canonical" href="https://aiapidoctor.com/faq" />
+  <link rel="alternate" hreflang="zh-CN" href="https://aiapidoctor.com/faq" />
+  <link rel="alternate" hreflang="en" href="https://aiapidoctor.com/en/faq/" />
+  <link rel="alternate" hreflang="x-default" href="https://aiapidoctor.com/faq" />
   <link rel="manifest" href="/manifest.webmanifest" />
 
   <!-- Open Graph -->
@@ -218,10 +221,23 @@
       justify-content: center;
     }
     .site-logo-icon svg { width: 18px; height: 18px; color: #fff; }
-    .header-nav { display: flex; gap: 24px; }
+    .header-nav { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .header-nav a { color: var(--text-muted); font-size: 15px; font-weight: 500; }
     .header-nav a:hover { color: var(--text); text-decoration: none; }
     .header-nav a.active { color: var(--accent); }
+    .lang-switcher {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 13px;
+      white-space: nowrap;
+      flex-shrink: 0;
+      margin-left: 8px;
+    }
+    .lang-switcher__current { font-weight: 700; color: var(--text); cursor: default; }
+    .lang-switcher__sep { color: var(--border); margin: 0 2px; }
+    .lang-switcher__link { color: var(--accent); font-weight: 500; }
+    .lang-switcher__link:hover { text-decoration: underline; }
 
     /* ── Page Hero ─────────────────────────────────────── */
     .page-hero {
@@ -574,21 +590,33 @@
 
   <!-- Header -->
   <header class="site-header">
-    <div class="site-logo">
-      <div class="site-logo-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
-        </svg>
-      </div>
-      AI API Doctor
+    <div class="container site-header__inner">
+      <a href="/" class="site-logo">
+        <div class="site-logo__icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+          </svg>
+        </div>
+        AI API Doctor
+      </a>
+      <button class="nav-toggle" aria-label="菜单" onclick="document.querySelector('.site-nav').classList.toggle('open')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+      <nav class="site-nav">
+        <a href="/">首页</a>
+        <a href="/report/">生成报告</a>
+        <a href="/guides/billing-anomaly/">检测原理</a>
+        <a href="/faq/" class="active">FAQ</a>
+        <a href="/privacy/">隐私</a>
+        <a href="/support/">支持</a>
+        <a href="https://chrome.google.com/webstore" target="_blank" rel="noopener">下载插件</a>
+        <span class="lang-switcher">
+          <span class="lang-switcher__current">中文</span>
+          <span class="lang-switcher__sep">|</span>
+          <a href="/en/faq/" class="lang-switcher__link">English</a>
+        </span>
+      </nav>
     </div>
-    <nav class="header-nav">
-      <a href="https://aiapidoctor.com">首页</a>
-      <a href="https://aiapidoctor.com/report/">生成报告</a>
-      <a href="https://aiapidoctor.com/guides/billing-anomaly/">检测原理</a>
-      <a href="https://aiapidoctor.com/faq" class="active">常见问题</a>
-      <a href="https://aiapidoctor.com/privacy">隐私</a>
-    </nav>
   </header>
 
   <!-- Hero -->

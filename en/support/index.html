@@ -1,12 +1,12 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>支持与反馈｜AI API Doctor</title>
-  <meta name="description" content="AI API Doctor 支持页面。查看常见问题、反馈 bug、提交检测异常、联系作者。" />
+  <title>Support | AI API Doctor</title>
+  <meta name="description" content="AI API Doctor support page. Report issues, submit billing anomaly findings, or contact the author." />
   <meta name="robots" content="index, follow" />
-  <link rel="canonical" href="https://aiapidoctor.com/support/" />
+  <link rel="canonical" href="https://aiapidoctor.com/en/support/" />
   <link rel="alternate" hreflang="zh-CN" href="https://aiapidoctor.com/support/" />
   <link rel="alternate" hreflang="en" href="https://aiapidoctor.com/en/support/" />
   <link rel="alternate" hreflang="x-default" href="https://aiapidoctor.com/support/" />
@@ -15,23 +15,23 @@
 
   <!-- Open Graph -->
   <meta property="og:type" content="website" />
-  <meta property="og:title" content="支持与反馈｜AI API Doctor" />
-  <meta property="og:description" content="AI API Doctor 支持页面。查看常见问题、反馈 bug、提交检测异常、联系作者。" />
-  <meta property="og:url" content="https://aiapidoctor.com/support/" />
+  <meta property="og:title" content="Support | AI API Doctor" />
+  <meta property="og:description" content="AI API Doctor support page. Report issues, submit billing anomaly findings, or contact the author." />
+  <meta property="og:url" content="https://aiapidoctor.com/en/support/" />
 
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="支持与反馈｜AI API Doctor" />
-  <meta name="twitter:description" content="AI API Doctor 支持页面。查看常见问题、反馈 bug、联系作者。" />
+  <meta name="twitter:title" content="Support | AI API Doctor" />
+  <meta name="twitter:description" content="AI API Doctor support page. Report issues and contact the author." />
 
   <!-- JSON-LD -->
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
     "@type": "WebPage",
-    "name": "AI API Doctor 支持与反馈",
-    "description": "AI API Doctor 支持页面。查看常见问题、反馈 bug、提交检测异常、联系作者。",
-    "url": "https://aiapidoctor.com/support/"
+    "name": "AI API Doctor Support",
+    "description": "AI API Doctor support page. Report issues, submit billing anomaly findings, or contact the author.",
+    "url": "https://aiapidoctor.com/en/support/"
   }
   </script>
 </head>
@@ -40,7 +40,7 @@
 <!-- Header -->
 <header class="site-header">
   <div class="container site-header__inner">
-    <a href="/" class="site-logo">
+    <a href="/en/" class="site-logo">
       <div class="site-logo__icon">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
@@ -48,21 +48,21 @@
       </div>
       AI API Doctor
     </a>
-    <button class="nav-toggle" aria-label="菜单" onclick="document.querySelector('.site-nav').classList.toggle('open')">
+    <button class="nav-toggle" aria-label="Menu" onclick="document.querySelector('.site-nav').classList.toggle('open')">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
     </button>
     <nav class="site-nav">
-      <a href="/">首页</a>
-      <a href="/report/">手动生成报告</a>
-      <a href="/guides/billing-anomaly/">检测原理</a>
-      <a href="/faq/">FAQ</a>
-      <a href="/privacy/">隐私</a>
-      <a href="/support/" class="active">支持</a>
-      <a href="https://chrome.google.com/webstore" target="_blank" rel="noopener">下载插件</a>
+      <a href="/en/">Home</a>
+      <a href="/en/report/">Generate Report</a>
+      <a href="/en/guides/billing-anomaly/">How It Works</a>
+      <a href="/en/faq/">FAQ</a>
+      <a href="/en/privacy/">Privacy</a>
+      <a href="/en/support/" class="active">Support</a>
+      <a href="https://chrome.google.com/webstore" target="_blank" rel="noopener">Get Extension</a>
       <span class="lang-switcher">
-        <span class="lang-switcher__current">中文</span>
+        <a href="/support/" class="lang-switcher__link">中文</a>
         <span class="lang-switcher__sep">|</span>
-        <a href="/en/support/" class="lang-switcher__link">English</a>
+        <span class="lang-switcher__current">English</span>
       </span>
     </nav>
   </div>
@@ -71,9 +71,9 @@
 <!-- Hero -->
 <section class="hero" style="padding:56px 0 48px">
   <div class="container">
-    <h1 class="hero__title" style="font-size:clamp(22px,4vw,32px)">支持与反馈</h1>
+    <h1 class="hero__title" style="font-size:clamp(22px,4vw,32px)">Support</h1>
     <p class="hero__sub">
-      如果你在使用 AI API Doctor 时遇到问题，可以通过以下方式反馈。
+      If you encounter issues with AI API Doctor, you can report them through the channels below.
     </p>
   </div>
 </section>
@@ -85,43 +85,43 @@
 
       <!-- Module 1: FAQ -->
       <div class="card" style="margin-bottom:24px">
-        <h2 class="card__title" style="font-size:18px">常见问题</h2>
+        <h2 class="card__title" style="font-size:18px">Frequently Asked Questions</h2>
         <p class="card__desc">
-          大部分问题可以先查看 FAQ，包括 API Key 是否上传、raw quota 是什么、为什么要等 10 秒、检测结果是否能证明服务商故意多扣费等。
+          Most issues can be resolved by checking the FAQ first, including whether API Keys are uploaded, what raw quota is, why we wait 10 seconds, and whether diagnostic results can prove intentional overbilling.
         </p>
         <div style="margin-top:16px">
-          <a href="/faq/" class="btn btn--primary">
+          <a href="/en/faq/" class="btn btn--primary">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:16px;height:16px"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-            查看 FAQ
+            View FAQ
           </a>
         </div>
       </div>
 
       <!-- Module 2: What to include -->
       <div class="card" style="margin-bottom:24px">
-        <h2 class="card__title" style="font-size:18px">提交问题时请附带这些信息</h2>
-        <p class="card__desc" style="margin-bottom:16px">以下信息有助于快速定位问题。注意：只提供必要信息即可，不要上传完整 API Key。</p>
+        <h2 class="card__title" style="font-size:18px">Include These Details When Submitting an Issue</h2>
+        <p class="card__desc" style="margin-bottom:16px">The following information helps us locate the issue quickly. Only provide necessary details — do not upload your full API Key.</p>
         <ul style="padding-left:20px; color:#374151; font-size:14px; line-height:1.8; margin-bottom:16px">
-          <li>AI API Doctor 版本号（插件设置页可见）</li>
-          <li>浏览器版本（如 Chrome 126）</li>
-          <li>操作系统（如 macOS 14、Windows 11）</li>
-          <li>Base URL 域名（如 <code style="background:var(--soft);padding:1px 6px;border-radius:4px;font-size:13px">api.example.com</code>，不要提供完整 API Key）</li>
-          <li>模型 ID（如 gpt-4o、claude-3-5-sonnet）</li>
-          <li>HTTP 状态（如 503、200）</li>
-          <li>报告截图或复制的报告文本</li>
-          <li>是否已登录 New API / One API 控制台</li>
-          <li>raw quota 是否可读</li>
+          <li>AI API Doctor version number (visible in extension settings)</li>
+          <li>Browser version (e.g. Chrome 126)</li>
+          <li>Operating system (e.g. macOS 14, Windows 11)</li>
+          <li>Base URL domain (e.g. <code style="background:var(--soft);padding:1px 6px;border-radius:4px;font-size:13px">api.example.com</code> — do not provide the full API Key)</li>
+          <li>Model ID (e.g. gpt-4o, claude-3-5-sonnet)</li>
+          <li>HTTP status (e.g. 503, 200)</li>
+          <li>Screenshot of the report or copied report text</li>
+          <li>Whether you were logged in to a New API / One API dashboard</li>
+          <li>Whether raw quota was readable</li>
         </ul>
         <div class="callout callout--danger">
           <svg class="callout__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-          <span><strong>不要提交完整 API Key、账号密码、余额截图中的敏感信息。</strong>报告会自动脱敏 API Key（如 <code style="font-size:12px">sk-****abcd</code>），请确认报告文本中不包含完整 Key 再提交。</span>
+          <span><strong>Do not submit your full API Key, account password, or sensitive balance screenshots publicly.</strong> Reports automatically desensitize API Keys (e.g. <code style="font-size:12px">sk-****abcd</code>). Please confirm the report text does not contain the full Key before submitting.</span>
         </div>
       </div>
 
       <!-- Module 3: Feedback channels -->
       <div class="card" style="margin-bottom:24px">
-        <h2 class="card__title" style="font-size:18px">反馈渠道</h2>
-        <p class="card__desc" style="margin-bottom:20px">GitHub Issues 即将开放。当前可通过以下方式反馈。</p>
+        <h2 class="card__title" style="font-size:18px">Feedback Channels</h2>
+        <p class="card__desc" style="margin-bottom:20px">GitHub Issues will be available soon. You can reach us through the following channels for now.</p>
 
         <div style="display:flex; flex-direction:column; gap:12px">
 
@@ -131,9 +131,9 @@
             </div>
             <div>
               <div style="font-size:15px;font-weight:600;color:var(--text)">GitHub Issues</div>
-              <div style="font-size:13px;color:var(--muted);margin-top:2px">功能建议、Bug 报告、插件源码</div>
+              <div style="font-size:13px;color:var(--muted);margin-top:2px">Feature requests, bug reports, extension source code</div>
             </div>
-            <a href="https://github.com/JustinXai/ai-api-doctor/issues" target="_blank" rel="noopener" class="btn btn--secondary btn--sm" style="margin-left:auto">前往</a>
+            <a href="https://github.com/JustinXai/ai-api-doctor/issues" target="_blank" rel="noopener" class="btn btn--secondary btn--sm" style="margin-left:auto">Go</a>
           </div>
 
           <div style="display:flex; align-items:center; gap:16px; padding:16px; background:var(--soft); border-radius:var(--radius-sm); border:1px solid var(--border)">
@@ -144,7 +144,7 @@
               <div style="font-size:15px;font-weight:600;color:var(--text)">X / Twitter</div>
               <div style="font-size:13px;color:var(--muted);margin-top:2px">@norike0718</div>
             </div>
-            <a href="https://x.com/norike0718" target="_blank" rel="noopener" class="btn btn--secondary btn--sm" style="margin-left:auto">前往</a>
+            <a href="https://x.com/norike0718" target="_blank" rel="noopener" class="btn btn--secondary btn--sm" style="margin-left:auto">Go</a>
           </div>
 
           <div style="display:flex; align-items:center; gap:16px; padding:16px; background:var(--soft); border-radius:var(--radius-sm); border:1px solid var(--border)">
@@ -153,9 +153,9 @@
             </div>
             <div>
               <div style="font-size:15px;font-weight:600;color:var(--text)">Email</div>
-              <div style="font-size:13px;color:var(--muted);margin-top:2px">p2pwrite@gmail.com</div>
+              <div style="font-size:13px;color:var(--muted);margin-top:2px">leapassulihan@mail.com</div>
             </div>
-            <a href="mailto:p2pwrite@gmail.com" class="btn btn--secondary btn--sm" style="margin-left:auto">发送邮件</a>
+            <a href="mailto:leapassulihan@mail.com" class="btn btn--secondary btn--sm" style="margin-left:auto">Send Email</a>
           </div>
 
         </div>
@@ -163,35 +163,35 @@
 
       <!-- Module 4: Scope -->
       <div class="card">
-        <h2 class="card__title" style="font-size:18px">支持范围</h2>
+        <h2 class="card__title" style="font-size:18px">Scope of Support</h2>
 
         <div style="margin-bottom:16px">
-          <div style="font-size:14px;font-weight:700;color:var(--success);margin-bottom:8px">AI API Doctor 可以帮助排查：</div>
+          <div style="font-size:14px;font-weight:700;color:var(--success);margin-bottom:8px">AI API Doctor can help investigate:</div>
           <ul style="padding-left:20px;color:#374151;font-size:14px;line-height:1.8">
-            <li>失败请求是否扣 raw quota</li>
-            <li>空回复是否扣费</li>
-            <li>预扣是否在 10 秒内返还</li>
-            <li>Base URL / API Key / Model ID 是否可用</li>
-            <li>报告如何发给站长或客服</li>
+            <li>Whether failed requests deduct raw quota</li>
+            <li>Whether empty replies are charged</li>
+            <li>Whether pre-charges are refunded within 10 seconds</li>
+            <li>Whether Base URL / API Key / Model ID are functional</li>
+            <li>How to send reports to the owner or support team</li>
           </ul>
         </div>
 
         <div>
-          <div style="font-size:14px;font-weight:700;color:var(--danger);margin-bottom:8px">AI API Doctor 不能保证：</div>
+          <div style="font-size:14px;font-weight:700;color:var(--danger);margin-bottom:8px">AI API Doctor cannot guarantee:</div>
           <ul style="padding-left:20px;color:#374151;font-size:14px;line-height:1.8">
-            <li>证明服务商故意多扣费</li>
-            <li>100% 覆盖所有中转站模板</li>
-            <li>代替法律意义上的审计报告</li>
-            <li>读取所有非 New API / One API 站点的余额</li>
+            <li>Proof of intentional overbilling by the provider</li>
+            <li>100% coverage of all relay station templates</li>
+            <li>Replacement for a legal audit report</li>
+            <li>Reading balances on non-New API / non-One API stations</li>
           </ul>
         </div>
       </div>
 
       <!-- Bottom links -->
       <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:32px">
-        <a href="/" class="btn btn--secondary btn--sm">返回首页</a>
-        <a href="/privacy/" class="btn btn--secondary btn--sm">查看隐私政策</a>
-        <a href="/report/" class="btn btn--secondary btn--sm">手动生成报告</a>
+        <a href="/en/" class="btn btn--secondary btn--sm">Back to Home</a>
+        <a href="/en/privacy/" class="btn btn--secondary btn--sm">Privacy Policy</a>
+        <a href="/en/report/" class="btn btn--secondary btn--sm">Generate Report</a>
       </div>
 
     </div>
@@ -210,17 +210,17 @@
       AI API Doctor
     </div>
     <div class="site-footer__links">
-      <a href="/">首页</a>
-      <a href="/report/">生成报告</a>
-      <a href="/guides/billing-anomaly/">检测原理</a>
-      <a href="/faq/">FAQ</a>
-      <a href="/privacy/">隐私</a>
-      <a href="/support/">支持</a>
+      <a href="/en/">Home</a>
+      <a href="/en/report/">Generate Report</a>
+      <a href="/en/guides/billing-anomaly/">How It Works</a>
+      <a href="/en/faq/">FAQ</a>
+      <a href="/en/privacy/">Privacy</a>
+      <a href="/en/support/">Support</a>
     </div>
     <p class="site-footer__note">
-      本工具只展示可复现信号，不证明服务商故意多扣费。如有疑问请联系站长或客服核对。
+      This tool only shows reproducible signals and does not prove intentional overbilling. If in doubt, contact the provider or support team.
     </p>
-    <p style="color:#9ca3af; font-size:12px; margin-top:4px">© 2026 AI API Doctor · aiapidoctor.com</p>
+    <p style="color:#9ca3af; font-size:12px; margin-top:4px">&copy; 2026 AI API Doctor &middot; aiapidoctor.com</p>
   </div>
 </footer>
 

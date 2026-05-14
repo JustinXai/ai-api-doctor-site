@@ -1,0 +1,951 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI API Doctor FAQ | API Key, Raw Quota, Billing Anomaly &amp; Diagnostic Report</title>
+  <meta name="description" content="Learn how AI API Doctor diagnoses API Key, Base URL, model permissions, failed request billing, raw quota evidence, and how to send diagnostic reports to your provider." />
+  <meta name="robots" content="index, follow" />
+  <link rel="canonical" href="https://aiapidoctor.com/en/faq/" />
+  <link rel="alternate" hreflang="zh-CN" href="https://aiapidoctor.com/faq" />
+  <link rel="alternate" hreflang="en" href="https://aiapidoctor.com/en/faq/" />
+  <link rel="alternate" hreflang="x-default" href="https://aiapidoctor.com/faq" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="stylesheet" href="/assets/site.css" />
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="AI API Doctor FAQ" />
+  <meta property="og:description" content="Learn how AI API Doctor diagnoses API Key, Base URL, model permissions, failed request billing, and raw quota evidence." />
+  <meta property="og:url" content="https://aiapidoctor.com/en/faq/" />
+
+  <!-- JSON-LD: FAQPage -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "What is AI API Doctor?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "AI API Doctor is a local-first diagnostic tool for OpenAI-compatible API users. It helps you check whether API Keys, Base URLs, model permissions, group configurations, chat/completions interfaces, raw quota changes, and client configurations are working correctly. It is suitable for scenarios where an API Key is filled in but the client cannot use it, the Base URL is uncertain, or errors like 401/403/404/429 appear. AI API Doctor is not a model authenticity verification tool, nor is it a legal audit tool."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Does AI API Doctor upload my API Key?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "No. The Chrome extension stores your API Key locally in your browser's chrome.storage.local. AI API Doctor does not proactively upload your API Key to any third-party servers. Diagnostic requests are sent only to the Base URL you currently have selected. It is recommended to use a test-only API Key and not a production key."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "What is raw quota?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Raw quota is the raw quota value recorded by the New API / One API backend, typically more granular than the frontend balance display. The frontend balance often only shows two decimal places, so a change as small as $0.0001 may not be visible. Raw quota lets you observe much finer-grained quota changes and is the primary evidence used by AI API Doctor for billing anomaly detection."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Why does the diagnosis wait 10 seconds?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Some relay stations pre-charge quota at the start of a request, then settle and refund the difference after the request completes. The 10-second wait is necessary to distinguish between a temporary pre-charge and a final deduction. If the quota is restored after 10 seconds, the request likely had a pre-charge that was subsequently refunded. If the quota remains lower after 10 seconds, it may indicate a billing anomaly."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Does the diagnosis consume credits?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes. AI API Doctor sends a small number of real API requests to confirm whether your Base URL, API Key, model permissions, and chat/completions are working. Basic diagnostics typically require only 1 to 3 requests, consuming a minimal amount. For safety, it is recommended to use a test-only API Key, set a low credit limit, and compare the results against the provider's backend billing after diagnosis."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "What does \"failed request not charged\" mean?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "This means a request failed (e.g. HTTP status >= 400, upstream 503, timeout, or no valid output) but the raw quota did not decrease after 10 seconds. This is a normal result: the provider did not ultimately charge you for the failed request. The station may have pre-charged and then refunded, or simply did not charge for the failed request in the first place."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "What does \"billing anomaly\" mean?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "A billing anomaly indicates that a request produced no valid output (failed request, empty reply, timeout, or invalid model) but the raw quota decreased after 10 seconds, meaning the provider ultimately deducted quota. This is a reproducible signal — it shows that the station charged for a request that did not produce valid output. The report generated by AI API Doctor can be shared with the provider's support team for verification. It is not a legal audit report but serves as diagnostic evidence for customer support communication."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Why can't the web version read raw quota automatically?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "The web version does not require you to enter an API Key and runs entirely in the browser. It cannot automatically access the New API / One API raw quota endpoint the way the Chrome extension can. The web version is designed for users who want to manually enter raw quota data they have collected (e.g. from the provider's dashboard) to generate a shareable diagnostic report. For automatic raw quota reading, use the Chrome extension."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Does AI API Doctor prove intentional overbilling?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "No. AI API Doctor can help you check usage information from individual requests, but it cannot prove that a provider intentionally overbilled. It can detect whether the response returns a usage field, whether total_tokens is abnormally high, and whether a short request shows significantly abnormal token consumption. However, final balances, deductions, and billing are controlled by the provider's backend. AI API Doctor cannot directly access all providers' real billing systems. Its conclusions should be understood as 'usage signal verification', not a financial audit in any legal sense."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "How should I send a report to my API provider?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "AI API Doctor-generated reports automatically hide full API Keys, displaying only a desensitized format such as sk-****abcd. You can share the report with the provider's owner or support team to explain: the Base URL, model ID, error code, provider-returned information, failed step details, and usage situation. Recommended steps: 1) Use a short prompt for testing to reduce per-test cost. 2) Record multiple diagnostic reports to check result consistency. 3) Contact the owner or support team for verification. 4) Compare against the provider's official billing. Always ensure you do not manually send a full API Key, account password, or sensitive balance screenshot to strangers."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "What is the difference between the Chrome extension and the web version?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "The Chrome extension can automatically read the New API / One API raw quota without manual entry, making it suitable for precise desktop forensics. The web version does not require an API Key to be entered and is better suited for manual report generation, mobile sharing, and customer support communication. Both versions generate shareable diagnostic reports."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "What error codes does AI API Doctor detect?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "AI API Doctor detects and reports on common API error codes: 401 (invalid or expired API Key, possible extra spaces when copying), 403 (insufficient permissions — possibly no model access, group access, IP whitelist restriction, or model not added to group), 404 (incorrect endpoint address — possibly missing /v1, extra /v1, or filled with the official website address), 429 (too many requests, concurrent limit exceeded, quota exhausted, or provider rate limiting), HTML response (server returned a webpage instead of API JSON — possibly filled with the site homepage, login page, Cloudflare page, or provider does not support this endpoint), and No usage (response did not return a usage field, so token consumption cannot be verified from this response)."
+        }
+      }
+    ]
+  }
+  </script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #f7f8fa;
+      --surface: #ffffff;
+      --border: #e5e7eb;
+      --text: #111827;
+      --text-muted: #6b7280;
+      --accent: #2563eb;
+      --accent-light: #eff6ff;
+      --radius: 12px;
+      --shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+      font-size: 16px;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── Header ─────────────────────────────────────────── */
+    .site-header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .site-logo {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text);
+      text-decoration: none;
+    }
+    .site-logo:hover { text-decoration: none; }
+    .site-logo__icon {
+      width: 32px;
+      height: 32px;
+      background: var(--accent);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .site-logo__icon svg { width: 18px; height: 18px; color: #fff; }
+    .header-nav { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .header-nav a { color: var(--text-muted); font-size: 15px; font-weight: 500; }
+    .header-nav a:hover { color: var(--text); text-decoration: none; }
+    .header-nav a.active { color: var(--accent); }
+    .lang-switcher {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 13px;
+      white-space: nowrap;
+      flex-shrink: 0;
+      margin-left: 8px;
+    }
+    .lang-switcher__current { font-weight: 700; color: var(--text); cursor: default; }
+    .lang-switcher__sep { color: var(--border); margin: 0 2px; }
+    .lang-switcher__link { color: var(--accent); font-weight: 500; }
+    .lang-switcher__link:hover { text-decoration: underline; }
+
+    /* ── Page Hero ─────────────────────────────────────── */
+    .page-hero {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 56px 24px 40px;
+      text-align: center;
+    }
+    .page-hero-badge {
+      display: inline-block;
+      background: var(--accent-light);
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 12px;
+      border-radius: 20px;
+      margin-bottom: 16px;
+      letter-spacing: 0.5px;
+    }
+    .page-hero h1 {
+      font-size: clamp(24px, 5vw, 36px);
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      margin-bottom: 12px;
+    }
+    .page-hero > p {
+      color: var(--text-muted);
+      font-size: 17px;
+      max-width: 560px;
+      margin: 0 auto 28px;
+    }
+
+    /* ── Trust Badges ──────────────────────────────────── */
+    .trust-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+    }
+    .trust-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 6px 14px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-muted);
+    }
+    .trust-badge svg { width: 14px; height: 14px; flex-shrink: 0; }
+    .trust-badge.ok { color: #16a34a; border-color: #bbf7d0; background: #f0fdf4; }
+    .trust-badge.warn { color: #d97706; border-color: #fde68a; background: #fffbeb; }
+    .trust-badge.neutral { color: var(--text-muted); }
+    .trust-badge svg.ok { color: #16a34a; }
+    .trust-badge svg.warn { color: #d97706; }
+    .trust-badge svg.neutral { color: var(--text-muted); }
+
+    /* ── Content ────────────────────────────────────────── */
+    .content-wrap {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 40px 24px 80px;
+    }
+
+    /* ── Group Title ─────────────────────────────────────── */
+    .faq-group-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin: 0 0 12px 4px;
+    }
+
+    /* ── FAQ Card ────────────────────────────────────────── */
+    .faq-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 12px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .faq-question {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 18px 20px;
+      cursor: pointer;
+      user-select: none;
+      background: none;
+      border: none;
+      width: 100%;
+      text-align: left;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+      font-family: inherit;
+    }
+    .faq-question:hover { background: #f9fafb; }
+    .faq-question:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+    .faq-icon {
+      flex-shrink: 0;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.2s;
+    }
+    .faq-icon svg { width: 10px; height: 10px; color: var(--text-muted); }
+    .faq-card.open .faq-icon { transform: rotate(45deg); }
+    .faq-answer {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.25s ease;
+    }
+    .faq-card.open .faq-answer { max-height: 2000px; }
+    .faq-answer-inner {
+      padding: 0 20px 20px 20px;
+      color: #374151;
+      font-size: 15px;
+      line-height: 1.8;
+    }
+    .faq-answer-inner p { margin-bottom: 10px; }
+    .faq-answer-inner p:last-child { margin-bottom: 0; }
+    .faq-answer-inner strong { color: var(--text); }
+    .faq-answer-inner ul { padding-left: 20px; margin-bottom: 10px; }
+    .faq-answer-inner li { margin-bottom: 4px; }
+    .faq-answer-inner code {
+      background: #f3f4f6;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-family: 'SF Mono', Consolas, monospace;
+      font-size: 13px;
+    }
+
+    /* ── Comparison Table ────────────────────────────────── */
+    .comparison-section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px;
+      margin: 40px 0;
+      box-shadow: var(--shadow);
+    }
+    .comparison-section h2 {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 20px;
+      color: var(--text);
+    }
+    .comparison-table-wrap { overflow-x: auto; }
+    .comparison-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    .comparison-table th {
+      text-align: left;
+      padding: 10px 14px;
+      background: var(--bg);
+      font-weight: 600;
+      font-size: 13px;
+      border-bottom: 2px solid var(--border);
+      color: var(--text);
+      white-space: nowrap;
+    }
+    .comparison-table td {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+      color: #374151;
+    }
+    .comparison-table tr:last-child td { border-bottom: none; }
+    .comparison-table td:first-child { font-weight: 600; color: var(--text); white-space: nowrap; }
+    .comparison-table td.col-doctor { background: #eff6ff; }
+    .comparison-table td.col-other { background: #f9fafb; }
+    .comparison-note {
+      margin-top: 16px;
+      padding: 12px 14px;
+      background: #f9fafb;
+      border-left: 3px solid var(--accent);
+      border-radius: 0 6px 6px 0;
+      font-size: 14px;
+      color: #374151;
+      line-height: 1.7;
+    }
+
+    /* ── Report Example ──────────────────────────────────── */
+    .report-section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px;
+      margin-top: 24px;
+      box-shadow: var(--shadow);
+    }
+    .report-section h2 {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .report-section > p {
+      color: var(--text-muted);
+      font-size: 14px;
+      margin-bottom: 16px;
+    }
+    .report-block {
+      background: #0f172a;
+      color: #e2e8f0;
+      border-radius: 8px;
+      padding: 20px 22px;
+      font-family: 'SF Mono', 'Cascadia Code', Consolas, monospace;
+      font-size: 12.5px;
+      line-height: 1.8;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .report-block .report-title { color: #60a5fa; font-weight: 700; margin-bottom: 4px; }
+    .report-block .report-success { color: #4ade80; }
+    .report-block .report-fail { color: #f87171; }
+    .report-block .report-label { color: #94a3b8; }
+
+    /* ── Initiator ────────────────────────────────────────── */
+    .initiator-section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px;
+      margin-top: 24px;
+      box-shadow: var(--shadow);
+    }
+    .initiator-section h2 {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 14px;
+      color: var(--text);
+    }
+    .initiator-section p {
+      color: #374151;
+      font-size: 14.5px;
+      line-height: 1.8;
+      margin-bottom: 10px;
+    }
+    .initiator-section p:last-child { margin-bottom: 0; }
+    .initiator-handle {
+      display: inline-block;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 2px 10px;
+      font-family: 'SF Mono', Consolas, monospace;
+      font-size: 13px;
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    /* ── CTA ─────────────────────────────────────────────── */
+    .cta-section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 32px 28px;
+      margin-top: 48px;
+      text-align: center;
+    }
+    .cta-section h2 {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .cta-section > p {
+      color: var(--text-muted);
+      font-size: 15px;
+      margin-bottom: 24px;
+    }
+    .cta-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: center;
+    }
+    .cta-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 22px;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      font-family: inherit;
+      text-decoration: none;
+      transition: opacity 0.15s;
+    }
+    .cta-btn:hover { opacity: 0.85; text-decoration: none; }
+    .cta-btn svg { width: 16px; height: 16px; }
+    .cta-btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+    .cta-btn-secondary {
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    /* ── Footer ─────────────────────────────────────────── */
+    .site-footer {
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      padding: 24px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+    .site-footer a { color: var(--text-muted); }
+    .site-footer a:hover { color: var(--text); }
+
+    /* ── Mobile ─────────────────────────────────────────── */
+    @media (max-width: 600px) {
+      .header-nav { display: none; }
+      .page-hero { padding: 40px 20px 32px; }
+      .trust-badges { gap: 8px; }
+      .trust-badge { font-size: 12px; padding: 5px 11px; }
+      .content-wrap { padding: 28px 16px 60px; }
+      .faq-question { padding: 16px; font-size: 14px; }
+      .faq-answer-inner { padding: 0 16px 16px; font-size: 14px; }
+      .comparison-section { padding: 20px; }
+      .report-section { padding: 20px; }
+      .initiator-section { padding: 20px; }
+      .cta-buttons { flex-direction: column; }
+      .cta-btn { justify-content: center; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="site-header">
+    <a href="/en/" class="site-logo">
+      <div class="site-logo__icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+        </svg>
+      </div>
+      AI API Doctor
+    </a>
+    <nav class="header-nav">
+      <a href="/en/">Home</a>
+      <a href="/en/report/">Generate Report</a>
+      <a href="/en/guides/billing-anomaly/">How It Works</a>
+      <a href="/en/faq/" class="active">FAQ</a>
+      <a href="/en/privacy/">Privacy</a>
+      <a href="/en/support/">Support</a>
+      <span class="lang-switcher">
+        <a href="/faq" class="lang-switcher__link">中文</a>
+        <span class="lang-switcher__sep">|</span>
+        <span class="lang-switcher__current">English</span>
+      </span>
+    </nav>
+  </header>
+
+  <!-- Hero -->
+  <section class="page-hero">
+    <div class="page-hero-badge">FAQ</div>
+    <h1>AI API Doctor FAQ</h1>
+    <p>Understand the tool's capabilities, privacy policy, diagnostic logic, and how raw quota evidence works.</p>
+
+    <!-- Trust Badges -->
+    <div class="trust-badges">
+      <span class="trust-badge ok">
+        <svg class="ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        API Key Stored Locally
+      </span>
+      <span class="trust-badge ok">
+        <svg class="ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        No Model Authenticity Claims
+      </span>
+      <span class="trust-badge warn">
+        <svg class="warn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        Diagnosis Consumes Minimal Credits
+      </span>
+      <span class="trust-badge neutral">
+        <svg class="neutral" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+        Supports Custom Base URLs
+      </span>
+    </div>
+  </section>
+
+  <!-- Main Content -->
+  <main class="content-wrap">
+
+    <!-- Section 1: Basic Introduction -->
+    <div class="faq-group-title">Basic Introduction</div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>What is AI API Doctor?</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>AI API Doctor is a local-first diagnostic tool for OpenAI-compatible API users.</p>
+          <p>It helps you check whether API Keys, Base URLs, model permissions, group configurations, chat/completions interfaces, raw quota changes, and client configurations are working correctly.</p>
+          <p>It is suitable for the following scenarios:</p>
+          <ul>
+            <li>API Key is filled in but the client cannot use it</li>
+            <li>Base URL is uncertain</li>
+            <li>Model list is visible but actual requests fail</li>
+            <li>Errors 401 / 403 / 404 / 429 appear</li>
+            <li>Relay station reports "no access to a certain group"</li>
+            <li>Want to verify whether usage is returned for a request</li>
+            <li>Want to export Cline / Continue / Cherry Studio configurations</li>
+          </ul>
+          <p>AI API Doctor is not a model authenticity verification tool, nor is it a legal audit tool.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Section 2: Privacy & API Key Safety -->
+    <div class="faq-group-title">Privacy &amp; API Key Safety</div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>Does AI API Doctor upload or store my API Key?</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>No. The Chrome extension stores your API Key locally in your browser's <code>chrome.storage.local</code>.</p>
+          <p>AI API Doctor does not proactively upload your API Key to any third-party servers.</p>
+          <p>Diagnostic requests are sent only to the Base URL you currently have selected. For example, if you selected a custom relay station, the diagnostic request will be sent to that relay station's API address.</p>
+          <p><strong>It is recommended to use a test-only API Key and not a production key.</strong></p>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>What is raw quota?</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>Raw quota is the raw quota value recorded by the New API / One API backend, typically more granular than the frontend balance display.</p>
+          <p>The frontend balance often only shows two decimal places, so a change as small as <code>$0.0001</code> may not be visible.</p>
+          <p>Raw quota lets you observe much finer-grained quota changes and is the primary evidence used by AI API Doctor for billing anomaly detection.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>Why does the diagnosis wait 10 seconds?</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>Some relay stations pre-charge quota at the start of a request, then settle and refund the difference after the request completes.</p>
+          <p>The 10-second wait is necessary to distinguish between a <strong>temporary pre-charge</strong> and a <strong>final deduction</strong>.</p>
+          <p>If the quota is restored after 10 seconds, the request likely had a pre-charge that was subsequently refunded. If the quota remains lower after 10 seconds, it may indicate a billing anomaly.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>Does the diagnosis consume credits?</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>Yes. AI API Doctor sends a small number of real API requests to confirm whether your Base URL, API Key, model permissions, and chat/completions are working.</p>
+          <p>Basic diagnostics typically require only 1 to 3 requests, consuming a minimal amount.</p>
+          <p>For safety, it is recommended to:</p>
+          <ul>
+            <li>Use a test-only API Key</li>
+            <li>Set a low credit limit</li>
+            <li>Not use a production key</li>
+            <li>Compare results against the provider's backend billing after diagnosis</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>What does "failed request not charged" mean?</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>This means a request failed (e.g. HTTP status &ge; 400, upstream 503, timeout, or no valid output) but the raw quota did not decrease after 10 seconds.</p>
+          <p>This is a <strong>normal result</strong>: the provider did not ultimately charge you for the failed request.</p>
+          <p>The station may have pre-charged and then refunded, or simply did not charge for the failed request in the first place.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>What does "billing anomaly" mean?</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>A billing anomaly indicates that a request produced no valid output (failed request, empty reply, timeout, or invalid model) but the raw quota decreased after 10 seconds — meaning the provider ultimately deducted quota.</p>
+          <p>This is a <strong>reproducible signal</strong>. It shows that the station charged for a request that did not produce valid output.</p>
+          <p>The report generated by AI API Doctor can be shared with the provider's support team for verification.</p>
+          <p><strong>Note:</strong> This is diagnostic evidence, not a legal audit report.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>Why can't the web version read raw quota automatically?</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>The web version does not require you to enter an API Key and runs entirely in the browser.</p>
+          <p>It cannot automatically access the New API / One API raw quota endpoint the way the Chrome extension can.</p>
+          <p>The web version is designed for users who want to manually enter raw quota data they have collected (e.g. from the provider's dashboard) to generate a shareable diagnostic report.</p>
+          <p>For automatic raw quota reading, use the Chrome extension.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>Does AI API Doctor prove intentional overbilling?</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p><strong>No.</strong> AI API Doctor can help you check usage information from individual requests, but it cannot prove that a provider intentionally overbilled.</p>
+          <p>It can detect:</p>
+          <ul>
+            <li>Whether the response returns a usage field</li>
+            <li>Whether total_tokens is abnormally high</li>
+            <li>Whether a short request shows significantly abnormal token consumption</li>
+          </ul>
+          <p>Final balances, deductions, and billing are controlled by the provider's backend. AI API Doctor cannot directly access all providers' real billing systems.</p>
+          <p>Its conclusions should be understood as "usage signal verification," not a financial audit in any legal sense.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>How should I send a report to my API provider?</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>AI API Doctor-generated reports automatically hide full API Keys, displaying only a desensitized format such as:</p>
+          <p><code>sk-****abcd</code></p>
+          <p>You can share the report with the provider's owner or support team to explain:</p>
+          <ul>
+            <li>Base URL</li>
+            <li>Model ID</li>
+            <li>Error code</li>
+            <li>Provider-returned information</li>
+            <li>Failed step details</li>
+            <li>Usage situation</li>
+          </ul>
+          <p><strong>Recommended steps:</strong></p>
+          <ul>
+            <li>Use a short prompt for testing to reduce per-test cost</li>
+            <li>Record multiple diagnostic reports to check result consistency</li>
+            <li>Contact the owner or support team for verification</li>
+            <li>Compare against the provider's official billing</li>
+          </ul>
+          <p><strong>Always ensure you do not manually send a full API Key, account password, or sensitive balance screenshot to strangers.</strong></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Section 3: Common Error Codes -->
+    <div class="faq-group-title">Common Error Codes</div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>What error codes does AI API Doctor detect?</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p><strong>401:</strong> Invalid or expired API Key, or extra spaces when copying.</p>
+          <p><strong>403:</strong> Insufficient permissions — possibly no model access, group access, IP whitelist restriction, or model not added to the group.</p>
+          <p><strong>404:</strong> Incorrect endpoint address — possibly missing <code>/v1</code>, extra <code>/v1</code>, or filled with the official website address.</p>
+          <p><strong>429:</strong> Too many requests, concurrent limit exceeded, quota exhausted, or provider rate limiting.</p>
+          <p><strong>HTML response:</strong> Server returned a webpage instead of API JSON — possibly filled with the site homepage, login page, Cloudflare page, or provider does not support this endpoint.</p>
+          <p><strong>No usage:</strong> Response did not return a usage field, so token consumption cannot be verified from this response.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Section 4: Chrome Extension vs Web -->
+    <div class="faq-group-title">Chrome Extension vs. Web Version</div>
+
+    <!-- Comparison Table -->
+    <div class="comparison-section">
+      <h2>Chrome Extension vs. Web Version</h2>
+      <div class="comparison-table-wrap">
+        <table class="comparison-table">
+          <thead>
+            <tr>
+              <th>Feature</th>
+              <th class="col-doctor">AI API Doctor (Chrome Extension)</th>
+              <th class="col-other">Web Version</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Read New API raw quota automatically</td>
+              <td class="col-doctor"><span style="color:#16a34a;font-weight:700">Yes</span></td>
+              <td class="col-other"><span style="color:#6b7280">No (manual entry required)</span></td>
+            </tr>
+            <tr>
+              <td>Requires API Key on website</td>
+              <td class="col-doctor"><span style="color:#6b7280">Yes, stored locally</span></td>
+              <td class="col-other"><span style="color:#16a34a;font-weight:700">No</span></td>
+            </tr>
+            <tr>
+              <td>Auto-run failed-request billing check</td>
+              <td class="col-doctor"><span style="color:#16a34a;font-weight:700">Yes</span></td>
+              <td class="col-other"><span style="color:#6b7280">No (manual report only)</span></td>
+            </tr>
+            <tr>
+              <td>Generate shareable report</td>
+              <td class="col-doctor"><span style="color:#16a34a;font-weight:700">Yes</span></td>
+              <td class="col-other"><span style="color:#16a34a;font-weight:700">Yes</span></td>
+            </tr>
+            <tr>
+              <td>Suitable for support communication</td>
+              <td class="col-doctor"><span style="color:#16a34a;font-weight:700">Yes</span></td>
+              <td class="col-other"><span style="color:#16a34a;font-weight:700">Yes</span></td>
+            </tr>
+            <tr>
+              <td>Suitable for precise desktop forensics</td>
+              <td class="col-doctor"><span style="color:#16a34a;font-weight:700">Yes</span></td>
+              <td class="col-other"><span style="color:#6b7280">Limited</span></td>
+            </tr>
+            <tr>
+              <td>Suitable for mobile sharing</td>
+              <td class="col-doctor"><span style="color:#6b7280">No</span></td>
+              <td class="col-other"><span style="color:#16a34a;font-weight:700">Yes</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="comparison-note">
+        Both versions generate shareable diagnostic reports suitable for customer support communication. Choose the Chrome extension for precise forensics and automatic raw quota reading; choose the web version for quick manual reports and mobile sharing.
+      </div>
+    </div>
+
+    <!-- Report Example -->
+    <div class="report-section">
+      <h2>Diagnostic Report Example</h2>
+      <p>AI API Doctor-generated reports are suitable for sending to relay station owners or customer support. Reports automatically hide full API Keys.</p>
+      <div class="report-block"><span class="report-title">AI API Doctor Report</span>
+<span class="report-label">────────────────────────────────</span>
+<span class="report-label">Provider:</span> Example Station
+<span class="report-label">Base URL:</span> https://api.example.com/v1
+<span class="report-label">API Key:</span> sk-****abcd
+<span class="report-label">Model:</span> claude-opus-4.7
+<span class="report-label">Time:</span> 2026-05-11 10:30
+
+<span class="report-label">Result:</span>
+  <span class="report-success">5 / 7 checks passed</span>
+
+<span class="report-label">Failed Step:</span>
+  <span class="report-fail">Chat Completion</span>
+  HTTP Status: 403
+  <span class="report-label">Provider:</span> No access to GPT official group
+  <span class="report-label">Suggestion:</span> Please check Key group, model group, and channel permissions.
+
+<span class="report-label">────────────────────────────────</span>
+<span class="report-label">Note:</span> This report does not prove intentional overbilling.
+  It only shows configuration and usage signals from this test request.</div>
+    </div>
+
+    <!-- Project Initiator -->
+    <div class="initiator-section">
+      <h2>About the Project</h2>
+      <p>AI API Doctor is initiated and publicly built by <span class="initiator-handle">@norike0718</span>.</p>
+      <p>The author is an independent developer who has long built SaaS and AI tools, focused on content workflows, AI API configuration, automation pipelines, and developer tool experience.</p>
+      <p>AI API Doctor's goal is not to "judge" relay stations but to help users diagnose API Key, Base URL, model permissions, token usage, and client configuration issues in real-world usage scenarios.</p>
+      <p>The project strives to keep diagnostic logic transparent, boundaries clear, and to prioritize avoiding false positives against legitimate providers.</p>
+    </div>
+
+    <!-- CTA Section -->
+    <div class="cta-section">
+      <h2>Start Diagnosing</h2>
+      <p>Download the Chrome extension and test whether your configuration is working correctly with your own API Key.</p>
+      <div class="cta-buttons">
+        <a href="https://chrome.google.com/webstore" target="_blank" rel="noopener" class="cta-btn cta-btn-primary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Download Chrome Extension
+        </a>
+        <a href="/en/report/" class="cta-btn cta-btn-secondary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          Generate Report (Web)
+        </a>
+        <a href="/en/privacy/" class="cta-btn cta-btn-secondary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          Privacy Policy
+        </a>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="site-footer">
+    <p>
+      &copy; 2026 AI API Doctor &middot;
+      <a href="/en/">Home</a> &middot;
+      <a href="/en/report/">Generate Report</a> &middot;
+      <a href="/en/guides/billing-anomaly/">How It Works</a> &middot;
+      <a href="/en/faq/">FAQ</a> &middot;
+      <a href="/en/privacy/">Privacy</a> &middot;
+      <a href="/en/support/">Support</a>
+    </p>
+    <p style="margin-top:4px">Last updated: May 14, 2026</p>
+  </footer>
+
+  <script>
+    function toggle(btn) {
+      const card = btn.closest('.faq-card');
+      card.classList.toggle('open');
+    }
+  </script>
+
+</body>
+</html>

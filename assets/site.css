@@ -110,6 +110,32 @@ a:hover { text-decoration: underline; }
 .site-nav a:hover { color: var(--text); background: var(--soft); text-decoration: none; }
 .site-nav a.active { color: var(--info); }
 
+/* ── Language switcher ────────────────────────────── */
+.lang-switcher {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.lang-switcher__current {
+  font-weight: 700;
+  color: var(--text);
+  cursor: default;
+}
+.lang-switcher__sep {
+  color: var(--border);
+  margin: 0 2px;
+}
+.lang-switcher__link {
+  color: var(--info);
+  font-weight: 500;
+}
+.lang-switcher__link:hover {
+  text-decoration: underline;
+}
+
 /* ── Mobile nav toggle ──────────────────────────────── */
 .nav-toggle {
   display: none;
@@ -539,6 +565,7 @@ a:hover { text-decoration: underline; }
   .site-nav { display: none; }
   .site-nav.open { display: flex; flex-direction: column; position: absolute; top: 60px; left: 0; right: 0; background: var(--panel); border-bottom: 1px solid var(--border); padding: 8px; z-index: 99; }
   .site-nav.open a { border-radius: var(--radius-sm); }
+  .site-nav.open .lang-switcher { padding: 6px 12px; border-radius: var(--radius-sm); }
   .nav-toggle { display: flex; }
   .hero { padding: 48px 0 40px; }
   .hero__title { font-size: 26px; }

@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI API Doctor: AI API Billing Anomaly Checker</title>
+  <meta name="description" content="Check failed request charges, empty reply charges, raw quota changes, and model connectivity for New API / One API compatible AI API relay services." />
+  <meta name="robots" content="index, follow" />
+  <link rel="canonical" href="https://aiapidoctor.com/en/" />
+  <link rel="alternate" hreflang="zh-CN" href="https://aiapidoctor.com/" />
+  <link rel="alternate" hreflang="en" href="https://aiapidoctor.com/en/" />
+  <link rel="alternate" hreflang="x-default" href="https://aiapidoctor.com/" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="stylesheet" href="/assets/site.css" />
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="AI API Doctor: AI API Billing Anomaly Checker" />
+  <meta property="og:description" content="Check failed request charges, empty reply charges, raw quota changes, and model connectivity for New API / One API compatible AI API relay services." />
+  <meta property="og:url" content="https://aiapidoctor.com/en/" />
+  <meta property="og:locale" content="en_US" />
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="AI API Doctor: AI API Billing Anomaly Checker" />
+  <meta name="twitter:description" content="Check failed request charges, empty reply charges, and raw quota changes for New API / One API relay services." />
+
+  <!-- JSON-LD -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "AI API Doctor",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Web, Chrome",
+    "description": "AI API billing anomaly detection tool. Detects failed-request charges and empty-reply billing anomalies in New API / One API relay stations.",
+    "url": "https://aiapidoctor.com/en/",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+  }
+  </script>
+</head>
+<body>
+
+<!-- Header -->
+<header class="site-header">
+  <div class="container site-header__inner">
+    <a href="/en/" class="site-logo">
+      <div class="site-logo__icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+        </svg>
+      </div>
+      AI API Doctor
+    </a>
+    <button class="nav-toggle" aria-label="Menu" onclick="document.querySelector('.site-nav').classList.toggle('open')">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+      </svg>
+    </button>
+    <nav class="site-nav">
+      <a href="/en/">Home</a>
+      <a href="/en/report/">Generate Report</a>
+      <a href="/en/guides/billing-anomaly/">How It Works</a>
+      <a href="/en/faq/">FAQ</a>
+      <a href="/en/privacy/">Privacy</a>
+      <a href="/en/support/">Support</a>
+      <a href="https://chrome.google.com/webstore" target="_blank" rel="noopener">Get Extension</a>
+      <span class="lang-switcher">
+        <a href="/" class="lang-switcher__link">中文</a>
+        <span class="lang-switcher__sep">|</span>
+        <span class="lang-switcher__current">English</span>
+      </span>
+    </nav>
+  </div>
+</header>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="container">
+    <div class="hero__badge">Billing Anomaly Detection</div>
+    <h1 class="hero__title">AI API Billing Anomaly Checker</h1>
+    <p class="hero__sub">Check whether failed requests, empty replies, invalid models, or upstream errors actually reduce your raw quota.</p>
+    <div class="hero__actions">
+      <a href="/en/report/" class="btn btn--primary btn--lg">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 10"/></svg>
+        Generate Report
+      </a>
+      <a href="https://chrome.google.com/webstore" target="_blank" rel="noopener" class="btn btn--secondary btn--lg">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Download Chrome Extension
+      </a>
+      <a href="/en/faq/" class="btn btn--secondary btn--lg">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        Read FAQ
+      </a>
+    </div>
+  </div>
+</section>
+
+<main>
+
+  <!-- Sample Report Card -->
+  <section class="section">
+    <div class="container">
+      <div class="card" style="text-align:center; margin-bottom:12px">
+        <div style="font-size:13px; color:var(--muted); margin-bottom:16px">
+          Sample Report — Normal: Failed Request Not Charged
+        </div>
+        <div id="hero-report" class="billing-report-card" style="text-align:left; display:inline-block; width:100%; max-width:600px">
+          <div class="report-header">
+            <div>
+              <div class="report-header__brand">AI API Doctor</div>
+              <div class="report-header__sub">Billing Anomaly Detection Report</div>
+            </div>
+            <div class="report-header__meta">
+              <div>API Key Not Included</div>
+              <div>Manual Report Example</div>
+            </div>
+          </div>
+          <div class="verdict-hero verdict--ok">
+            <div class="verdict-hero__status" style="color:var(--success)">&#10003; Normal</div>
+            <div class="verdict-hero__title">Failed Request Not Charged</div>
+            <div class="verdict-hero__detail">Request failed, but raw quota did not decrease after 10 seconds.</div>
+          </div>
+          <div class="delta-section">
+            <div class="delta-section__label">Final Change</div>
+            <div class="delta-section__value" style="color:var(--success)">+0 <span class="delta-section__unit">quota</span></div>
+            <div class="delta-section__usd">Estimated: $0.000000</div>
+          </div>
+          <div class="evidence-chain">
+            <div class="evidence-node">
+              <div class="evidence-node__label">Before</div>
+              <div class="evidence-node__value">99,817,234</div>
+            </div>
+            <div class="evidence-arrow">&#8594;</div>
+            <div class="evidence-node">
+              <div class="evidence-node__label">HTTP</div>
+              <div class="evidence-node__value" style="color:var(--danger)">503</div>
+            </div>
+            <div class="evidence-arrow">&#8594;</div>
+            <div class="evidence-node">
+              <div class="evidence-node__label">After 10s</div>
+              <div class="evidence-node__value">99,817,234</div>
+            </div>
+          </div>
+          <div class="safety-note">This report does not include API keys. It only shows reproducible signals from this diagnostic test and is not a legal audit of provider billing.</div>
+          <div class="report-footer">
+            <span>Generated by AI API Doctor</span>
+            <span>aiapidoctor.com</span>
+          </div>
+        </div>
+        <p style="font-size:12px; color:var(--muted); margin-top:16px">
+          This is a sample report. For actual diagnosis, use the Chrome extension to read raw quota, or manually enter raw quota data on the web to generate a report.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 1: Why -->
+  <section class="section section--alt">
+    <div class="container">
+      <h2 class="section__title section__title--center">Why Do You Need This Tool?</h2>
+      <p class="section__desc section__title--center">Many AI API relay stations use a pre-charge mechanism. The problem is: failed requests, empty replies, upstream 503 errors, timeouts, or requests with no valid output sometimes still result in a final quota deduction. AI API Doctor uses raw quota evidence to help you determine: did this request actually deduct your balance?</p>
+    </div>
+  </section>
+
+  <!-- Section 2: Core features -->
+  <section class="section">
+    <div class="container">
+      <h2 class="section__title section__title--center">Three Core Features</h2>
+      <div class="feature-grid">
+        <div class="card feature-card">
+          <div class="feature-card__icon feature-card__icon--blue">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          </div>
+          <div class="feature-card__title">Read Raw Quota, Not Frontend Balance</div>
+          <div class="feature-card__desc">The frontend balance often only shows two decimal places, so a change of $0.0001 may not be visible. Raw quota lets you observe fine-grained quota changes.</div>
+        </div>
+        <div class="card feature-card">
+          <div class="feature-card__icon feature-card__icon--green">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          </div>
+          <div class="feature-card__title">Wait 10 Seconds to Confirm Final Settlement</div>
+          <div class="feature-card__desc">Some stations pre-charge first and then refund the difference. Waiting for settlement completion is necessary to distinguish between a temporary pre-charge and a final deduction.</div>
+        </div>
+        <div class="card feature-card">
+          <div class="feature-card__icon feature-card__icon--orange">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          </div>
+          <div class="feature-card__title">Generate Shareable Diagnostic Reports</div>
+          <div class="feature-card__desc">Reports include HTTP status, model name, raw quota changes, timestamps, desensitization notes, and provider repair suggestions — suitable for customer support communication.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 3: Plugin vs Web comparison -->
+  <section class="section section--alt">
+    <div class="container container--narrow">
+      <h2 class="section__title section__title--center">Chrome Extension vs. Web Version</h2>
+      <div class="card">
+        <div style="overflow-x:auto">
+          <table class="compare-table">
+            <thead>
+              <tr>
+                <th>Feature</th>
+                <th>Chrome Extension</th>
+                <th>Web Version</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Read New API raw quota automatically</td>
+                <td><span class="badge badge--success">Yes</span></td>
+                <td><span class="badge badge--neutral">No</span></td>
+              </tr>
+              <tr>
+                <td>Requires API Key input on website</td>
+                <td><span class="badge badge--neutral">Yes (local)</span></td>
+                <td><span class="badge badge--success">No</span></td>
+              </tr>
+              <tr>
+                <td>Suitable for precise desktop forensics</td>
+                <td><span class="badge badge--success">Yes</span></td>
+                <td><span class="badge badge--neutral">No</span></td>
+              </tr>
+              <tr>
+                <td>Suitable for mobile sharing</td>
+                <td><span class="badge badge--neutral">No</span></td>
+                <td><span class="badge badge--success">Yes</span></td>
+              </tr>
+              <tr>
+                <td>Auto-run failed-request billing check</td>
+                <td><span class="badge badge--success">Yes</span></td>
+                <td><span class="badge badge--neutral">No</span></td>
+              </tr>
+              <tr>
+                <td>Generate shareable report</td>
+                <td><span class="badge badge--success">Yes</span></td>
+                <td><span class="badge badge--success">Yes</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 4: Use cases -->
+  <section class="section">
+    <div class="container">
+      <h2 class="section__title section__title--center">Who Is This For?</h2>
+      <div class="feature-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr))">
+        <div class="card" style="text-align:center">
+          <div style="font-size:24px; margin-bottom:8px">&#128100;</div>
+          <div class="card__title">New API / One API Users</div>
+        </div>
+        <div class="card" style="text-align:center">
+          <div style="font-size:24px; margin-bottom:8px">&#127760;</div>
+          <div class="card__title">Relay Station Users</div>
+        </div>
+        <div class="card" style="text-align:center">
+          <div style="font-size:24px; margin-bottom:8px">&#128736;</div>
+          <div class="card__title">Owners &amp; Support Staff</div>
+        </div>
+        <div class="card" style="text-align:center">
+          <div style="font-size:24px; margin-bottom:8px">&#128187;</div>
+          <div class="card__title">Claude Code / Cline / Cursor Users</div>
+        </div>
+        <div class="card" style="text-align:center">
+          <div style="font-size:24px; margin-bottom:8px">&#128269;</div>
+          <div class="card__title">Anyone Checking Billing Anomalies</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 5: Result examples -->
+  <section class="section section--alt">
+    <div class="container">
+      <h2 class="section__title section__title--center">Five Diagnostic Outcomes</h2>
+      <div class="result-cards">
+        <div class="result-card result-card--ok">
+          <div class="result-card__status">&#10003; Normal</div>
+          <div class="result-card__title">Failed Request Not Charged</div>
+          <div class="result-card__desc">Request failed, but raw quota did not decrease after 10 seconds.</div>
+        </div>
+        <div class="result-card result-card--ok">
+          <div class="result-card__status">&#10003; Normal</div>
+          <div class="result-card__title">Pre-charge Refunded</div>
+          <div class="result-card__desc">Quota was pre-charged after the request but refunded within 10 seconds.</div>
+        </div>
+        <div class="result-card result-card--warning">
+          <div class="result-card__status">&#9888; Risk</div>
+          <div class="result-card__title">Cannot Read Raw Balance</div>
+          <div class="result-card__desc">Raw quota is unavailable; report can only serve as a risk reference.</div>
+        </div>
+        <div class="result-card result-card--danger">
+          <div class="result-card__status">&#10007; Anomaly</div>
+          <div class="result-card__title">Failed Request Charged</div>
+          <div class="result-card__desc">Request failed with no valid output, but raw quota decreased after 10 seconds.</div>
+        </div>
+        <div class="result-card result-card--danger">
+          <div class="result-card__status">&#10007; Anomaly</div>
+          <div class="result-card__title">Empty Response Charged</div>
+          <div class="result-card__desc">Request had no valid output, but raw quota decreased after 10 seconds.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 6: CTA -->
+  <section class="section">
+    <div class="container" style="text-align:center">
+      <h2 class="section__title">Generate a Billing Anomaly Report Now</h2>
+      <p class="section__desc" style="max-width:480px; margin:0 auto 24px">
+        No extension needed. Enter raw quota data manually to generate a shareable diagnostic report.
+      </p>
+      <div class="action-row action-row--center">
+        <a href="/en/report/" class="btn btn--primary btn--lg">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          Generate Report
+        </a>
+        <a href="https://chrome.google.com/webstore" target="_blank" rel="noopener" class="btn btn--secondary btn--lg">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Download Chrome Extension
+        </a>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- Footer -->
+<footer class="site-footer">
+  <div class="container site-footer__inner">
+    <div class="site-logo" style="font-size:15px; margin-bottom:8px">
+      <div class="site-logo__icon" style="width:28px;height:28px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px">
+          <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+        </svg>
+      </div>
+      AI API Doctor
+    </div>
+    <div class="site-footer__links">
+      <a href="/en/">Home</a>
+      <a href="/en/report/">Generate Report</a>
+      <a href="/en/guides/billing-anomaly/">How It Works</a>
+      <a href="/en/faq/">FAQ</a>
+      <a href="/en/privacy/">Privacy</a>
+      <a href="/en/support/">Support</a>
+    </div>
+    <p class="site-footer__note">
+      This tool only shows reproducible signals and does not prove intentional overbilling by the provider. If in doubt, contact the provider or support team for verification.
+    </p>
+    <p style="color:#9ca3af; font-size:12px; margin-top:4px">&copy; 2026 AI API Doctor &middot; aiapidoctor.com</p>
+  </div>
+</footer>
+
+</body>
+</html>
