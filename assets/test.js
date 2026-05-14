@@ -21,50 +21,36 @@ const PROMPT_LONG = `The concept of RESTful API design emphasizes stateless comm
 const STORAGE_KEY_NON_SENSITIVE = 'aiapidoctor_doctor_config';
 
 /* ═══════════════════════════════════════════════════════
-   Detection Modes
+   Detection Modes — simplified to 2
    ═══════════════════════════════════════════════════════ */
 const DETECTION_MODES = {
   quick: {
-    label: 'Quick Check',
+    label: '快速检测',
     labelEn: 'Quick Check',
-    desc: '1 request — checks model connectivity and basic usage. Minimal cost.',
-    descEn: '1 request — checks model connectivity and basic usage. Minimal cost.',
-    requests: '~1 request, minimal cost',
-    requestsEn: '~1 request, minimal cost',
-    reqCount: 1,
+    desc: '1 次请求，检测模型联通、HTTP 状态、延迟和基础 usage，消耗极低。',
+    descEn: '1 request — checks model connectivity, HTTP status, latency, and basic usage. Minimal cost.',
+    requests: '1 次请求，消耗极低',
+    requestsEn: '1 request, minimal cost',
     connectivity: true,
     usageIntegrity: true,
     cacheTest: false,
     priceAudit: false,
     modelSanity: false,
+    isFull: false
   },
-  standard: {
-    label: 'Standard Check',
-    labelEn: 'Standard Check',
-    desc: '~6 requests — adds model sanity tests. May consume a small amount of quota.',
-    descEn: '~6 requests — adds model sanity tests. May consume a small amount of quota.',
-    requests: '~6 requests, may consume a small amount of quota',
-    requestsEn: '~6 requests, may consume a small amount of quota',
-    reqCount: 6,
+  full: {
+    label: '完整体检',
+    labelEn: 'Full Doctor Check',
+    desc: '会额外检测扣费、缓存、usage 完整性和模型表现，可能发送多次请求并消耗少量额度。',
+    descEn: 'Also checks billing, cache, usage integrity, and model performance. May make multiple requests and consume a small amount of quota.',
+    requests: '约 6-7 次请求，可能消耗少量额度',
+    requestsEn: '~6-7 requests, may consume a small amount of quota',
     connectivity: true,
     usageIntegrity: true,
     cacheTest: false,
     priceAudit: false,
     modelSanity: true,
-  },
-  deep: {
-    label: 'Deep Check',
-    labelEn: 'Deep Check',
-    desc: '~8-10 requests — adds cache re-test and price audit. May cost more.',
-    descEn: '~8-10 requests — adds cache re-test and price audit. May cost more.',
-    requests: '~8-10 requests, cache test needs longer prompt, may cost more',
-    requestsEn: '~8-10 requests, cache test needs longer prompt, may cost more',
-    reqCount: 10,
-    connectivity: true,
-    usageIntegrity: true,
-    cacheTest: true,
-    priceAudit: false,
-    modelSanity: true,
+    isFull: true
   }
 };
 
@@ -179,7 +165,7 @@ const SANITY_QUESTION_BANK = {
         normalize(raw) {
           const text = (raw || '').trim().toUpperCase();
           if (text === 'C') return 'correct';
-          if (text === 'C' || text.startsWith('C')) return 'correct_extra';
+          if (text.startsWith('C')) return 'correct_extra';
           return 'wrong';
         },
         score(norm) {
@@ -475,7 +461,7 @@ function showToast(msg) {
   toast.textContent = msg;
   toast.style.display = 'block';
   clearTimeout(toast._timer);
-  toast._timer = setTimeout(() => { toast.style.display = 'none'; }, 2500);
+  toast._timer = setTimeout(() => { toast.style.display = 'none'; }, 3000);
 }
 
 function generateReportId() {
@@ -485,6 +471,10 @@ function generateReportId() {
   let suffix = '';
   for (let i = 0; i < 4; i++) suffix += chars[Math.floor(Math.random() * chars.length)];
   return 'AID-' + mmdd + '-' + suffix;
+}
+
+function getDocLang() {
+  return document.documentElement.lang === 'en' ? 'en' : 'zh';
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -679,7 +669,7 @@ async function generateReportFingerprint(data) {
 }
 
 /* ═══════════════════════════════════════════════════════
-   Score calculation — NEW LOGIC
+   Score calculation — for full mode only
    Status: pass / warn / fail / skipped / blocked
    skipped/blocked: not in denominator
    pass: 100%, warn: 50%, fail: 0%
@@ -693,7 +683,7 @@ const DIM_WEIGHTS = {
   price: 10,
   modelSanity: 10
 };
-const TOTAL_WEIGHT = Object.values(DIM_WEIGHTS).reduce((a, b) => a + b, 0); // 100
+const TOTAL_WEIGHT = Object.values(DIM_WEIGHTS).reduce((a, b) => a + b, 0);
 
 function newCalcScore(result) {
   const dims = {
@@ -701,12 +691,10 @@ function newCalcScore(result) {
     connectivity: { state: result.connectivity?.state,  score: null },
     usage:        { state: result.usageIntegrity?.state, score: null },
     cache:        { state: result.cacheHit?.state,       score: null },
-    price:        { state: result.priceAudit?.state,     score: null },
+    price:        { state: result.priceAudit?.state,    score: null },
     modelSanity:  { state: result.modelSanity?.state,   score: null },
   };
 
-  // Determine state for each dimension
-  // billing
   if (result.billing?.state) {
     dims.billing.state = result.billing.state;
   } else if (result.billing?.verdict) {
@@ -716,7 +704,7 @@ function newCalcScore(result) {
     } else if (v === 'failed_request_charged' || v === 'empty_response_charged') {
       dims.billing.state = 'fail'; dims.billing.score = 0;
     } else if (v === 'raw_quota_unavailable') {
-      dims.billing.state = 'skipped'; // web can't read raw quota
+      dims.billing.state = 'skipped';
     } else {
       dims.billing.state = 'warn'; dims.billing.score = 50;
     }
@@ -724,7 +712,6 @@ function newCalcScore(result) {
     dims.billing.state = 'skipped';
   }
 
-  // connectivity
   if (result.connectivity) {
     const s = result.connectivity.status;
     if (result.connectivity.error === 'cors_or_network') {
@@ -743,7 +730,6 @@ function newCalcScore(result) {
     dims.connectivity.state = 'skipped';
   }
 
-  // usage
   if (result.usageIntegrity) {
     if (result.usageIntegrity === 'complete') {
       dims.usage.state = 'pass'; dims.usage.score = 100;
@@ -758,7 +744,6 @@ function newCalcScore(result) {
     dims.usage.state = 'skipped';
   }
 
-  // cache
   if (result.cacheHit) {
     if (result.cacheHit.status === 'hit') {
       dims.cache.state = 'pass'; dims.cache.score = 100;
@@ -771,7 +756,6 @@ function newCalcScore(result) {
     dims.cache.state = 'skipped';
   }
 
-  // price
   if (result.priceAudit) {
     if (result.priceAudit.status === 'normal') {
       dims.price.state = 'pass'; dims.price.score = 100;
@@ -786,7 +770,6 @@ function newCalcScore(result) {
     dims.price.state = 'skipped';
   }
 
-  // modelSanity
   if (result.modelSanity && result.modelSanity.overallScore !== null) {
     const ms = result.modelSanity.overallScore;
     if (ms >= 70) {
@@ -800,7 +783,6 @@ function newCalcScore(result) {
     dims.modelSanity.state = 'skipped';
   }
 
-  // Calculate active weight and earned weight
   let activeWeight = 0, earnedWeight = 0;
   for (const [key, dim] of Object.entries(dims)) {
     if (dim.state === 'skipped' || dim.state === 'blocked') continue;
@@ -811,12 +793,10 @@ function newCalcScore(result) {
   const score = activeWeight > 0 ? Math.round(earnedWeight / activeWeight * 100) : null;
   const coverage = Math.round(activeWeight / TOTAL_WEIGHT * 100);
 
-  // Confidence
   let confidence = 'low';
   if (activeWeight >= 70) confidence = 'high';
   else if (activeWeight >= 40) confidence = 'medium';
 
-  // Hero title based on coverage + any fail/warn
   let heroTitle = '体检完成';
   let heroStatus = 'ok';
   let heroSub = '';
@@ -853,10 +833,8 @@ function newCalcScore(result) {
     }
   }
 
-  // Model sanity score
   const modelSanityScore = dims.modelSanity.score !== null ? Math.round(dims.modelSanity.score) : null;
 
-  // Overall: if model sanity tested, blend with api score
   let overallScore;
   if (modelSanityScore !== null && score !== null) {
     overallScore = Math.round(score * 0.7 + modelSanityScore * 0.3);
@@ -882,14 +860,11 @@ function newCalcScore(result) {
 }
 
 /* ═══════════════════════════════════════════════════════
-   Main finding — NEW LOGIC
+   Main finding
    ═══════════════════════════════════════════════════════ */
 function getMainFinding(result, dims) {
-  // Priority: connectivity fail
   if (dims.connectivity?.state === 'fail') return '模型联通失败';
   if (dims.connectivity?.state === 'blocked') return '模型联通受阻（CORS 限制）';
-
-  // Only connectivity pass, rest skipped
   const onlyConnPassed = dims.connectivity?.state === 'pass'
     && dims.usage?.state === 'skipped'
     && dims.billing?.state === 'skipped'
@@ -897,26 +872,13 @@ function getMainFinding(result, dims) {
     && dims.price?.state === 'skipped'
     && dims.modelSanity?.state === 'skipped';
   if (onlyConnPassed) return '基础联通正常';
-
-  // usage fail/missing
   if (dims.usage?.state === 'fail') return 'usage 返回不完整';
   if (dims.usage?.state === 'warn') return 'usage 返回需复查';
-
-  // billing fail
   if (dims.billing?.state === 'fail') return '发现扣费异常风险';
-
-  // cache
   if (dims.cache?.state === 'pass') return '缓存字段已返回';
-  // don't mention cache skipped in mainFinding
-
-  // modelSanity
   if (dims.modelSanity?.state === 'fail') return '发现模型表现异常';
   if (dims.modelSanity?.state === 'warn') return '模型表现需复查';
-
-  // price fail
   if (dims.price?.state === 'fail') return '价格核对异常';
-
-  // Default
   return '检测完成';
 }
 
@@ -941,10 +903,42 @@ function getMainFindingEn(result, dims) {
 }
 
 /* ═══════════════════════════════════════════════════════
+   Quick mode: simple finding
+   ═══════════════════════════════════════════════════════ */
+function getQuickFinding(result, lang) {
+  const zh = lang !== 'en';
+  const conn = result.connectivity;
+  if (!conn) return { status: 'unknown', label: zh ? '无法判断' : 'Unknown', text: zh ? '无法获取响应' : 'Unable to get response' };
+  if (conn.error === 'cors_or_network') {
+    return { status: 'blocked', label: zh ? '受阻' : 'Blocked', text: zh ? '浏览器跨域限制，网页版无法判断' : 'Browser CORS restriction — cannot determine from web page' };
+  }
+  if (conn.error === 'timeout') {
+    return { status: 'timeout', label: zh ? '超时' : 'Timeout', text: zh ? '请求超时' : 'Request timed out' };
+  }
+  const s = conn.status;
+  if (s === 401 || s === 403) {
+    return { status: 'fail', label: zh ? '失败' : 'Failed', text: zh ? 'API Key 无效或权限不足' : 'API Key invalid or insufficient permissions' };
+  }
+  if (s === 404) {
+    return { status: 'fail', label: zh ? '失败' : 'Failed', text: zh ? '模型不可用或模型名不匹配' : 'Model unavailable or model name mismatch' };
+  }
+  if (s >= 500 && s < 600) {
+    return { status: 'warn', label: zh ? '需复查' : 'Needs Review', text: zh ? '服务商或上游错误，需要复查' : 'Provider or upstream error — please review' };
+  }
+  if (s >= 200 && s < 300) {
+    if (conn.visibleLength > 0) {
+      return { status: 'pass', label: zh ? '正常' : 'Normal', text: zh ? '模型联通正常' : 'Model connectivity normal' };
+    }
+    return { status: 'warn', label: zh ? '需复查' : 'Needs Review', text: zh ? '模型联通正常，usage 明细未返回' : 'Connectivity OK, usage details not returned' };
+  }
+  return { status: 'fail', label: zh ? '失败' : 'Failed', text: (zh ? 'HTTP ' : 'HTTP ') + s };
+}
+
+/* ═══════════════════════════════════════════════════════
    Core diagnostic runner
    ═══════════════════════════════════════════════════════ */
 async function runDiagnosis(opts) {
-  const { baseUrl, apiKey, model, interfaceType, signal, runCacheTest, runPriceTest, priceData, runSanityTest, modelTier } = opts;
+  const { baseUrl, apiKey, model, interfaceType, signal, runCacheTest, runPriceTest, priceData, runSanityTest, mode } = opts;
 
   const result = {
     connectivity: null,
@@ -957,10 +951,9 @@ async function runDiagnosis(opts) {
     reportId: generateReportId(),
     reportFingerprint: '',
     timestamp: new Date().toLocaleString('zh-CN', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' }),
-    modelTier: modelTier || 'uncertain'
+    mode: mode || 'quick'
   };
 
-  // ── Step 1: Model connectivity ──────────────────────
   const req1 = buildRequest(baseUrl, apiKey, model, interfaceType, PROMPT_SHORT, 5);
   try {
     const t0 = Date.now();
@@ -993,13 +986,10 @@ async function runDiagnosis(opts) {
     result.connectivity.promptTokens = usage.prompt_tokens || usage.input_tokens || null;
     result.connectivity.completionTokens = usage.completion_tokens || usage.output_tokens || null;
     result.connectivity.totalTokens = usage.total_tokens || null;
-    result.connectivity.promptTokensDetails = usage.prompt_tokens_details || {};
     result.connectivity.cachedTokens = usage.prompt_tokens_details?.cached_tokens
       || usage.input_tokens_details?.cached_tokens
       || usage.cached_tokens
       || null;
-    result.connectivity.finishReason = data.choices?.[0]?.finish_reason || data.stop_reason || null;
-    result.connectivity.requestId = data.id || null;
 
     result.errorAttribution = getErrorAttribution(resp.status, false);
 
@@ -1012,47 +1002,42 @@ async function runDiagnosis(opts) {
     }
   }
 
-  // ── Step 2: Usage integrity ────────────────────────
   result.usageIntegrity = assessUsageIntegrity(result.connectivity);
 
-  // ── Step 3: Cache hit detection ───────────────────
   if (runCacheTest) {
     result.cacheHit = await runCacheTestFn(baseUrl, apiKey, model, interfaceType, signal);
   }
 
-  // ── Step 4: Price audit ───────────────────────────
   if (runPriceTest && priceData) {
     result.priceAudit = runPriceAudit(result.connectivity, priceData);
   }
 
-  // ── Step 5: Billing integrity ───────────────────────
   result.billing = { verdict: 'raw_quota_unavailable', reason: '网页版无法自动读取 raw quota，请切换到手动报告模式填写原始额度。', state: 'skipped' };
 
-  // ── Model Sanity Test ──────────────────────────────
   if (runSanityTest) {
     result.modelSanity = await runModelSanityTests({ baseUrl, apiKey, model, interfaceType, signal });
   }
 
-  // ── New Score calculation ──────────────────────────
-  const scored = newCalcScore(result);
-  result._scored = scored;
+  if (mode === 'full') {
+    const scored = newCalcScore(result);
+    result._scored = scored;
+  }
 
-  // ── Report Fingerprint ─────────────────────────────
   const fpData = {
     reportId: result.reportId,
     timestamp: result.timestamp,
-    apiHealthScore: scored.score,
-    modelSanityScore: scored.modelSanityScore,
-    overallScore: scored.overallScore,
-    coverage: scored.coverage,
-    confidence: scored.confidence,
+    mode: result.mode,
+    apiHealthScore: result._scored?.score ?? null,
+    modelSanityScore: result._scored?.modelSanityScore ?? null,
+    overallScore: result._scored?.overallScore ?? null,
+    coverage: result._scored?.coverage ?? 0,
+    confidence: result._scored?.confidence ?? 'low',
     connectivityState: result.connectivity?.state,
     usageState: result.usageIntegrity?.state,
     cacheState: result.cacheHit?.state,
     billingState: result.billing?.state,
     priceState: result.priceAudit?.state,
     modelSanityState: result.modelSanity ? 'tested' : 'skipped',
-    modelTier: result.modelTier
   };
   result.reportFingerprint = await generateReportFingerprint(fpData);
 
@@ -1126,17 +1111,17 @@ function runPriceAudit(connectivity, priceData) {
 }
 
 function assessUsageIntegrity(conn) {
-  if (!conn || conn.status === 0) return { state: 'skipped' };
-  if (conn.status >= 400) return { state: 'skipped' };
-  if (!conn.visibleLength) return { state: 'skipped' };
+  if (!conn || conn.status === 0) return 'skipped';
+  if (conn.status >= 400) return 'skipped';
+  if (!conn.visibleLength) return 'skipped';
 
   const hasPrompt = conn.promptTokens != null;
   const hasCompletion = conn.completionTokens != null;
   const hasTotal = conn.totalTokens != null;
 
-  if (hasPrompt && hasCompletion && hasTotal) return { state: 'pass', detail: 'complete' };
-  if (hasTotal) return { state: 'warn', detail: 'incomplete' };
-  return { state: 'fail', detail: 'missing' };
+  if (hasPrompt && hasCompletion && hasTotal) return 'complete';
+  if (hasTotal) return 'incomplete';
+  return 'missing';
 }
 
 function getErrorAttribution(status, isCorsError) {
@@ -1154,9 +1139,139 @@ function sleep(ms) {
 }
 
 /* ═══════════════════════════════════════════════════════
-   Report rendering — DYNAMIC GROUPED DISPLAY
+   Report rendering — Quick mode (no scores)
    ═══════════════════════════════════════════════════════ */
-function renderDiagnosticReport(result, formData) {
+function renderQuickReport(result, formData) {
+  const lang = getDocLang();
+  const zh = lang !== 'en';
+  const conn = result.connectivity || {};
+  const qf = getQuickFinding(result, lang);
+  const reportId = result.reportId;
+  const timestamp = result.timestamp;
+
+  const statusColorMap = { pass: '#16a34a', warn: '#d97706', fail: '#dc2626', blocked: '#64748b', unknown: '#94a3b8' };
+  const statusBgMap = { pass: '#dcfce7', warn: '#fef3c7', fail: '#fee2e2', blocked: '#f1f5f9', unknown: '#f1f5f9' };
+  const sc = statusColorMap[qf.status] || '#94a3b8';
+  const bg = statusBgMap[qf.status] || '#f1f5f9';
+
+  const usageState = assessUsageIntegrity(conn);
+  const usageText = usageState === 'complete' ? 'yes' : usageState === 'incomplete' ? 'partial' : 'no';
+
+  const title = zh ? '基础联通检测' : 'Basic Connectivity Check';
+  const titleSuffix = qf.status === 'pass' ? (zh ? '完成' : 'Complete') : qf.status === 'blocked' ? (zh ? '受阻' : 'Blocked') : qf.status === 'fail' ? (zh ? '失败' : 'Failed') : qf.status === 'warn' ? (zh ? '需复查' : 'Needs Review') : (zh ? '未知' : 'Unknown');
+  const untestedNote = zh
+    ? '未开启的检测：扣费完整性、缓存命中、模型表现、价格核对。切换到「完整体检」可继续检查。'
+    : 'Unchecked: Billing integrity, Cache hit, Model performance, Price audit. Switch to "Full Check" to continue.';
+  const labelApiKey = zh ? 'API Key Anonymized' : 'API Key 已脱敏';
+  const labelLocalBrowser = zh ? 'Local Browser Test' : '本地浏览器检测';
+  const labelSaveImg = zh ? 'Save Image' : '保存图片';
+  const labelCopy = zh ? 'Copy Result' : '复制结果';
+  const reportNodeLabel = zh ? 'Report ID' : '报告 ID';
+  const safeNote = zh
+    ? 'API Key anonymized. This report only shows reproducible signals from this test and does not prove intentional overcharging or model authenticity.'
+    : 'API Key 已脱敏。本报告只展示本次测试中的可复现信号，不证明服务商故意多扣费，也不证明模型真假。';
+  const localBrowser = zh ? 'API Key stored locally' : 'API Key 本地使用';
+
+  const html = `
+    <div style="border-bottom:1px solid #e2e8f0;padding-bottom:16px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+      <div>
+        <div style="font-size:18px;font-weight:700;color:#0f172a">AI API Doctor</div>
+        <div style="font-size:13px;color:#64748b;margin-top:2px">${title}</div>
+      </div>
+      <div style="text-align:right;font-size:12px;color:#64748b;line-height:1.8">
+        <div>${labelApiKey}</div>
+        <div>${labelLocalBrowser}</div>
+        <div>${timestamp}</div>
+      </div>
+    </div>
+
+    <div style="text-align:center;padding:20px 16px;border-radius:12px;background:${bg};margin-bottom:16px">
+      <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${sc};margin-bottom:6px">${qf.label}</div>
+      <div style="font-size:20px;font-weight:800;color:#0f172a;margin-bottom:4px">${title} ${titleSuffix}</div>
+      <div style="font-size:13px;color:#64748b">${escHtml(qf.text)}</div>
+    </div>
+
+    <div style="font-size:14px;font-weight:600;color:#374151;padding:10px 14px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:16px;text-align:center">
+      ${escHtml(qf.text)}
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px">
+      <div style="background:#f1f5f9;border-radius:8px;padding:10px 12px">
+        <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.5px">Base URL</div>
+        <div style="font-size:12px;font-weight:600;color:#0f172a;word-break:break-all;font-family:monospace;margin-top:2px">${escHtml(formData.baseUrl || '—')}</div>
+      </div>
+      <div style="background:#f1f5f9;border-radius:8px;padding:10px 12px">
+        <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.5px">Model</div>
+        <div style="font-size:12px;font-weight:600;color:#0f172a;font-family:monospace;margin-top:2px">${escHtml(formData.model || '—')}</div>
+      </div>
+      <div style="background:#f1f5f9;border-radius:8px;padding:10px 12px">
+        <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.5px">Interface</div>
+        <div style="font-size:12px;font-weight:600;color:#0f172a;margin-top:2px">${escHtml(formData.interfaceType || '—')}</div>
+      </div>
+      <div style="background:#f1f5f9;border-radius:8px;padding:10px 12px">
+        <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.5px">HTTP</div>
+        <div style="font-size:12px;font-weight:700;color:${conn.status >= 400 ? '#dc2626' : '#16a34a'};font-family:monospace;margin-top:2px">${conn.status || '—'}</div>
+      </div>
+      <div style="background:#f1f5f9;border-radius:8px;padding:10px 12px">
+        <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.5px">Latency</div>
+        <div style="font-size:12px;font-weight:600;color:#0f172a;font-family:monospace;margin-top:2px">${conn.latency ? conn.latency + 'ms' : '—'}</div>
+      </div>
+      <div style="background:#f1f5f9;border-radius:8px;padding:10px 12px">
+        <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.5px">Visible Output</div>
+        <div style="font-size:12px;font-weight:600;color:#0f172a;margin-top:2px">${conn.visibleLength > 0 ? 'Yes' : 'No'}</div>
+      </div>
+      <div style="background:#f1f5f9;border-radius:8px;padding:10px 12px">
+        <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.5px">usage Returned</div>
+        <div style="font-size:12px;font-weight:600;color:#0f172a;margin-top:2px">${usageText}</div>
+      </div>
+      <div style="background:#f1f5f9;border-radius:8px;padding:10px 12px">
+        <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.5px">completion_tokens</div>
+        <div style="font-size:12px;font-weight:600;color:#0f172a;font-family:monospace;margin-top:2px">${conn.completionTokens ?? '—'}</div>
+      </div>
+      <div style="background:#f1f5f9;border-radius:8px;padding:10px 12px">
+        <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.5px">total_tokens</div>
+        <div style="font-size:12px;font-weight:600;color:#0f172a;font-family:monospace;margin-top:2px">${conn.totalTokens ?? '—'}</div>
+      </div>
+      <div style="background:#f1f5f9;border-radius:8px;padding:10px 12px">
+        <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.5px">cached_tokens</div>
+        <div style="font-size:12px;font-weight:600;color:#0f172a;font-family:monospace;margin-top:2px">${conn.cachedTokens ?? '—'}</div>
+      </div>
+    </div>
+
+    ${result.errorAttribution ? `<div style="background:#eff6ff;border-left:3px solid #2563eb;border-radius:0 6px 6px 0;padding:10px 14px;font-size:13px;color:#1e40af;line-height:1.6;margin-bottom:12px">${escHtml(result.errorAttribution)}</div>` : ''}
+
+    <div style="font-size:11px;color:#94a3b8;line-height:1.5;padding:10px 12px;background:#f9fafb;border-radius:8px;margin-bottom:8px">
+      ${safeNote}
+    </div>
+
+    <div style="font-size:11px;color:#92400e;line-height:1.5;padding:8px 12px;background:#fff9f0;border:1px solid #fef3c7;border-radius:8px;margin-bottom:12px">
+      ${untestedNote}
+    </div>
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+      <button onclick="Doctor.saveImage()" style="flex:1;padding:10px 16px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;gap:6px">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        ${labelSaveImg}
+      </button>
+      <button onclick="Doctor.copyOneLine()" style="flex:1;padding:10px 16px;background:#f1f5f9;color:#0f172a;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;gap:6px">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        ${labelCopy}
+      </button>
+    </div>
+
+    <div style="text-align:center;font-size:11px;color:#94a3b8;margin-top:4px">${reportNodeLabel}：${reportId}</div>
+  `;
+
+  const node = document.getElementById('result-card');
+  if (node) node.innerHTML = html;
+}
+
+/* ═══════════════════════════════════════════════════════
+   Report rendering — Full mode (with scores)
+   ═══════════════════════════════════════════════════════ */
+function renderFullReport(result, formData) {
+  const lang = getDocLang();
+  const zh = lang !== 'en';
   const scored = result._scored;
   const dims = scored.dims;
   const conn = result.connectivity || {};
@@ -1165,126 +1280,80 @@ function renderDiagnosticReport(result, formData) {
   const modelScore = scored.modelSanityScore;
   const coverage = scored.coverage;
   const confidence = scored.confidence;
-  const heroTitle = scored.heroTitle;
-  const heroStatus = scored.heroStatus;
-  const heroStatusLabel = scored.heroStatusLabel;
-  const heroSub = scored.heroSub;
-  const mainFinding = getMainFinding(result, dims);
+
+  const L = {
+    reportTitle:        zh ? 'AI API 体检报告' : 'AI API Diagnostic Report',
+    apiKeyAnonymized:  zh ? 'API Key Anonymized' : 'API Key 已脱敏',
+    localBrowser:       zh ? 'Local Browser Test' : '本地浏览器检测',
+    overallScore:       zh ? 'Overall Score' : '综合分',
+    apiScoreLabel:      zh ? 'API Health Score' : 'API 体检分',
+    coverage:           zh ? 'Coverage' : '覆盖度',
+    confidence:         zh ? 'Confidence' : '置信度',
+    modelScoreLabel:   zh ? 'Model Score' : '模型表现分',
+    basedOnTested:     zh ? 'Based on tested items' : '基于已测项目',
+    confidenceHigh:    zh ? 'High' : '高',
+    confidenceMid:     zh ? 'Medium' : '中',
+    confidenceLow:     zh ? 'Low' : '低',
+    testedItems:       zh ? 'Tested Items' : '已测项目',
+    untestedItems:     zh ? 'Untested Items' : '未测项目',
+    notEnabled:        zh ? 'Not enabled' : '未开启',
+    mainFinding:       zh ? 'Main Finding' : '主要发现',
+    reportId:          zh ? 'Report ID' : '报告 ID',
+    saveImage:         zh ? 'Save Image' : '保存图片',
+    copyMarkdown:      zh ? 'Copy Markdown' : '复制 Markdown',
+    copyForProvider:   zh ? 'Copy for Provider' : '复制给站长',
+    copyOneLine:       zh ? 'Copy Score Line' : '复制一行晒分',
+    copyForum:         zh ? 'Copy Forum Reply' : '复制论坛回复',
+    safetyNote:        zh ? 'API Key anonymized. This report only shows reproducible signals and does not prove intentional overcharging or model authenticity. Model score is for anomaly detection only, not an official ranking.' : 'API Key 已脱敏。本报告只展示本次测试中的可复现信号，不证明服务商故意多扣费，也不证明模型真假。模型表现分仅用于发现明显异常或降智风险，不代表官方模型排名。',
+    heroSubOk:         zh ? 'All test items passed.' : '所有检测项均通过。',
+    heroSubFail:       zh ? 'Anomalies detected — see details below.' : '检测中发现异常，请查看下方详情。',
+    heroSubWarn:       zh ? 'Some items need attention — see details below.' : '部分检测项需要关注，请查看下方详情。',
+    heroSubPartial:    zh ? 'Some items completed — see results below.' : '部分检测项已完成，结果请见下方。',
+    heroSubBasic:      zh ? 'Model connectivity and basic response tested. Billing, cache, and model performance not checked.' : '已完成模型联通和基础响应检测，未运行扣费/缓存/模型表现检测。',
+    heroTitleComplete:   zh ? 'Diagnosis Complete' : '体检完成',
+    heroTitleRisk:       zh ? 'Risk Detected' : '发现风险',
+    heroTitleReview:     zh ? 'Needs Review' : '需要复查',
+    heroTitlePartial:    zh ? 'Partial Diagnosis Complete' : '部分体检完成',
+    heroTitleBasic:      zh ? 'Basic Test Complete' : '基础检测完成',
+    heroStatusOk:         zh ? 'Normal' : '正常',
+    heroStatusDanger:    zh ? 'Anomaly Risk' : '异常风险',
+    heroStatusWarn:      zh ? 'Needs Review' : '需复查',
+    heroStatusComplete:   zh ? 'Complete' : '完成',
+    heroStatusBlocked:    zh ? 'Blocked' : '受阻',
+    heroTitleMap: {
+      '体检完成': 'Diagnosis Complete',
+      '发现风险': 'Risk Detected',
+      '需要复查': 'Needs Review',
+      '部分体检完成': 'Partial Diagnosis Complete',
+      '基础检测完成': 'Basic Test Complete'
+    },
+    heroStatusLabelMap: {
+      '正常': 'Normal', '异常风险': 'Anomaly Risk', '需复查': 'Needs Review',
+      '完成': 'Complete', '受阻': 'Blocked'
+    },
+    connectivityLabel:   zh ? 'Model Connectivity' : '模型联通',
+    usageLabel:           zh ? 'Usage Integrity' : 'usage 完整性',
+    billingLabel:         zh ? 'Billing Integrity' : '扣费完整性',
+    cacheLabel:           zh ? 'Cache Hit' : '缓存命中',
+    priceLabel:           zh ? 'Price Audit' : '价格核对',
+    modelSanityLabel:     zh ? 'Model Performance' : '模型表现',
+  };
+
+  const heroTitle = L.heroTitleMap[scored.heroTitle] ? L.heroTitleMap[scored.heroTitle] : scored.heroTitle;
+  const heroStatusLabel = L.heroStatusLabelMap[scored.heroStatusLabel] ? L.heroStatusLabelMap[scored.heroStatusLabel] : scored.heroStatusLabel;
+  let heroSub = scored.heroSub;
+  if (heroSub === '检测中发现异常，请查看下方详情。') heroSub = L.heroSubFail;
+  else if (heroSub === '部分检测项需要关注，请查看下方详情。') heroSub = L.heroSubWarn;
+  else if (heroSub === '所有检测项均通过。') heroSub = L.heroSubOk;
+  else if (heroSub === '部分检测项已完成，结果请见下方。') heroSub = L.heroSubPartial;
+  else if (heroSub === '已完成模型联通和基础响应检测，未运行扣费/缓存/模型表现检测。') heroSub = L.heroSubBasic;
+
+  const mainFinding = zh ? getMainFinding(result, dims) : getMainFindingEn(result, dims);
   const reportId = result.reportId;
-  const reportFingerprint = result.reportFingerprint || '';
-  const modelTier = result.modelTier || 'uncertain';
-
-  const tierLabelMap = { uncertain: '不确定', light: '轻量', standard: '标准', advanced: '高级' };
-  const tierDisplay = tierLabelMap[modelTier] || '不确定';
-
-  let modelTierComment = '';
-  if (modelScore !== null) {
-    if (modelTier === 'light') {
-      if (modelScore >= 60 && modelScore <= 75) modelTierComment = '基本符合轻量模型预期';
-      else if (modelScore < 60) modelTierComment = '低于轻量模型预期';
-      else modelTierComment = '高于轻量模型预期';
-    } else if (modelTier === 'standard') {
-      if (modelScore >= 60 && modelScore <= 75) modelTierComment = '模型表现需复查';
-      else if (modelScore < 60) modelTierComment = '低于标准模型预期';
-      else modelTierComment = '高于标准模型预期';
-    } else if (modelTier === 'advanced') {
-      if (modelScore < 80) modelTierComment = '低于高级模型预期，建议复查';
-      else modelTierComment = '符合高级模型预期';
-    }
-  }
-
-  // ── Build tested / untested dimension lists ──
-  const testedDims = [];
-  const untestedDims = [];
-
-  const dimDefs = [
-    {
-      key: 'connectivity',
-      label: '模型联通',
-      weight: DIM_WEIGHTS.connectivity,
-      getState: () => dims.connectivity?.state,
-      getDetail: () => {
-        if (!conn) return '—';
-        if (conn.error === 'cors_or_network') return 'CORS 限制';
-        if (conn.error === 'timeout') return '超时';
-        if (!conn.status) return '无响应';
-        if (conn.status >= 200 && conn.status < 300) return conn.visibleLength > 0 ? '正常' : '空回复';
-        return 'HTTP ' + conn.status;
-      }
-    },
-    {
-      key: 'usage',
-      label: 'usage 完整性',
-      weight: DIM_WEIGHTS.usage,
-      getState: () => dims.usage?.state,
-      getDetail: () => {
-        const d = result.usageIntegrity?.detail;
-        return { complete: '完整', incomplete: '不完整', missing: '缺失' }[d] || '—';
-      }
-    },
-    {
-      key: 'billing',
-      label: '扣费完整性',
-      weight: DIM_WEIGHTS.billing,
-      getState: () => dims.billing?.state,
-      getDetail: () => {
-        const v = result.billing?.verdict;
-        return {
-          failed_request_not_charged: '未扣费',
-          precharge_refunded: '已返还',
-          failed_request_charged: '扣费异常',
-          empty_response_charged: '扣费异常',
-          raw_quota_unavailable: '无法判断'
-        }[v] || '—';
-      }
-    },
-    {
-      key: 'cache',
-      label: '缓存命中',
-      weight: DIM_WEIGHTS.cache,
-      getState: () => dims.cache?.state,
-      getDetail: () => {
-        const s = result.cacheHit?.status;
-        return { hit: '命中', no_hit: '未命中', error: '检测失败' }[s] || '—';
-      }
-    },
-    {
-      key: 'price',
-      label: '价格核对',
-      weight: DIM_WEIGHTS.price,
-      getState: () => dims.price?.state,
-      getDetail: () => {
-        const s = result.priceAudit?.status;
-        return { normal: '正常', needs_review: '需复查', anomaly_risk: '异常', no_usage: '无 usage' }[s] || '—';
-      }
-    },
-    {
-      key: 'modelSanity',
-      label: '模型表现',
-      weight: DIM_WEIGHTS.modelSanity,
-      getState: () => dims.modelSanity?.state,
-      getDetail: () => {
-        if (!result.modelSanity) return '—';
-        return result.modelSanity.label + '（' + result.modelSanity.overallScore + '分）';
-      }
-    }
-  ];
-
-  for (const def of dimDefs) {
-    const state = def.getState();
-    const detail = def.getDetail();
-    const item = { key: def.key, label: def.label, state, detail, weight: def.weight };
-
-    if (state === 'skipped') {
-      untestedDims.push({ ...item, untestedReason: '未开启' });
-    } else {
-      testedDims.push(item);
-    }
-  }
 
   const stateColor = { pass: '#16a34a', warn: '#d97706', fail: '#dc2626', blocked: '#64748b', skipped: '#94a3b8' };
   const stateBg = { pass: '#dcfce7', warn: '#fef3c7', fail: '#fee2e2', blocked: '#f1f5f9', skipped: '#f1f5f9' };
-  const stateText = { pass: '通过', warn: '需复查', fail: '异常', blocked: '受阻', skipped: '未检测' };
+  const stateText = zh ? { pass: 'Pass', warn: 'Needs Review', fail: 'Fail', blocked: 'Blocked', skipped: 'Not Tested' } : { pass: '通过', warn: '需复查', fail: '异常', blocked: '受阻', skipped: '未检测' };
   const stateDot = { pass: '#16a34a', warn: '#d97706', fail: '#dc2626', blocked: '#94a3b8', skipped: '#94a3b8' };
 
   function dimCard(item, muted) {
@@ -1305,15 +1374,77 @@ function renderDiagnosticReport(result, formData) {
     </div>`;
   }
 
-  // Model sanity cards
+  const testedDims = [];
+  const untestedDims = [];
+
+  const dimDefs = [
+    { key: 'connectivity', label: L.connectivityLabel, weight: DIM_WEIGHTS.connectivity,
+      getState: () => dims.connectivity?.state,
+      getDetail: () => {
+        if (!conn) return '—';
+        if (conn.error === 'cors_or_network') return zh ? 'CORS Restriction' : 'CORS 限制';
+        if (conn.error === 'timeout') return zh ? 'Timeout' : '超时';
+        if (!conn.status) return zh ? 'No response' : '无响应';
+        if (conn.status >= 200 && conn.status < 300) return conn.visibleLength > 0 ? (zh ? 'OK' : '正常') : (zh ? 'Empty reply' : '空回复');
+        return 'HTTP ' + conn.status;
+      }
+    },
+    { key: 'usage', label: L.usageLabel, weight: DIM_WEIGHTS.usage,
+      getState: () => dims.usage?.state,
+      getDetail: () => {
+        const d = result.usageIntegrity;
+        return zh ? { complete: 'Complete', incomplete: 'Incomplete', missing: 'Missing', skipped: '—' }[d] || '—' : { complete: '完整', incomplete: '不完整', missing: '缺失', skipped: '—' }[d] || '—';
+      }
+    },
+    { key: 'billing', label: L.billingLabel, weight: DIM_WEIGHTS.billing,
+      getState: () => dims.billing?.state,
+      getDetail: () => {
+        const v = result.billing?.verdict;
+        return zh ? { failed_request_not_charged: 'Not charged', precharge_refunded: 'Refunded', failed_request_charged: 'Overcharged', empty_response_charged: 'Overcharged', raw_quota_unavailable: 'Cannot determine' }[v] || '—' : { failed_request_not_charged: '未扣费', precharge_refunded: '已返还', failed_request_charged: '扣费异常', empty_response_charged: '扣费异常', raw_quota_unavailable: '无法判断' }[v] || '—';
+      }
+    },
+    { key: 'cache', label: L.cacheLabel, weight: DIM_WEIGHTS.cache,
+      getState: () => dims.cache?.state,
+      getDetail: () => {
+        const s = result.cacheHit?.status;
+        return zh ? { hit: 'Hit', no_hit: 'No hit', error: 'Test failed' }[s] || '—' : { hit: '命中', no_hit: '未命中', error: '检测失败' }[s] || '—';
+      }
+    },
+    { key: 'price', label: L.priceLabel, weight: DIM_WEIGHTS.price,
+      getState: () => dims.price?.state,
+      getDetail: () => {
+        const s = result.priceAudit?.status;
+        return zh ? { normal: 'Normal', needs_review: 'Needs review', anomaly_risk: 'Anomaly', no_usage: 'No usage' }[s] || '—' : { normal: '正常', needs_review: '需复查', anomaly_risk: '异常', no_usage: '无 usage' }[s] || '—';
+      }
+    },
+    { key: 'modelSanity', label: L.modelSanityLabel, weight: DIM_WEIGHTS.modelSanity,
+      getState: () => dims.modelSanity?.state,
+      getDetail: () => {
+        if (!result.modelSanity) return '—';
+        return (zh ? result.modelSanity.label : result.modelSanity.labelEn) + ' (' + result.modelSanity.overallScore + (zh ? ' pts)' : '分)');
+      }
+    }
+  ];
+
+  for (const def of dimDefs) {
+    const state = def.getState();
+    const detail = def.getDetail();
+    const item = { key: def.key, label: def.label, state, detail, weight: def.weight };
+    if (state === 'skipped') {
+      untestedDims.push({ ...item, untestedReason: L.notEnabled });
+    } else {
+      testedDims.push(item);
+    }
+  }
+
   const sanityHtml = result.modelSanity ? `
     <div style="margin-bottom:20px">
-      <div style="font-size:12px;font-weight:700;color:#0f172a;margin-bottom:10px;text-transform:uppercase;letter-spacing:0.5px">模型表现分 · Model Sanity Score</div>
+      <div style="font-size:12px;font-weight:700;color:#0f172a;margin-bottom:10px;text-transform:uppercase;letter-spacing:0.5px">${L.modelScoreLabel}</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px">
         ${result.modelSanity.results.map(r => {
           const sc = r.score >= 70 ? '#16a34a' : r.score >= 50 ? '#d97706' : '#dc2626';
           return `<div style="background:#f1f5f9;border-radius:8px;padding:10px 8px;text-align:center">
-            <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.3px;margin-bottom:6px">${r.name}</div>
+            <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.3px;margin-bottom:6px">${zh ? r.name : r.nameEn}</div>
             <div style="font-size:22px;font-weight:800;color:${sc}">${r.score}</div>
             <div style="font-size:10px;color:#94a3b8;margin-top:2px">${r.explanation}</div>
           </div>`;
@@ -1324,123 +1455,84 @@ function renderDiagnosticReport(result, formData) {
   const scoreColor = overallScore !== null
     ? (overallScore >= 85 ? '#16a34a' : overallScore >= 60 ? '#d97706' : '#dc2626')
     : '#64748b';
-  const scoreBg = overallScore !== null
-    ? (overallScore >= 85 ? '#dcfce7' : overallScore >= 60 ? '#fef3c7' : '#fee2e2')
-    : '#f1f5f9';
 
   const heroBgMap = { ok: '#dcfce7', warn: '#fef3c7', danger: '#fee2e2', neutral: '#f1f5f9' };
   const heroColorMap = { ok: '#16a34a', warn: '#d97706', danger: '#dc2626', neutral: '#64748b' };
-  const hBg = heroBgMap[heroStatus] || '#f1f5f9';
-  const hColor = heroColorMap[heroStatus] || '#64748b';
+  const hBg = heroBgMap[scored.heroStatus] || '#f1f5f9';
+  const hColor = heroColorMap[scored.heroStatus] || '#64748b';
 
-  const shareOneLineZH = coverage < 40
-    ? `我的 AI API 快速体检：${overallScore !== null ? overallScore : '—'}/100｜覆盖度 ${coverage}%｜${mainFinding}｜报告 ID：${reportId}\nhttps://aiapidoctor.com/`
-    : `我的 AI API 体检分：${overallScore !== null ? overallScore : '—'}/100｜覆盖度 ${coverage}%｜${mainFinding}｜报告 ID：${reportId}\nhttps://aiapidoctor.com/`;
-
-  const shareOneLineEN = coverage < 40
-    ? `My AI API Quick Check: ${overallScore !== null ? overallScore : '—'}/100 | Coverage: ${coverage}% | ${getMainFindingEn(result, dims)} | Report ID: ${reportId}\nhttps://aiapidoctor.com/en/`
-    : `My AI API Doctor Score: ${overallScore !== null ? overallScore : '—'}/100 | Coverage: ${coverage}% | ${getMainFindingEn(result, dims)} | Report ID: ${reportId}\nhttps://aiapidoctor.com/en/`;
-
-  const shareForumZH = [
-    `我测了一下 AI API：`,
-    `体检分：${overallScore !== null ? overallScore : '—'}/100（覆盖度 ${coverage}%）`,
-    `主要发现：${mainFinding}`,
-    `报告 ID：${reportId}`,
-    `https://aiapidoctor.com/`
-  ].join('\n');
-
-  const shareForumEN = [
-    `I tested my AI API with AI API Doctor:`,
-    `Score: ${overallScore !== null ? overallScore : '—'}/100 (Coverage: ${coverage}%)`,
-    `Finding: ${getMainFindingEn(result, dims)}`,
-    `Report ID: ${reportId}`,
-    `https://aiapidoctor.com/en/`
-  ].join('\n');
+  const confidenceText = confidence === 'high' ? L.confidenceHigh : confidence === 'medium' ? L.confidenceMid : L.confidenceLow;
 
   const html = `
     <div style="border-bottom:1px solid #e2e8f0;padding-bottom:20px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
       <div>
         <div style="font-size:18px;font-weight:700;color:#0f172a">AI API Doctor</div>
-        <div style="font-size:13px;color:#64748b;margin-top:2px">AI API 体检报告</div>
+        <div style="font-size:13px;color:#64748b;margin-top:2px">${L.reportTitle}</div>
       </div>
       <div style="text-align:right;font-size:12px;color:#64748b;line-height:1.8">
-        <div>API Key 已脱敏</div>
-        <div>本地浏览器检测</div>
+        <div>${L.apiKeyAnonymized}</div>
+        <div>${L.localBrowser}</div>
         <div>${result.timestamp}</div>
       </div>
     </div>
 
-    <!-- Score Hero -->
     <div style="text-align:center;padding:20px 16px;border-radius:12px;background:${hBg};margin-bottom:16px">
       <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${hColor};margin-bottom:6px">${escHtml(heroStatusLabel)}</div>
       <div style="font-size:20px;font-weight:800;color:#0f172a;margin-bottom:4px">${escHtml(heroTitle)}</div>
       ${heroSub ? `<div style="font-size:13px;color:#64748b;margin-bottom:16px;line-height:1.5">${escHtml(heroSub)}</div>` : '<div style="margin-bottom:12px"></div>'}
 
-      <!-- Score row -->
       <div style="display:flex;gap:10px;justify-content:center;margin-bottom:12px;flex-wrap:wrap">
         ${overallScore !== null ? `<div style="flex:1;max-width:180px;background:#fff;border-radius:10px;padding:14px">
-          <div style="font-size:11px;color:#64748b;margin-bottom:4px">综合分</div>
+          <div style="font-size:11px;color:#64748b;margin-bottom:4px">${L.overallScore}</div>
           <div style="font-size:40px;font-weight:800;color:${scoreColor};line-height:1">${overallScore}</div>
-          <div style="font-size:10px;color:#94a3b8;margin-top:3px">Overall Score</div>
+          <div style="font-size:10px;color:#94a3b8;margin-top:3px">Overall</div>
         </div>` : ''}
         ${apiScore !== null ? `<div style="flex:1;max-width:180px;background:#fff;border-radius:10px;padding:14px">
-          <div style="font-size:11px;color:#64748b;margin-bottom:4px">API 体检分</div>
+          <div style="font-size:11px;color:#64748b;margin-bottom:4px">${L.apiScoreLabel}</div>
           <div style="font-size:32px;font-weight:800;color:${apiScore >= 85 ? '#16a34a' : apiScore >= 60 ? '#d97706' : '#dc2626'};line-height:1">${apiScore}</div>
-          <div style="font-size:10px;color:#94a3b8;margin-top:3px">${coverage < 100 ? '基于已测项目' : 'API Health Score'}</div>
+          <div style="font-size:10px;color:#94a3b8;margin-top:3px">${coverage < 100 ? L.basedOnTested : 'API Health'}</div>
         </div>` : ''}
         <div style="flex:1;max-width:180px;background:#fff;border-radius:10px;padding:14px">
-          <div style="font-size:11px;color:#64748b;margin-bottom:4px">覆盖度</div>
+          <div style="font-size:11px;color:#64748b;margin-bottom:4px">${L.coverage}</div>
           <div style="font-size:32px;font-weight:800;color:#0f172a;line-height:1">${coverage}%</div>
           <div style="font-size:10px;color:#94a3b8;margin-top:3px">Coverage</div>
         </div>
         <div style="flex:1;max-width:180px;background:#fff;border-radius:10px;padding:14px">
-          <div style="font-size:11px;color:#64748b;margin-bottom:4px">置信度</div>
-          <div style="font-size:32px;font-weight:800;color:#0f172a;line-height:1">${confidence === 'high' ? '高' : confidence === 'medium' ? '中' : '低'}</div>
+          <div style="font-size:11px;color:#64748b;margin-bottom:4px">${L.confidence}</div>
+          <div style="font-size:32px;font-weight:800;color:#0f172a;line-height:1">${confidenceText}</div>
           <div style="font-size:10px;color:#94a3b8;margin-top:3px">Confidence</div>
         </div>
         ${modelScore !== null ? `<div style="flex:1;max-width:180px;background:#fff;border-radius:10px;padding:14px">
-          <div style="font-size:11px;color:#64748b;margin-bottom:4px">模型表现分</div>
+          <div style="font-size:11px;color:#64748b;margin-bottom:4px">${L.modelScoreLabel}</div>
           <div style="font-size:32px;font-weight:800;color:${modelScore >= 70 ? '#16a34a' : modelScore >= 50 ? '#d97706' : '#dc2626'};line-height:1">${modelScore}</div>
           <div style="font-size:10px;color:#94a3b8;margin-top:3px">${result.modelSanity?.label || 'Model Sanity'}</div>
         </div>` : ''}
       </div>
 
-      <!-- Main finding -->
       <div style="font-size:13px;font-weight:600;color:#374151;padding:8px 14px;background:#fff;border-radius:8px;display:inline-block">
         ${escHtml(mainFinding)}
       </div>
-      <div style="font-size:11px;color:#64748b;margin-top:8px">报告 ID：${reportId}</div>
+      <div style="font-size:11px;color:#64748b;margin-top:8px">${L.reportId}: ${reportId}</div>
     </div>
 
-    <!-- Model tier -->
-    ${modelScore !== null && modelTierComment ? `
-    <div style="margin-bottom:12px;padding:10px 14px;background:#eff6ff;border-radius:8px;font-size:12px;color:#1e40af;line-height:1.6">
-      模型预期：${tierDisplay} &nbsp;|&nbsp; ${modelTierComment}
-    </div>` : ''}
-    ${modelScore !== null ? `<div style="margin-bottom:16px;font-size:11px;color:#94a3b8;line-height:1.5;padding:0 2px">模型表现分是轻量推理与指令遵守测试，不是官方 IQ，不证明模型真假，只用于发现明显异常或降智风险。</div>` : ''}
-
-    <!-- Tested dimensions -->
     ${testedDims.length > 0 ? `
     <div style="margin-bottom:12px">
-      <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">已测项目</div>
+      <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">${L.testedItems}</div>
       <div style="display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(160px,1fr))">
         ${testedDims.map(d => dimCard(d, false)).join('')}
       </div>
     </div>` : ''}
 
-    <!-- Untested dimensions -->
     ${untestedDims.length > 0 ? `
     <div style="margin-bottom:16px">
-      <div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">未测项目</div>
+      <div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">${L.untestedItems}</div>
       <div style="display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(160px,1fr))">
         ${untestedDims.map(d => dimCard(d, true)).join('')}
       </div>
     </div>` : ''}
 
-    <!-- Model Sanity Section -->
     ${sanityHtml}
 
-    <!-- Tech grid -->
     <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:16px">
       <div style="background:#f1f5f9;border-radius:8px;padding:10px 12px">
         <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.5px">Base URL</div>
@@ -1479,178 +1571,216 @@ function renderDiagnosticReport(result, formData) {
     ${result.errorAttribution ? `<div style="background:#eff6ff;border-left:3px solid #2563eb;border-radius:0 6px 6px 0;padding:10px 14px;font-size:13px;color:#1e40af;line-height:1.6;margin-bottom:12px">${escHtml(result.errorAttribution)}</div>` : ''}
 
     <div style="font-size:11px;color:#94a3b8;line-height:1.5;padding:10px 12px;background:#f9fafb;border-radius:8px;margin-bottom:16px">
-      API Key 已脱敏。本报告只展示本次测试中的可复现信号，不证明服务商故意多扣费，也不证明模型真假。模型表现分仅用于发现明显异常或降智风险，不代表官方模型排名。
+      ${L.safetyNote}
     </div>
 
-    <!-- Action buttons -->
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
       <button onclick="Doctor.saveImage()" style="flex:1;padding:10px 16px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;gap:6px">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        保存图片
+        ${L.saveImage}
       </button>
       <button onclick="Doctor.copyMarkdown()" style="flex:1;padding:10px 16px;background:#f1f5f9;color:#0f172a;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;gap:6px">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-        复制 Markdown
+        ${L.copyMarkdown}
       </button>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
       <button onclick="Doctor.copyForProvider()" style="flex:1;padding:10px 16px;background:#f1f5f9;color:#0f172a;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;gap:6px">
-        复制给站长
+        ${L.copyForProvider}
       </button>
       <button onclick="Doctor.copyOneLine()" style="flex:1;padding:10px 16px;background:#f1f5f9;color:#0f172a;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;gap:6px">
-        复制一行晒分
+        ${L.copyOneLine}
       </button>
       <button onclick="Doctor.copyForum()" style="flex:1;padding:10px 16px;background:#f1f5f9;color:#0f172a;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;gap:6px">
-        复制论坛回复
+        ${L.copyForum}
       </button>
     </div>
-
-    <!-- Hidden sharing data -->
-    <div id="share-data" style="display:none"
-      data-report-id="${reportId}"
-      data-fingerprint="${reportFingerprint}"
-      data-overall="${overallScore !== null ? overallScore : ''}"
-      data-api="${apiScore !== null ? apiScore : ''}"
-      data-model="${modelScore !== null ? modelScore : ''}"
-      data-model-label="${modelScore !== null ? (result.modelSanity?.label || '') : ''}"
-      data-finding="${mainFinding}"
-      data-finding-en="${getMainFindingEn(result, dims)}"
-      data-model-tier="${tierDisplay}"
-      data-coverage="${coverage}"
-    ></div>
   `;
 
   const node = document.getElementById('result-card');
   if (node) node.innerHTML = html;
-
-  return { score: overallScore, coverage, confidence, reportId };
 }
 
 /* ═══════════════════════════════════════════════════════
    Markdown copy
    ═══════════════════════════════════════════════════════ */
 function buildMarkdownReport(result, formData) {
+  const lang = getDocLang();
+  const zh = lang !== 'en';
   const scored = result._scored;
-  const dims = scored.dims;
+  const dims = scored ? scored.dims : {};
   const conn = result.connectivity || {};
-  const mainFinding = getMainFinding(result, dims);
-  const overallScore = scored.overallScore;
-  const apiScore = scored.score;
-  const modelScore = scored.modelSanityScore;
-  const coverage = scored.coverage;
-  const tierLabelMap = { uncertain: '不确定', light: '轻量', standard: '标准', advanced: '高级' };
+  const mainFinding = scored ? (zh ? getMainFinding(result, dims) : getMainFindingEn(result, dims)) : getQuickFinding(result, lang).text;
+  const overallScore = scored ? scored.overallScore : null;
+  const apiScore = scored ? scored.score : null;
+  const modelScore = scored ? scored.modelSanityScore : null;
+  const coverage = scored ? scored.coverage : 0;
+  const confidence = scored ? scored.confidence : 'low';
 
   let sanityLines = '';
   if (modelScore !== null && result.modelSanity) {
     sanityLines = result.modelSanity.results.map(r =>
-      `- ${r.name}（${r.nameEn}）：${r.score}/100`
+      `- ${zh ? r.name : r.nameEn}: ${r.score}/100`
     ).join('\n');
   }
 
-  const testedDimLines = [
-    { label: '模型联通', state: dims.connectivity?.state, detail: conn.status ? 'HTTP ' + conn.status : '—' },
-    { label: 'usage 完整性', state: dims.usage?.state, detail: result.usageIntegrity?.detail || '—' },
-    { label: '扣费完整性', state: dims.billing?.state, detail: result.billing?.verdict || '—' },
-    { label: '缓存命中', state: dims.cache?.state, detail: result.cacheHit?.status || '—' },
-    { label: '价格核对', state: dims.price?.state, detail: result.priceAudit?.status || '—' },
-  ].filter(d => d.state !== 'skipped').map(d => `| ${d.label} | ${d.state === 'pass' ? '通过' : d.state === 'warn' ? '需复查' : d.state === 'fail' ? '异常' : '—'} |`).join('\n');
+  const dimLabels = {
+    connectivity: zh ? 'Model Connectivity' : '模型联通',
+    usage: zh ? 'Usage Integrity' : 'usage 完整性',
+    billing: zh ? 'Billing Integrity' : '扣费完整性',
+    cache: zh ? 'Cache Hit' : '缓存命中',
+    price: zh ? 'Price Audit' : '价格核对',
+  };
 
-  return [
-    '## AI API Doctor 体检报告',
+  const stateLabels = {
+    pass: zh ? 'Pass' : '通过',
+    warn: zh ? 'Needs Review' : '需复查',
+    fail: zh ? 'Fail' : '异常',
+    blocked: zh ? 'Blocked' : '受阻',
+    skipped: zh ? 'Skipped' : '未检测',
+  };
+
+  const testedDimLines = Object.entries(dimLabels).map(([key, label]) => {
+    const d = dims[key];
+    if (!d || d.state === 'skipped') return null;
+    return `| ${label} | ${stateLabels[d.state] || '—'} |`;
+  }).filter(Boolean).join('\n');
+
+  const lines = [
+    `## ${zh ? 'AI API Diagnostic Report' : 'AI API 体检报告'}`,
     '',
-    `**综合分：** ${overallScore !== null ? overallScore + '/100' : '—'} | **API 体检分：** ${apiScore !== null ? apiScore + '/100' : '—'} | **模型表现分：** ${modelScore !== null ? modelScore + '/100' : '未检测'}`,
-    `**覆盖度：** ${coverage}% | **置信度：** ${scored.confidence === 'high' ? '高' : scored.confidence === 'medium' ? '中' : '低'} | **发现：** ${mainFinding}`,
-    `**报告 ID：** ${result.reportId} | **Report Fingerprint：** ${result.reportFingerprint || '—'}`,
-    modelScore !== null ? `**模型预期：** ${tierLabelMap[result.modelTier] || '不确定'}` : '',
+    `**${zh ? 'Overall Score' : '综合分'}:** ${overallScore !== null ? overallScore + '/100' : '—'} | **${zh ? 'API Health Score' : 'API 体检分'}:** ${apiScore !== null ? apiScore + '/100' : '—'} | **${zh ? 'Model Score' : '模型表现分'}:** ${modelScore !== null ? modelScore + '/100' : zh ? 'Not tested' : '未检测'}`,
+    `**${zh ? 'Coverage' : '覆盖度'}:** ${coverage}% | **${zh ? 'Confidence' : '置信度'}:** ${zh ? { high: 'High', medium: 'Medium', low: 'Low' }[confidence] : { high: '高', medium: '中', low: '低' }[confidence]} | **${zh ? 'Main Finding' : '主要发现'}:** ${mainFinding}`,
+    `**${zh ? 'Report ID' : '报告 ID'}:** ${result.reportId} | **Report Fingerprint:** ${result.reportFingerprint || '—'}`,
     '',
-    '### 检测维度',
-    `| 维度 | 结果 |`,
+    `### ${zh ? 'Test Dimensions' : '检测维度'}`,
+    `| ${zh ? 'Dimension' : '维度'} | ${zh ? 'Result' : '结果'} |`,
     `|------|------|`,
     testedDimLines,
     '',
-    modelScore !== null && result.modelSanity ? '### 模型表现分\n' + sanityLines : '',
+    modelScore !== null && result.modelSanity ? `### ${zh ? 'Model Performance' : '模型表现分'}\n${sanityLines}` : '',
     '',
-    '### 技术摘要',
-    `| 项目 | 值 |`,
+    `### ${zh ? 'Technical Summary' : '技术摘要'}`,
+    `| ${zh ? 'Item' : '项目'} | ${zh ? 'Value' : '值'} |`,
     `|------|----|`,
     `| Base URL | ${formData.baseUrl || '—'} |`,
-    `| 模型 | ${formData.model || '—'} |`,
-    `| 接口 | ${formData.interfaceType || '—'} |`,
+    `| Model | ${formData.model || '—'} |`,
+    `| Interface | ${formData.interfaceType || '—'} |`,
     `| HTTP | ${conn.status || '—'} |`,
     `| Latency | ${conn.latency ? conn.latency + 'ms' : '—'} |`,
     `| completion_tokens | ${conn.completionTokens ?? '—'} |`,
     `| total_tokens | ${conn.totalTokens ?? '—'} |`,
     `| cached_tokens | ${conn.cachedTokens ?? '—'} |`,
     '',
-    '### 安全说明',
-    '本报告不包含 API Key，只展示本次测试中的可复现信号，不证明服务商故意多扣费。模型表现分仅用于发现明显异常或降智风险，不代表官方模型排名。',
+    `### ${zh ? 'Safety Notice' : '安全说明'}`,
+    zh ? 'This report does not contain API Key and only shows reproducible signals from this test. It does not prove intentional overcharging or model authenticity. Model score is for anomaly detection only, not an official ranking.' : '本报告不包含 API Key，只展示本次测试中的可复现信号，不证明服务商故意多扣费。模型表现分仅用于发现明显异常或降智风险，不代表官方模型排名。',
     '',
-    `Generated by AI API Doctor · ${result.timestamp}`
+    `${zh ? 'Generated by AI API Doctor' : '由 AI API Doctor 生成'} · ${result.timestamp}`
   ].filter(Boolean).join('\n');
+
+  return lines;
 }
 
 /* ═══════════════════════════════════════════════════════
    Copy-for-provider template
    ═══════════════════════════════════════════════════════ */
 function buildProviderReport(result, formData) {
+  const lang = getDocLang();
+  const zh = lang !== 'en';
   const scored = result._scored;
-  const dims = scored.dims;
+  const dims = scored ? scored.dims : {};
   const conn = result.connectivity || {};
-  const mainFinding = getMainFinding(result, dims);
-  const overallScore = scored.overallScore;
-  const apiScore = scored.score;
-  const modelScore = scored.modelSanityScore;
-  const coverage = scored.coverage;
-  const tierLabelMap = { uncertain: '不确定', light: '轻量', standard: '标准', advanced: '高级' };
-  const tierDisplay = tierLabelMap[result.modelTier] || '不确定';
+  const mainFinding = scored ? (zh ? getMainFinding(result, dims) : getMainFindingEn(result, dims)) : getQuickFinding(result, lang).text;
+  const overallScore = scored ? scored.overallScore : null;
+  const apiScore = scored ? scored.score : null;
+  const modelScore = scored ? scored.modelSanityScore : null;
+  const coverage = scored ? scored.coverage : 0;
 
-  return [
-    '您好，我用 AI API Doctor 做了一次本地诊断，结果如下：',
+  const stateLabels = {
+    pass: zh ? 'Pass' : '通过',
+    warn: zh ? 'Needs Review' : '需复查',
+    fail: zh ? 'Fail' : '异常',
+    blocked: zh ? 'Blocked' : '受阻',
+  };
+
+  const dimLabels = {
+    connectivity: zh ? 'Model Connectivity' : '模型联通',
+    usage: zh ? 'Usage Integrity' : 'usage 完整性',
+    billing: zh ? 'Billing Integrity' : '扣费完整性',
+    cache: zh ? 'Cache Hit' : '缓存命中',
+    price: zh ? 'Price Audit' : '价格核对',
+    modelSanity: zh ? 'Model Performance' : '模型表现',
+  };
+
+  const greeting = zh ? 'Hello, I ran a local diagnostic with AI API Doctor. Here are the results:' : '您好，我用 AI API Doctor 做了一次本地诊断，结果如下：';
+  const keyEvidence = zh ? 'Key Evidence:' : '关键证据：';
+  const explanation = zh ? 'This report only shows reproducible signals and does not prove intentional overcharging or model authenticity.' : '本报告只展示本次测试中的可复现信号，不证明服务商故意多扣费，也不证明模型真假。';
+  const generatedBy = zh ? '— Generated by AI API Doctor · aiapidoctor.com' : '— 由 AI API Doctor 生成 · aiapidoctor.com';
+
+  const reportLines = [
+    greeting,
     '',
-    `综合分：${overallScore !== null ? overallScore + '/100' : '—'}（覆盖度 ${coverage}%）`,
-    `主要发现：${mainFinding}`,
-    `报告 ID：${result.reportId}`,
-    `模型预期：${tierDisplay}`,
+    overallScore !== null
+      ? `${zh ? 'Overall Score' : '综合分'}：${overallScore}/100（${zh ? 'Coverage' : '覆盖度'} ${coverage}%）`
+      : `${zh ? 'Basic Connectivity Check' : '基础联通检测'}：${mainFinding}`,
+    `${zh ? 'Main Finding' : '主要发现'}：${mainFinding}`,
+    `${zh ? 'Report ID' : '报告 ID'}：${result.reportId}`,
+  ];
+
+  if (scored) {
+    reportLines.push(
+      '',
+      zh ? 'Test Results:' : '检测结果：',
+      dims.connectivity?.state !== 'skipped' ? `- ${dimLabels.connectivity}：${stateLabels[dims.connectivity?.state] || '—'}（HTTP ${conn.status || '—'}${conn.latency ? ', ' + conn.latency + 'ms' : ''}）` : '',
+      dims.usage?.state !== 'skipped' ? `- ${dimLabels.usage}：${stateLabels[dims.usage?.state] || '—'}` : '',
+      dims.billing?.state !== 'skipped' ? `- ${dimLabels.billing}：${result.billing?.verdict || '—'}` : '',
+      dims.cache?.state !== 'skipped' ? `- ${dimLabels.cache}：${result.cacheHit?.status || '—'}` : '',
+      dims.price?.state !== 'skipped' ? `- ${dimLabels.price}：${result.priceAudit?.status || '—'}` : '',
+      modelScore !== null ? `- ${dimLabels.modelSanity}：${modelScore}/100（${result.modelSanity?.label || result.modelSanity?.labelEn || '—'}）` : '',
+    );
+  }
+
+  reportLines.push(
     '',
-    '检测结果：',
-    dims.connectivity?.state !== 'skipped' ? `- 模型联通：${dims.connectivity?.state === 'pass' ? '通过' : dims.connectivity?.state === 'warn' ? '需复查' : dims.connectivity?.state === 'fail' ? '异常' : '受阻'}（HTTP ${conn.status || '—'}${conn.latency ? ', ' + conn.latency + 'ms' : ''}）` : '',
-    dims.usage?.state !== 'skipped' ? `- usage 完整性：${dims.usage?.state === 'pass' ? '完整' : dims.usage?.state === 'warn' ? '需复查' : '不完整'}` : '',
-    dims.billing?.state !== 'skipped' ? `- 扣费完整性：${result.billing?.verdict || '—'}` : '',
-    dims.cache?.state !== 'skipped' ? `- 缓存命中：${result.cacheHit?.status || '—'}` : '',
-    dims.price?.state !== 'skipped' ? `- 价格核对：${result.priceAudit?.status || '—'}` : '',
-    modelScore !== null ? `- 模型表现分：${modelScore}/100（${result.modelSanity?.label}）` : '',
+    keyEvidence,
+    `- Base URL: ${formData.baseUrl || '—'}`,
+    `- ${zh ? 'Model' : '模型'}: ${formData.model || '—'}`,
+    `- ${zh ? 'Interface' : '接口'}: ${formData.interfaceType || '—'}`,
+    `- HTTP ${zh ? 'Status' : '状态'}: ${conn.status || '—'}`,
+    `- completion_tokens: ${conn.completionTokens ?? '—'}`,
+    `- total_tokens: ${conn.totalTokens ?? '—'}`,
+    `- cached_tokens: ${conn.cachedTokens ?? '—'}`,
+  );
+
+  if (result.priceAudit?.expectedCost !== null) {
+    reportLines.push(`- ${zh ? 'Theoretical Cost' : '理论成本'}: $${result.priceAudit.expectedCost.toFixed(6)}`);
+  }
+  if (result.priceAudit?.actualCost !== null) {
+    reportLines.push(`- ${zh ? 'Actual Cost' : '实际扣费'}: $${result.priceAudit.actualCost.toFixed(6)}`);
+  }
+
+  reportLines.push(
     '',
-    '关键证据：',
-    `- Base URL：${formData.baseUrl || '—'}`,
-    `- 模型：${formData.model || '—'}`,
-    `- 接口：${formData.interfaceType || '—'}`,
-    `- HTTP 状态：${conn.status || '—'}`,
-    `- completion_tokens / output_tokens：${conn.completionTokens ?? '—'}`,
-    `- total_tokens：${conn.totalTokens ?? '—'}`,
-    `- cached_tokens：${conn.cachedTokens ?? '—'}`,
-    result.priceAudit?.expectedCost !== null ? `- 理论成本：$${result.priceAudit.expectedCost.toFixed(6)}` : '',
-    result.priceAudit?.actualCost !== null ? `- 实际扣费：$${result.priceAudit.actualCost.toFixed(6)}` : '',
+    explanation,
     '',
-    '说明：',
-    '本报告只展示本次测试中的可复现信号，不证明服务商故意多扣费，也不证明模型真假。模型表现分仅用于发现明显异常或降智风险，不代表官方模型排名。',
-    '',
-    '— 由 AI API Doctor 生成 · aiapidoctor.com'
-  ].filter(Boolean).join('\n');
+    generatedBy
+  );
+
+  return reportLines.filter(Boolean).join('\n');
 }
 
 /* ═══════════════════════════════════════════════════════
-   Save image — dedicated export clone, fixed 1080px
+   Save image — dedicated export clone
    ═══════════════════════════════════════════════════════ */
 async function saveDiagnosticImage() {
   const sourceNode = document.getElementById('result-card');
-  if (!sourceNode) { showToast('报告节点不存在'); return; }
+  if (!sourceNode) { showToast('Report node not found'); return; }
 
   try {
     await new Promise(requestAnimationFrame);
     await document.fonts.ready.catch(() => undefined);
 
     if (typeof htmlToImage !== 'undefined') {
-      // Create a dedicated export clone
       const clone = sourceNode.cloneNode(true);
       clone.style.cssText = [
         'position:fixed',
@@ -1658,7 +1788,7 @@ async function saveDiagnosticImage() {
         'left:-9999px',
         'width:1080px',
         'background:#f8fafc',
-        'padding:64px',
+        'padding:48px',
         'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif',
         'box-sizing:border-box',
         'border:none',
@@ -1675,12 +1805,12 @@ async function saveDiagnosticImage() {
 
       document.body.removeChild(clone);
       downloadDataUrl(dataUrl, `aiapidoctor-report-${Date.now()}.png`);
-      showToast('报告图片已保存');
+      showToast('Report image saved');
     } else {
-      showToast('图片生成失败，请使用浏览器截图或复制报告文本。');
+      showToast('Image generation failed, please use browser screenshot or copy report text.');
     }
   } catch (err) {
-    showToast('图片生成失败，请使用浏览器截图。');
+    showToast('Image generation failed, please use browser screenshot.');
   }
 }
 
@@ -1692,7 +1822,7 @@ function downloadDataUrl(dataUrl, filename) {
 }
 
 /* ═══════════════════════════════════════════════════════
-   Model List Reader — try to fetch /models
+   Model List Reader — inline results below input
    ═══════════════════════════════════════════════════════ */
 async function tryReadModelList(baseUrl, apiKey) {
   const normalized = (baseUrl || '').replace(/\/$/, '');
@@ -1721,7 +1851,7 @@ async function tryReadModelList(baseUrl, apiKey) {
     const data = await resp.json();
     let models = [];
     if (Array.isArray(data.data)) {
-      models = data.data.map(m => m.id || m.id || '').filter(Boolean);
+      models = data.data.map(m => m.id || '').filter(Boolean);
     } else if (Array.isArray(data.models)) {
       models = data.models.map(m => typeof m === 'string' ? m : m.id || m.name || '').filter(Boolean);
     } else if (Array.isArray(data)) {
@@ -1732,10 +1862,78 @@ async function tryReadModelList(baseUrl, apiKey) {
       return { error: 'empty_list' };
     }
 
-    return { models, data };
+    return { models, total: models.length };
   } catch (err) {
     return { error: 'cors', message: err.message };
   }
+}
+
+function showInlineModelResults(result) {
+  const container = document.getElementById('model-fetch-results');
+  if (!container) return;
+
+  const lang = getDocLang();
+  const zh = lang !== 'en';
+
+  if (result.error) {
+    let msg = '';
+    if (result.error === 'cors') {
+      msg = zh
+        ? '网页版可能受浏览器跨域限制，无法读取模型列表。这不代表 API 不可用，请手动填写模型 ID。'
+        : 'Browser CORS restriction may prevent reading the model list. This does not mean the API is unavailable. Please fill in the Model ID manually.';
+    } else if (result.error === 'auth') {
+      const status = result.status || '';
+      msg = zh
+        ? `API Key 无效或权限不足（${status || '401/403'}），无法读取模型列表。`
+        : `API Key invalid or insufficient permissions (${status || '401/403'}). Cannot read model list.`;
+    } else if (result.error === 'not_found') {
+      msg = zh
+        ? '当前服务商可能不支持 /v1/models，请手动填写模型 ID。'
+        : 'The current provider may not support /v1/models endpoint. Please fill in the Model ID manually.';
+    } else if (result.error === 'no_url') {
+      msg = zh ? '请先填写 Base URL。' : 'Please fill in the Base URL first.';
+    } else if (result.error === 'empty_list') {
+      msg = zh ? '模型列表为空，请手动填写模型 ID。' : 'Model list is empty. Please fill in the Model ID manually.';
+    } else {
+      msg = zh
+        ? '读取失败，请手动填写模型 ID。这不代表 API 本身不可用。'
+        : 'Failed to read model list. Please fill in the Model ID manually. This does not mean the API is unavailable.';
+    }
+    container.innerHTML = `<div style="margin-top:8px;padding:10px 12px;background:#fef3c7;border-radius:6px;font-size:12px;color:#92400e;line-height:1.5">${escHtml(msg)}</div>`;
+    container.style.display = 'block';
+    return;
+  }
+
+  const { models, total } = result;
+  const displayModels = models.slice(0, 20);
+  const hasMore = models.length > 20;
+
+  const headerText = zh ? `Found ${total} models, click to fill:` : `读取到 ${total} 个模型，点击填入：`;
+  const searchPlaceholder = zh ? 'Search...' : '搜索...';
+
+  let html = `<div style="margin-top:8px;padding:12px;background:#f1f5f9;border-radius:8px;font-size:12px;color:#374151;line-height:1.5">
+    <div style="font-weight:600;margin-bottom:8px">${headerText}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px">`;
+
+  displayModels.forEach(m => {
+    html += `<button type="button" onclick="Doctor.selectModel('${escHtml(m).replace(/'/g, '&#39;')}')" style="padding:4px 10px;background:#fff;border:1px solid #e2e8f0;border-radius:20px;font-size:12px;font-family:monospace;color:#0f172a;cursor:pointer;transition:all 0.1s">${escHtml(m)}</button>`;
+  });
+
+  html += `</div>`;
+
+  if (hasMore) {
+    html += `<div style="margin-top:8px"><input type="text" id="model-filter-input" placeholder="${searchPlaceholder}" oninput="Doctor.filterModels(this.value)" style="padding:4px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;width:120px" /></div>
+    <div id="model-filter-results" style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px"></div>`;
+  }
+
+  html += `</div>`;
+  container.innerHTML = html;
+  container.style.display = 'block';
+}
+
+function hideInlineModelResults() {
+  const container = document.getElementById('model-fetch-results');
+  if (container) { container.innerHTML = ''; container.style.display = 'none'; }
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -1764,10 +1962,8 @@ window.Doctor = {
   _result: null,
   _formData: null,
   _controller: null,
-  _cacheEnabled: false,
-  _priceEnabled: false,
-  _sanityEnabled: false,
   _mode: 'quick',
+  _fetchedModels: [],
 
   init() {
     const saved = restoreConfigFromStorage();
@@ -1818,12 +2014,12 @@ window.Doctor = {
     if (el) el.value = type;
   },
 
-  setTier(type) {
+  setTier(tier) {
     document.querySelectorAll('.tier-btn').forEach(btn => {
-      btn.classList.toggle('active', btn.dataset.tier === type);
+      btn.classList.toggle('active', btn.dataset.tier === tier);
     });
     const el = document.getElementById('doctor-tier');
-    if (el) el.value = type;
+    if (el) el.value = tier;
   },
 
   setMode(mode) {
@@ -1832,7 +2028,6 @@ window.Doctor = {
       btn.classList.toggle('active', btn.dataset.mode === mode);
     });
 
-    // Auto-set advanced checkboxes based on mode
     const cfg = DETECTION_MODES[mode];
     const cacheCb = document.getElementById('cache-test-toggle');
     const priceCb = document.getElementById('price-test-toggle');
@@ -1842,11 +2037,28 @@ window.Doctor = {
     if (priceCb) priceCb.checked = cfg.priceAudit;
     if (sanityCb) sanityCb.checked = cfg.modelSanity;
 
-    this._cacheEnabled = cfg.cacheTest;
-    this._priceEnabled = cfg.priceAudit;
-    this._sanityEnabled = cfg.modelSanity;
+    const lang = getDocLang();
+    const zh = lang !== 'en';
+    const isQuick = mode === 'quick';
+    const btnText = isQuick
+      ? (zh ? '开始快速检测' : 'Start Quick Check')
+      : (zh ? '开始完整体检' : 'Start Full Check');
 
-    updateCostEstimate();
+    const runBtn = document.getElementById('doctor-run-btn');
+    if (runBtn) {
+      runBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> ${btnText}`;
+    }
+
+    if (mode === 'full') {
+      const panel = document.getElementById('advanced-panel');
+      const toggle = document.getElementById('advanced-toggle');
+      if (panel && toggle) {
+        panel.classList.add('open');
+        toggle.classList.add('open');
+      }
+    }
+
+    if (typeof updateCostEstimate === 'function') updateCostEstimate();
   },
 
   toggleAdvanced() {
@@ -1858,88 +2070,61 @@ window.Doctor = {
   },
 
   toggleCache(checkbox) {
-    this._cacheEnabled = checkbox.checked;
-    updateCostEstimate();
+    if (typeof updateCostEstimate === 'function') updateCostEstimate();
   },
 
   togglePrice(checkbox) {
-    this._priceEnabled = checkbox.checked;
-    updateCostEstimate();
+    if (typeof updateCostEstimate === 'function') updateCostEstimate();
   },
 
   toggleSanity(checkbox) {
-    this._sanityEnabled = checkbox.checked;
-    updateCostEstimate();
-  },
-
-  showCommonModels() {
-    const modal = document.getElementById('model-modal');
-    if (modal) {
-      modal.style.display = 'flex';
-      const searchInput = modal.querySelector('.model-search-input');
-      if (searchInput) { searchInput.value = ''; filterModelList(''); }
-    }
-  },
-
-  hideModelModal() {
-    const modal = document.getElementById('model-modal');
-    if (modal) modal.style.display = 'none';
-  },
-
-  selectModel(model) {
-    const el = document.getElementById('doctor-model');
-    if (el) el.value = model;
-    this.hideModelModal();
+    if (typeof updateCostEstimate === 'function') updateCostEstimate();
   },
 
   async readModelList() {
     const baseUrl = (document.getElementById('doctor-base-url')?.value || '').trim();
     const apiKey = (document.getElementById('doctor-api-key')?.value || '').trim();
 
-    if (!baseUrl) { showToast('请先填写 Base URL'); return; }
-    if (!apiKey) { showToast('请先填写 API Key'); return; }
+    const lang = getDocLang();
+    const zh = lang !== 'en';
+
+    if (!baseUrl) { showToast(zh ? 'Please fill in Base URL first' : '请先填写 Base URL'); return; }
+    if (!apiKey) { showToast(zh ? 'Please fill in API Key first' : '请先填写 API Key'); return; }
 
     const btn = document.getElementById('read-models-btn');
     if (btn) {
       btn.disabled = true;
-      btn.textContent = '读取中...';
+      btn.textContent = zh ? 'Reading...' : '读取中...';
     }
 
     try {
       const result = await tryReadModelList(baseUrl, apiKey);
-
-      if (result.error) {
-        let msg = '';
-        if (result.error === 'cors') msg = '浏览器跨域限制，无法从网页读取模型列表。可以手动填写 Model ID。';
-        else if (result.error === 'auth') msg = 'API Key 无效或权限不足，无法读取模型列表。';
-        else if (result.error === 'not_found') msg = '当前服务商可能不支持 /v1/models 接口，请手动填写 Model ID。';
-        else if (result.error === 'no_url') msg = '请先填写 Base URL。';
-        else if (result.error === 'empty_list') msg = '模型列表为空，请手动填写 Model ID。';
-        else msg = '读取失败，请手动填写 Model ID。这不代表 API 本身不可用。';
-        showToast(msg);
-      } else {
-        // Show fetched models in modal
-        const modal = document.getElementById('model-modal');
-        if (modal) {
-          const fetchedSection = modal.querySelector('.model-fetched-list');
-          if (fetchedSection) {
-            fetchedSection.innerHTML = result.models.map(m =>
-              `<div class="model-fetched-item" onclick="Doctor.selectModel('${escHtml(m)}')">${escHtml(m)}</div>`
-            ).join('');
-          }
-          modal.style.display = 'flex';
-          const searchInput = modal.querySelector('.model-search-input');
-          if (searchInput) { searchInput.value = ''; filterModelList(''); }
-        }
-      }
+      this._fetchedModels = result.models || [];
+      showInlineModelResults(result);
     } catch (err) {
-      showToast('读取模型列表失败，请手动填写 Model ID。这不代表 API 不可用。');
+      showInlineModelResults({ error: 'cors', message: err.message });
     }
 
     if (btn) {
       btn.disabled = false;
-      btn.textContent = '尝试读取模型列表 Beta';
+      btn.textContent = zh ? 'Auto Read Models' : '自动读取模型';
     }
+  },
+
+  selectModel(model) {
+    const el = document.getElementById('doctor-model');
+    if (el) el.value = model;
+    hideInlineModelResults();
+  },
+
+  filterModels(query) {
+    const q = (query || '').toLowerCase();
+    const filtered = this._fetchedModels.filter(m => m.toLowerCase().includes(q));
+    const container = document.getElementById('model-filter-results');
+    if (!container) return;
+    container.innerHTML = filtered.slice(0, 20).map(m =>
+      `<button type="button" onclick="Doctor.selectModel('${escHtml(m).replace(/'/g, '&#39;')}')" style="padding:4px 10px;background:#fff;border:1px solid #e2e8f0;border-radius:20px;font-size:12px;font-family:monospace;color:#0f172a;cursor:pointer">${escHtml(m)}</button>`
+    ).join('');
   },
 
   async run() {
@@ -1947,83 +2132,104 @@ window.Doctor = {
     const apiKey = (document.getElementById('doctor-api-key')?.value || '').trim();
     const model = (document.getElementById('doctor-model')?.value || '').trim();
     const interfaceType = (document.getElementById('doctor-interface')?.value || 'OpenAI Chat');
-    const modelTier = (document.getElementById('doctor-tier')?.value || 'uncertain');
     const providerName = (document.getElementById('doctor-provider')?.value || '').trim()
       || (baseUrl ? new URL(baseUrl.startsWith('http') ? baseUrl : 'https://' + baseUrl).hostname : 'Unknown');
 
-    if (!baseUrl) { showToast('请填写 Base URL'); return; }
-    if (!model) { showToast('请填写 Model ID'); return; }
+    const lang = getDocLang();
+    const zh = lang !== 'en';
+
+    if (!baseUrl) { showToast(zh ? 'Please fill in Base URL' : '请填写 Base URL'); return; }
+    if (!model) { showToast(zh ? 'Please fill in Model ID' : '请填写 Model ID'); return; }
 
     saveConfigToStorage({ baseUrl, providerName, model, interfaceType });
 
     if (this._controller) this._controller.abort();
     this._controller = new AbortController();
 
+    const isQuick = this._mode === 'quick';
+    const btnRunningLabel = zh
+      ? (isQuick ? 'Running Quick Check...' : 'Running Full Check...')
+      : '检测中...';
+
     const btn = document.getElementById('doctor-run-btn');
     const clearBtn = document.getElementById('doctor-clear-btn');
     if (btn) {
       btn.disabled = true;
-      btn.innerHTML = `<span class="status-dot status-dot--running"></span>检测中...`;
+      btn.innerHTML = `<span class="status-dot status-dot--running"></span>${btnRunningLabel}`;
     }
     if (clearBtn) clearBtn.disabled = true;
 
     this.showProgress('running');
 
-    const priceData = this._priceEnabled ? {
+    const priceData = {
       inputPrice: document.getElementById('price-input')?.value,
       outputPrice: document.getElementById('price-output')?.value,
       cachedReadPrice: document.getElementById('price-cached-read')?.value,
       cachedWritePrice: document.getElementById('price-cached-write')?.value,
       actualCost: document.getElementById('price-actual')?.value
-    } : null;
+    };
 
-    this._formData = { baseUrl, apiKey, model, interfaceType, providerName, modelTier };
+    this._formData = { baseUrl, apiKey, model, interfaceType, providerName };
 
     try {
       const timeout = setTimeout(() => {
         this._controller.abort();
       }, TOTAL_TIMEOUT);
 
+      const isFull = this._mode === 'full';
+      const runCache = isFull && document.getElementById('cache-test-toggle')?.checked;
+      const runPrice = isFull && document.getElementById('price-test-toggle')?.checked;
+      const runSanity = isFull && document.getElementById('sanity-test-toggle')?.checked;
+
       this._result = await runDiagnosis({
         baseUrl, apiKey, model, interfaceType,
         signal: this._controller.signal,
-        runCacheTest: this._cacheEnabled,
-        runPriceTest: this._priceEnabled,
-        priceData,
-        runSanityTest: this._sanityEnabled,
-        modelTier
+        runCacheTest: runCache,
+        runPriceTest: runPrice,
+        priceData: runPrice ? priceData : null,
+        runSanityTest: runSanity,
+        mode: this._mode
       });
 
       clearTimeout(timeout);
     } catch (err) {
       if (err.name === 'AbortError') {
-        showToast('检测超时（90 秒），请重试或使用 Chrome 插件');
+        showToast(zh ? 'Diagnosis timed out (90s). Please retry or use Chrome extension.' : '检测超时（90秒），请重试或使用 Chrome 插件');
       }
     }
 
+    const btnLabelReset = isQuick
+      ? (zh ? '开始快速检测' : 'Start Quick Check')
+      : (zh ? '开始完整体检' : 'Start Full Check');
     if (btn) {
       btn.disabled = false;
-      btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> 开始体检`;
+      btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> ${btnLabelReset}`;
     }
     if (clearBtn) clearBtn.disabled = false;
 
     if (this._result) {
       this.showProgress('done');
-      renderDiagnosticReport(this._result, this._formData);
+      if (this._mode === 'quick') {
+        renderQuickReport(this._result, this._formData);
+      } else {
+        renderFullReport(this._result, this._formData);
+      }
       document.getElementById('result-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   },
 
   showProgress(state) {
+    const lang = getDocLang();
+    const zh = lang !== 'en';
     const mode = this._mode;
-    const cfg = DETECTION_MODES[mode];
+
     const steps = [
-      '模型联通检测',
-      'usage 完整性',
-      this._cacheEnabled ? '缓存命中检测' : null,
-      this._priceEnabled ? '价格核对' : null,
-      this._sanityEnabled ? '模型智商检测（5 项）' : null,
-      '计算体检分'
+      zh ? 'Model Connectivity Check' : '模型联通检测',
+      zh ? 'Usage Integrity' : 'usage 完整性',
+      mode === 'full' && document.getElementById('cache-test-toggle')?.checked ? (zh ? 'Cache Hit Test' : '缓存命中检测') : null,
+      mode === 'full' && document.getElementById('price-test-toggle')?.checked ? (zh ? 'Price Audit' : '价格核对') : null,
+      mode === 'full' && document.getElementById('sanity-test-toggle')?.checked ? (zh ? 'Model Performance Test (5 dims)' : '模型表现检测（5项）') : null,
+      zh ? 'Calculating Score' : '计算体检分'
     ].filter(Boolean);
 
     const container = document.getElementById('diag-progress');
@@ -2044,25 +2250,27 @@ window.Doctor = {
   },
 
   clear() {
+    const lang = getDocLang();
+    const zh = lang !== 'en';
+
     ['doctor-base-url','doctor-api-key','doctor-model','doctor-provider'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.value = '';
     });
     document.getElementById('doctor-interface').value = 'OpenAI Chat';
     this.setInterface('OpenAI Chat');
-    document.getElementById('doctor-tier').value = 'standard';
-    this.setTier('standard');
     this._mode = 'quick';
     this.setMode('quick');
-    updateCostEstimate();
+    hideInlineModelResults();
+    if (typeof updateCostEstimate === 'function') updateCostEstimate();
     document.getElementById('result-card').innerHTML = `
-      <div style="text-align:center;padding:40px 20px;color:#94a3b8;font-size:14px">
-        填写信息后点击"开始体检"，即可查看诊断报告。
+      <div style="text-align:center;padding:40px 20px;color:#94a3b8;font-size:14px;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-lg)">
+        ${zh ? 'Fill in the information and click the diagnosis button to view results.' : '填写信息后点击检测按钮，即可查看诊断结果。'}
       </div>`;
     this._result = null;
     this._formData = null;
     if (this._controller) this._controller.abort();
-    showToast('已清空');
+    showToast(zh ? 'Cleared' : '已清空');
   },
 
   async saveImage() {
@@ -2070,75 +2278,71 @@ window.Doctor = {
   },
 
   copyMarkdown() {
-    if (!this._result) { showToast('请先进行检测'); return; }
+    if (!this._result) { showToast(getDocLang() !== 'en' ? 'Please run diagnosis first' : '请先进行检测'); return; }
     const md = buildMarkdownReport(this._result, this._formData);
-    copyToClipboard(md, 'Markdown 已复制');
+    copyToClipboard(md, getDocLang() !== 'en' ? 'Markdown copied' : 'Markdown 已复制');
   },
 
   copyForProvider() {
-    if (!this._result) { showToast('请先进行检测'); return; }
+    if (!this._result) { showToast(getDocLang() !== 'en' ? 'Please run diagnosis first' : '请先进行检测'); return; }
     const text = buildProviderReport(this._result, this._formData);
-    copyToClipboard(text, '报告文本已复制，可发给站长');
+    copyToClipboard(text, getDocLang() !== 'en' ? 'Report copied, can send to provider' : '报告文本已复制，可发给站长');
   },
 
   copyOneLine() {
-    if (!this._result) { showToast('请先进行检测'); return; }
-    const scored = this._result._scored;
-    const dims = scored.dims;
-    const coverage = scored.coverage;
-    const mainFinding = getMainFinding(this._result, dims);
-    const overallScore = scored.overallScore;
-    const text = coverage < 40
-      ? `我的 AI API 快速体检：${overallScore !== null ? overallScore : '—'}/100｜覆盖度 ${coverage}%｜${mainFinding}｜报告 ID：${this._result.reportId}\nhttps://aiapidoctor.com/`
-      : `我的 AI API 体检分：${overallScore !== null ? overallScore : '—'}/100｜覆盖度 ${coverage}%｜${mainFinding}｜报告 ID：${this._result.reportId}\nhttps://aiapidoctor.com/`;
-    copyToClipboard(text, '一行晒分已复制');
+    if (!this._result) { showToast(getDocLang() !== 'en' ? 'Please run diagnosis first' : '请先进行检测'); return; }
+    const result = this._result;
+    const lang = getDocLang();
+    const zh = lang !== 'en';
+
+    if (result.mode === 'quick') {
+      const qf = getQuickFinding(result, lang);
+      const text = zh
+        ? `My AI API Quick Check: ${qf.label} | ${qf.text} | Report ID: ${result.reportId}\nhttps://aiapidoctor.com/`
+        : `我的 AI API 快速检测：${qf.label}｜${qf.text}｜报告 ID：${result.reportId}\nhttps://aiapidoctor.com/`;
+      copyToClipboard(text, zh ? 'Result copied' : '结果已复制');
+    } else {
+      const scored = result._scored;
+      const dims = scored.dims;
+      const coverage = scored.coverage;
+      const mainFinding = zh ? getMainFinding(result, dims) : getMainFindingEn(result, dims);
+      const overallScore = scored.overallScore;
+      const text = zh
+        ? `My AI API Doctor Score: ${overallScore !== null ? overallScore : '—'}/100 | Coverage: ${coverage}% | ${mainFinding} | Report ID: ${result.reportId}\nhttps://aiapidoctor.com/`
+        : `我的 AI API 体检分：${overallScore !== null ? overallScore : '—'}/100｜覆盖度 ${coverage}%｜${mainFinding}｜报告 ID：${result.reportId}\nhttps://aiapidoctor.com/`;
+      copyToClipboard(text, zh ? 'Score line copied' : '一行晒分已复制');
+    }
   },
 
   copyForum() {
-    if (!this._result) { showToast('请先进行检测'); return; }
-    const scored = this._result._scored;
-    const dims = scored.dims;
-    const coverage = scored.coverage;
-    const mainFinding = getMainFinding(this._result, dims);
-    const overallScore = scored.overallScore;
-    const text = [
-      `我测了一下 AI API：` ,
-      `体检分：${overallScore !== null ? overallScore : '—'}/100（覆盖度 ${coverage}%）`,
-      `主要发现：${mainFinding}`,
-      `报告 ID：${this._result.reportId}`,
-      `https://aiapidoctor.com/`
-    ].join('\n');
-    copyToClipboard(text, '论坛回复已复制');
+    if (!this._result) { showToast(getDocLang() !== 'en' ? 'Please run diagnosis first' : '请先进行检测'); return; }
+    const result = this._result;
+    const lang = getDocLang();
+    const zh = lang !== 'en';
+
+    if (result.mode === 'quick') {
+      const qf = getQuickFinding(result, lang);
+      const text = [
+        zh ? 'I tested the AI API:' : '我测了一下 AI API：',
+        `${zh ? 'Quick Check' : '快速检测'}：${qf.label}（${qf.text}）`,
+        `${zh ? 'Report ID' : '报告 ID'}：${result.reportId}`,
+        `https://aiapidoctor.com/`
+      ].join('\n');
+      copyToClipboard(text, zh ? 'Forum reply copied' : '论坛回复已复制');
+    } else {
+      const scored = result._scored;
+      const dims = scored.dims;
+      const coverage = scored.coverage;
+      const mainFinding = zh ? getMainFinding(result, dims) : getMainFindingEn(result, dims);
+      const overallScore = scored.overallScore;
+      const text = [
+        zh ? 'I tested the AI API:' : '我测了一下 AI API：',
+        `${zh ? 'Health Score' : '体检分'}：${overallScore !== null ? overallScore + '/100' : '—'}（${zh ? 'Coverage' : '覆盖度'} ${coverage}%）`,
+        `${zh ? 'Main Finding' : '主要发现'}：${mainFinding}`,
+        `${zh ? 'Report ID' : '报告 ID'}：${result.reportId}`,
+        `https://aiapidoctor.com/`
+      ].join('\n');
+      copyToClipboard(text, zh ? 'Forum reply copied' : '论坛回复已复制');
+    }
   }
 };
-
-/* ═══════════════════════════════════════════════════════
-   Model list modal filter (global)
-   ═══════════════════════════════════════════════════════ */
-function filterModelList(query) {
-  const modal = document.getElementById('model-modal');
-  if (!modal) return;
-  const q = (query || '').toLowerCase();
-
-  // Filter common models
-  const commonItems = modal.querySelectorAll('.common-models__item');
-  commonItems.forEach(item => {
-    const text = (item.textContent || '').toLowerCase();
-    item.style.display = text.includes(q) || q === '' ? '' : 'none';
-  });
-
-  // Filter fetched items
-  const fetchedItems = modal.querySelectorAll('.model-fetched-item');
-  fetchedItems.forEach(item => {
-    const text = (item.textContent || '').toLowerCase();
-    item.style.display = text.includes(q) || q === '' ? '' : 'none';
-  });
-
-  // Show/hide groups
-  const groups = modal.querySelectorAll('.model-group');
-  groups.forEach(g => {
-    const visible = Array.from(g.querySelectorAll('.common-models__item, .model-fetched-item'))
-      .some(el => el.style.display !== 'none');
-    g.style.display = visible || q === '' ? '' : 'none';
-  });
-}

@@ -12,15 +12,11 @@
   <link rel="alternate" hreflang="x-default" href="https://aiapidoctor.com/" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="stylesheet" href="/assets/site.css" />
-
-  <!-- Open Graph -->
   <meta property="og:type" content="website" />
   <meta property="og:title" content="AI API Doctor：AI API 扣费异常检测工具" />
   <meta property="og:description" content="检测失败扣费、空回复扣费、缓存异常、usage 完整性和模型降智，生成可分享的 AI API 体检报告。不推荐、不排名任何中转站。" />
   <meta property="og:url" content="https://aiapidoctor.com/" />
   <meta property="og:locale" content="zh_CN" />
-
-  <!-- JSON-LD -->
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -96,7 +92,7 @@
       </div>
     </div>
 
-    <!-- Tool area: form left (48%) + report right (52%) -->
+    <!-- Tool area: form left + report right -->
     <div class="doctor-tool-area">
 
       <!-- Left: Form panel -->
@@ -120,16 +116,12 @@
                 <!-- Detection mode selector -->
                 <div class="mode-selector">
                   <button class="mode-btn active" data-mode="quick" onclick="Doctor.setMode('quick')">
-                    快速体检
+                    快速检测
                     <span class="mode-btn__desc">1 次请求</span>
                   </button>
-                  <button class="mode-btn" data-mode="standard" onclick="Doctor.setMode('standard')">
-                    标准体检
-                    <span class="mode-btn__desc">约 6 次</span>
-                  </button>
-                  <button class="mode-btn" data-mode="deep" onclick="Doctor.setMode('deep')">
-                    深度体检
-                    <span class="mode-btn__desc">约 8-10 次</span>
+                  <button class="mode-btn" data-mode="full" onclick="Doctor.setMode('full')">
+                    完整体检
+                    <span class="mode-btn__desc">更全面</span>
                   </button>
                 </div>
 
@@ -155,7 +147,6 @@ OPENAI_API_KEY=sk-..."
                 <div class="tool-form__group">
                   <label class="tool-form__label">服务商名称 <span style="font-weight:400;color:var(--muted)">（可选）</span></label>
                   <input id="doctor-provider" class="tool-form__input" placeholder="服务商名称，可选" />
-                  <div class="tool-form__hint">不填则自动使用域名作为服务商名称。</div>
                 </div>
 
                 <!-- Base URL -->
@@ -185,28 +176,18 @@ OPENAI_API_KEY=sk-..."
                   <div class="tool-form__hint">API Key 仅在当前浏览器内用于本地测试，不会上传到 AI API Doctor。</div>
                 </div>
 
-                <!-- Model ID + common models + read models -->
+                <!-- Model ID — simplified -->
                 <div class="tool-form__group">
                   <label class="tool-form__label">Model ID</label>
                   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-                    <input id="doctor-model" class="tool-form__input" placeholder="gpt-4o, deepseek-chat, claude-sonnet-4" style="flex:1;min-width:160px" />
-                    <button class="read-models-btn" type="button" id="read-models-btn" onclick="Doctor.readModelList()">尝试读取模型列表 Beta</button>
+                    <input id="doctor-model" class="tool-form__input" placeholder="gpt-5.5" style="flex:1;min-width:160px" />
+                    <button class="read-models-btn" type="button" id="read-models-btn" onclick="Doctor.readModelList()">自动读取模型</button>
                   </div>
-                  <div style="margin-top:6px">
-                    <button class="common-models__btn" type="button" onclick="Doctor.showCommonModels()">常见模型示例</button>
+                  <div class="tool-form__hint">
+                    不知道模型 ID？可以先点「自动读取模型」。如果读取失败，请从服务商后台复制模型名。
                   </div>
-                </div>
-
-                <!-- Model expected tier -->
-                <div class="tool-form__group">
-                  <label class="tool-form__label">模型预期档位 <span style="font-weight:400;color:var(--muted)">（可选，影响解释，不强行影响原始分）</span></label>
-                  <div class="tier-toggle">
-                    <button class="tier-btn" data-tier="uncertain" onclick="Doctor.setTier('uncertain')">不确定</button>
-                    <button class="tier-btn" data-tier="light" onclick="Doctor.setTier('light')">轻量模型</button>
-                    <button class="tier-btn active" data-tier="standard" onclick="Doctor.setTier('standard')">标准模型</button>
-                    <button class="tier-btn" data-tier="advanced" onclick="Doctor.setTier('advanced')">高级模型</button>
-                  </div>
-                  <input type="hidden" id="doctor-tier" value="standard" />
+                  <!-- Inline model fetch results -->
+                  <div id="model-fetch-results" style="display:none"></div>
                 </div>
 
                 <!-- Interface -->
@@ -226,6 +207,18 @@ OPENAI_API_KEY=sk-..."
                   展开高级检测项
                 </button>
                 <div class="advanced-panel" id="advanced-panel">
+
+                  <!-- Model tier (moved from main form) -->
+                  <div class="tool-form__group" style="background:var(--soft);border-radius:var(--radius-sm);padding:12px;margin-bottom:8px">
+                    <label class="tool-form__label" style="margin-bottom:6px">模型预期档位 <span style="font-weight:400;color:var(--muted)">（可选，影响解释）</span></label>
+                    <div class="tier-toggle">
+                      <button class="tier-btn active" data-tier="uncertain" onclick="Doctor.setTier('uncertain')">不确定</button>
+                      <button class="tier-btn" data-tier="light" onclick="Doctor.setTier('light')">轻量模型</button>
+                      <button class="tier-btn" data-tier="standard" onclick="Doctor.setTier('standard')">标准模型</button>
+                      <button class="tier-btn" data-tier="advanced" onclick="Doctor.setTier('advanced')">高级模型</button>
+                    </div>
+                    <input type="hidden" id="doctor-tier" value="uncertain" />
+                  </div>
 
                   <!-- Cache test -->
                   <div class="tool-form__group" style="background:var(--soft);border-radius:var(--radius-sm);padding:12px;margin-bottom:8px">
@@ -298,7 +291,7 @@ OPENAI_API_KEY=sk-..."
                 <div class="tool-actions">
                   <button id="doctor-run-btn" class="btn btn--primary btn--primary-run" onclick="Doctor.run()">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                    开始体检
+                    开始快速检测
                   </button>
                   <button id="doctor-clear-btn" class="btn btn--secondary" onclick="Doctor.clear()">清空</button>
                 </div>
@@ -309,22 +302,18 @@ OPENAI_API_KEY=sk-..."
             <!-- ── MANUAL REPORT TAB ── -->
             <div id="panel-manual" style="display:none">
               <div class="tool-form">
-
                 <div class="tool-form__group">
                   <label class="tool-form__label">Provider Name</label>
                   <input id="manual-provider" class="tool-form__input" placeholder="服务商名称，可选" />
                 </div>
-
                 <div class="tool-form__group">
                   <label class="tool-form__label">Base URL</label>
                   <input id="manual-base-url" class="tool-form__input" placeholder="https://api.example.com/v1" />
                 </div>
-
                 <div class="tool-form__group">
                   <label class="tool-form__label">Model ID</label>
                   <input id="manual-model" class="tool-form__input" placeholder="gpt-4o" />
                 </div>
-
                 <div class="tool-form__row">
                   <div class="tool-form__group">
                     <label class="tool-form__label">Interface</label>
@@ -339,7 +328,6 @@ OPENAI_API_KEY=sk-..."
                     <input id="manual-http-status" class="tool-form__input" placeholder="200" type="number" />
                   </div>
                 </div>
-
                 <div class="tool-form__row">
                   <div class="tool-form__group">
                     <label class="tool-form__label">visible output length</label>
@@ -350,7 +338,6 @@ OPENAI_API_KEY=sk-..."
                     <input id="manual-prompt-tokens" class="tool-form__input" placeholder="0" type="number" />
                   </div>
                 </div>
-
                 <div class="tool-form__row">
                   <div class="tool-form__group">
                     <label class="tool-form__label">completion_tokens</label>
@@ -361,58 +348,20 @@ OPENAI_API_KEY=sk-..."
                     <input id="manual-total-tokens" class="tool-form__input" placeholder="0" type="number" />
                   </div>
                 </div>
-
                 <div class="tool-form__row">
                   <div class="tool-form__group">
                     <label class="tool-form__label">cached_tokens</label>
                     <input id="manual-cached-tokens" class="tool-form__input" placeholder="0" type="number" />
                   </div>
                   <div class="tool-form__group">
-                    <label class="tool-form__label">cache_read_input_tokens</label>
-                    <input id="manual-cache-read" class="tool-form__input" placeholder="0" type="number" />
-                  </div>
-                </div>
-
-                <div class="tool-form__row">
-                  <div class="tool-form__group">
-                    <label class="tool-form__label">cache_creation_input_tokens</label>
-                    <input id="manual-cache-creation" class="tool-form__input" placeholder="0" type="number" />
-                  </div>
-                  <div class="tool-form__group">
                     <label class="tool-form__label">actual cost (USD)</label>
                     <input id="manual-actual-cost" class="tool-form__input" placeholder="0.000000" type="number" step="0.000001" />
                   </div>
                 </div>
-
-                <div class="tool-form__group" style="background:var(--soft);border-radius:var(--radius-sm);padding:14px;margin-bottom:4px">
-                  <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:10px">Raw Quota 证据（可选）</div>
-                  <div class="tool-form__row">
-                    <div class="tool-form__group">
-                      <label class="tool-form__label" style="font-size:11px">before</label>
-                      <input id="manual-before" class="tool-form__input" placeholder="99817234" type="number" />
-                    </div>
-                    <div class="tool-form__group">
-                      <label class="tool-form__label" style="font-size:11px">immediately after</label>
-                      <input id="manual-immediate" class="tool-form__input" placeholder="99817234" type="number" />
-                    </div>
-                  </div>
-                  <div class="tool-form__row" style="margin-top:8px">
-                    <div class="tool-form__group">
-                      <label class="tool-form__label" style="font-size:11px">after 3s</label>
-                      <input id="manual-after3" class="tool-form__input" placeholder="99817234" type="number" />
-                    </div>
-                    <div class="tool-form__group">
-                      <label class="tool-form__label" style="font-size:11px">after 10s</label>
-                      <input id="manual-after10" class="tool-form__input" placeholder="99817234" type="number" />
-                    </div>
-                  </div>
-                </div>
-
                 <div class="tool-form__group">
                   <label class="tool-form__label">备注 <span style="font-weight:400;color:var(--muted)">（可选）</span></label>
                   <textarea id="manual-note" class="tool-form__textarea" placeholder="补充说明..." rows="2"></textarea>
                 </div>
-
                 <div class="tool-actions">
                   <button class="btn btn--primary" onclick="ManualReport.generate()" style="flex:2">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
@@ -420,7 +369,6 @@ OPENAI_API_KEY=sk-..."
                   </button>
                   <button class="btn btn--secondary" onclick="ManualReport.clear()">清空</button>
                 </div>
-
               </div>
             </div><!-- /panel-manual -->
 
@@ -435,7 +383,7 @@ OPENAI_API_KEY=sk-..."
       <div class="doctor-report-panel">
         <div id="result-card">
           <div style="text-align:center;padding:40px 20px;color:#94a3b8;font-size:14px;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-lg)">
-            填写信息后点击"开始体检"，即可查看诊断报告。
+            填写信息后点击检测按钮，即可查看诊断结果。
           </div>
         </div>
       </div><!-- /doctor-report-panel -->
@@ -443,102 +391,6 @@ OPENAI_API_KEY=sk-..."
     </div><!-- /doctor-tool-area -->
   </div><!-- /doctor-layout -->
 </section>
-
-<!-- Model list modal -->
-<div class="model-modal-overlay" id="model-modal" onclick="if(event.target===this)Doctor.hideModelModal()">
-  <div class="model-modal" onclick="event.stopPropagation()">
-    <div class="model-modal__header">
-      <div class="model-modal__title">选择模型示例</div>
-      <button class="model-modal__close" onclick="Doctor.hideModelModal()">&times;</button>
-    </div>
-    <div class="model-modal__search">
-      <input
-        type="text"
-        class="model-search-input"
-        placeholder="搜索模型..."
-        oninput="filterModelList(this.value)"
-      />
-    </div>
-    <div class="model-modal__body">
-      <div class="model-modal__note">
-        这里只是常见模型示例，具体是否可用以你的服务商为准。
-      </div>
-      <div class="model-fetched-list"></div>
-
-      <!-- Common models grouped -->
-      <div class="model-group" data-group="OpenAI">
-        <div class="model-group__title">OpenAI</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('gpt-4o')">gpt-4o</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('gpt-4o-mini')">gpt-4o-mini</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('gpt-4.5')">gpt-4.5</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('gpt-4.5-pro')">gpt-4.5-pro</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('gpt-4.5-mini')">gpt-4.5-mini</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('gpt-4.5-nano')">gpt-4.5-nano</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('gpt-4.1')">gpt-4.1</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('gpt-4.1-mini')">gpt-4.1-mini</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('gpt-4.1-nano')">gpt-4.1-nano</div>
-      </div>
-
-      <div class="model-group" data-group="Claude">
-        <div class="model-group__title">Claude</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('claude-opus-4-7')">claude-opus-4-7</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('claude-sonnet-4-6')">claude-sonnet-4-6</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('claude-haiku-4-5')">claude-haiku-4-5</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('claude-opus-4')">claude-opus-4</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('claude-sonnet-4')">claude-sonnet-4</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('claude-3-5-sonnet')">claude-3.5-sonnet</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('claude-3-5-haiku')">claude-3.5-haiku</div>
-      </div>
-
-      <div class="model-group" data-group="Gemini">
-        <div class="model-group__title">Gemini</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('gemini-3.1-pro-preview')">gemini-3.1-pro-preview</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('gemini-3.1-flash')">gemini-3.1-flash</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('gemini-2.5-flash')">gemini-2.5-flash</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('gemini-2.5-flash-lite')">gemini-2.5-flash-lite</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('gemini-2.0-flash')">gemini-2.0-flash</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('gemini-2.0-flash-exp')">gemini-2.0-flash-exp</div>
-      </div>
-
-      <div class="model-group" data-group="DeepSeek">
-        <div class="model-group__title">DeepSeek</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('deepseek-chat')">deepseek-chat</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('deepseek-reasoner')">deepseek-reasoner</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('deepseek-v3')">deepseek-v3</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('deepseek-r1')">deepseek-r1</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('deepseek-r1-distill-qwen-32b')">deepseek-r1-distill-qwen-32b</div>
-      </div>
-
-      <div class="model-group" data-group="Qwen">
-        <div class="model-group__title">Qwen</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('qwen-plus')">qwen-plus</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('qwen-max')">qwen-max</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('qwen-coder-plus')">qwen-coder-plus</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('qwen-long')">qwen-long</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('qwen-turbo')">qwen-turbo</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('qwen2.5-72b-instruct')">qwen2.5-72b-instruct</div>
-      </div>
-
-      <div class="model-group" data-group="Moonshot">
-        <div class="model-group__title">Moonshot</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('moonshot-v1-8k')">moonshot-v1-8k</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('moonshot-v1-32k')">moonshot-v1-32k</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('moonshot-v1-128k')">moonshot-v1-128k</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('kimi-k2')">kimi-k2</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('kimi-k2-preview')">kimi-k2-preview</div>
-      </div>
-
-      <div class="model-group" data-group="Other">
-        <div class="model-group__title">Other</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('mistral-large')">mistral-large</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('mistral-small')">mistral-small</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('groq/llama-3.3-70b-versatile')">groq/llama-3.3-70b-versatile</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('azure/gpt-4o')">azure/gpt-4o</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('anthropic/claude-3.5-sonnet')">anthropic/claude-3.5-sonnet</div>
-      </div>
-    </div>
-  </div>
-</div>
 
 <!-- Below fold: SEO content -->
 <main>
@@ -623,7 +475,7 @@ OPENAI_API_KEY=sk-..."
       <div class="card" style="max-width:600px;margin:0 auto">
         <div class="share-example">
           <div class="share-example__label">示例</div>
-          <div class="share-example__text">我的 AI API 体检分：88/100｜覆盖度 70%｜检测完成｜报告 ID：AID-0514-K9P2</div>
+          <div class="share-example__text">我的 AI API 快速检测：正常｜模型联通正常｜报告 ID：AID-0514-K9P2</div>
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px">
           <a href="/#doctor" class="btn btn--primary" style="flex:1;justify-content:center">
@@ -657,37 +509,8 @@ OPENAI_API_KEY=sk-..."
     </div>
   </section>
 
-  <!-- Use cases -->
-  <section class="section section--alt">
-    <div class="container">
-      <h2 class="section__title section__title--center">适用对象</h2>
-      <div class="feature-grid">
-        <div class="card" style="text-align:center">
-          <div style="font-size:24px;margin-bottom:8px">&#128100;</div>
-          <div class="card__title">New API / One API 用户</div>
-        </div>
-        <div class="card" style="text-align:center">
-          <div style="font-size:24px;margin-bottom:8px">&#127760;</div>
-          <div class="card__title">AI API 中转站用户</div>
-        </div>
-        <div class="card" style="text-align:center">
-          <div style="font-size:24px;margin-bottom:8px">&#128736;</div>
-          <div class="card__title">站长和客服</div>
-        </div>
-        <div class="card" style="text-align:center">
-          <div style="font-size:24px;margin-bottom:8px">&#128187;</div>
-          <div class="card__title">Claude Code / Cline / Cursor 用户</div>
-        </div>
-        <div class="card" style="text-align:center">
-          <div style="font-size:24px;margin-bottom:8px">&#128269;</div>
-          <div class="card__title">想核对扣费异常的人</div>
-        </div>
-      </div>
-    </div>
-  </section>
-
   <!-- CTA -->
-  <section class="section">
+  <section class="section section--alt">
     <div class="container" style="text-align:center">
       <h2 class="section__title">立即开始体检</h2>
       <p class="section__desc" style="max-width:480px;margin:0 auto 24px">
@@ -710,34 +533,6 @@ OPENAI_API_KEY=sk-..."
       <p style="margin-top:16px;font-size:13px;color:var(--muted)">
         Chrome 插件版审核中。插件适合 New API / One API 用户，可在已登录控制台读取 raw quota。审核通过后会放出下载链接。
       </p>
-    </div>
-  </section>
-
-  <!-- FAQ summary -->
-  <section class="section section--alt">
-    <div class="container container--narrow">
-      <h2 class="section__title section__title--center">常见问题</h2>
-      <div style="display:flex;flex-direction:column;gap:8px">
-        <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px;display:flex;justify-content:space-between;align-items:center;gap:12px">
-          <span style="font-size:14px;font-weight:500;color:var(--text)">网页版为什么有时不能直接检测 Base URL？</span>
-          <a href="/faq/" style="font-size:13px;color:var(--info);white-space:nowrap">查看答案 &rsaquo;</a>
-        </div>
-        <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px;display:flex;justify-content:space-between;align-items:center;gap:12px">
-          <span style="font-size:14px;font-weight:500;color:var(--text)">cached_tokens 是什么？</span>
-          <a href="/faq/" style="font-size:13px;color:var(--info);white-space:nowrap">查看答案 &rsaquo;</a>
-        </div>
-        <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px;display:flex;justify-content:space-between;align-items:center;gap:12px">
-          <span style="font-size:14px;font-weight:500;color:var(--text)">usage 完整性为什么重要？</span>
-          <a href="/faq/" style="font-size:13px;color:var(--info);white-space:nowrap">查看答案 &rsaquo;</a>
-        </div>
-        <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px;display:flex;justify-content:space-between;align-items:center;gap:12px">
-          <span style="font-size:14px;font-weight:500;color:var(--text)">这个报告能证明服务商故意多扣费吗？</span>
-          <a href="/faq/" style="font-size:13px;color:var(--info);white-space:nowrap">查看答案 &rsaquo;</a>
-        </div>
-      </div>
-      <div style="text-align:center;margin-top:24px">
-        <a href="/faq/" class="btn btn--secondary">查看全部 FAQ</a>
-      </div>
     </div>
   </section>
 
@@ -797,22 +592,21 @@ function updateCostEstimate() {
   const items = [];
 
   if (cfg) {
-    items.push({ text: cfg.requests, type: 'base' });
+    items.push({ text: cfg.desc, type: 'base' });
   } else {
     items.push({ text: '基础模型联通：预计请求 1 次，消耗极低', type: 'base' });
   }
 
-  if (cacheEnabled && (!cfg || !cfg.cacheTest)) {
-    items.push({ text: '开启缓存检测：额外请求 2 次，包含较长 prompt，可能消耗少量额度', type: 'cache' });
+  if (cacheEnabled) {
+    items.push({ text: '缓存命中检测：额外请求 2 次，包含较长 prompt，可能消耗少量额度', type: 'cache' });
   }
-  if (priceEnabled && (!cfg || !cfg.priceAudit)) {
-    items.push({ text: '开启价格核对：使用基础联通请求数据，不额外请求', type: 'price' });
+  if (priceEnabled) {
+    items.push({ text: '价格核对：使用已有 usage 数据，不额外请求', type: 'price' });
   }
-  if (sanityEnabled && (!cfg || !cfg.modelSanity)) {
-    items.push({ text: '开启模型智商检测：额外请求 5 次，可能消耗少量额度', type: 'sanity' });
+  if (sanityEnabled) {
+    items.push({ text: '模型表现检测：额外请求 5 次，可能消耗少量额度', type: 'sanity' });
   }
 
-  const bothEnabled = cacheEnabled && sanityEnabled;
   let html = items.map(item => {
     const dotColor = item.type === 'base' ? 'var(--success)' : 'var(--warning)';
     return `<div style="display:flex;align-items:flex-start;gap:8px;padding:3px 0">
@@ -820,12 +614,6 @@ function updateCostEstimate() {
       <span style="font-size:12px;color:var(--muted);line-height:1.5">${item.text}</span>
     </div>`;
   }).join('');
-
-  if (bothEnabled) {
-    html += `<div style="margin-top:8px;padding:8px 10px;background:#fef3c7;border-radius:6px;font-size:12px;color:#92400e;line-height:1.5">
-      本次会发送多次测试请求，请确认你愿意消耗少量 API 额度。
-    </div>`;
-  }
 
   lines.innerHTML = html;
   card.style.display = 'block';
@@ -847,45 +635,17 @@ window.ManualReport = {
     const completionTokens = num('manual-completion-tokens');
     const totalTokens = num('manual-total-tokens');
     const cachedTokens = num('manual-cached-tokens');
-    const cacheRead = num('manual-cache-read');
-    const cacheCreation = num('manual-cache-creation');
     const actualCost = num('manual-actual-cost');
-    const before = num('manual-before');
-    const immediate = num('manual-immediate');
-    const after3 = num('manual-after3');
-    const after10 = num('manual-after10');
     const provider = get('manual-provider') || (baseUrl ? new URL(baseUrl.startsWith('http') ? baseUrl : 'https://' + baseUrl).hostname : 'Unknown');
     const note = get('manual-note');
 
     if (!baseUrl) { window.showToast && window.showToast('请填写 Base URL'); return; }
     if (!model) { window.showToast && window.showToast('请填写 Model ID'); return; }
 
-    let verdict = 'unknown';
-    const hasEffectiveOutput = outputLen > 0 || completionTokens > 0;
-    if (before && after10) {
-      const delta = before - after10;
-      if (httpStatus >= 400 && !hasEffectiveOutput && delta === 0) verdict = 'failed_request_not_charged';
-      else if (httpStatus >= 400 && !hasEffectiveOutput && delta > 0) verdict = 'failed_request_charged';
-      else if (httpStatus >= 200 && httpStatus < 300 && !hasEffectiveOutput && delta > 0) verdict = 'empty_response_charged';
-      else if (immediate < before && after10 === before) verdict = 'precharge_refunded';
-      else if (delta === 0) verdict = 'failed_request_not_charged';
-    }
-
-    const verdictMeta = {
-      failed_request_not_charged: { status: 'ok', label: '正常', title: '失败请求未扣费', detail: '请求失败，但 10 秒后原始额度未减少。' },
-      precharge_refunded: { status: 'ok', label: '正常', title: '预扣已返还', detail: '请求后曾预扣额度，但 10 秒内已返还。' },
-      failed_request_charged: { status: 'danger', label: '异常风险', title: '失败请求扣费异常', detail: '请求失败且无有效输出，但 10 秒后 raw quota 减少。' },
-      empty_response_charged: { status: 'danger', label: '异常风险', title: '空回复扣费异常', detail: '请求无有效输出，但 10 秒后 raw quota 减少。' },
-      raw_quota_unavailable: { status: 'warning', label: '风险', title: '无法读取原始余额', detail: '缺少 raw quota 证据，本次只能作为风险参考。' },
-      unknown: { status: 'warning', label: '需复查', title: '无法判断', detail: '请补充更多证据或使用 Chrome 插件读取 raw quota。' }
-    }[verdict] || { status: 'warning', label: '需复查', title: '无法判断', detail: '请补充更多证据。' };
-
     const timestamp = new Date().toLocaleString('zh-CN', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
-    const delta = before && after10 ? before - after10 : null;
-    const deltaClass = delta > 0 ? 'var(--danger)' : 'var(--success)';
-    const deltaText = delta > 0 ? `-${Number(delta).toLocaleString('en-US')} quota` : delta === 0 ? '+0 quota' : '—';
-
     const usageComplete = promptTokens && completionTokens && totalTokens ? '完整' : promptTokens || totalTokens ? '不完整' : '未返回';
+    const hasEffectiveOutput = outputLen > 0 || completionTokens > 0;
+    const statusOk = httpStatus >= 200 && httpStatus < 400 && hasEffectiveOutput;
 
     const resultCard = f('result-card');
     if (!resultCard) return;
@@ -903,17 +663,11 @@ window.ManualReport = {
           </div>
         </div>
 
-        <div style="text-align:center;padding:20px 16px;border-radius:12px;background:${verdictMeta.status === 'ok' ? '#dcfce7' : verdictMeta.status === 'danger' ? '#fee2e2' : '#fef3c7'};margin-bottom:16px">
-          <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${verdictMeta.status === 'ok' ? '#16a34a' : verdictMeta.status === 'danger' ? '#dc2626' : '#d97706'};margin-bottom:6px">${verdictMeta.label}</div>
-          <div style="font-size:20px;font-weight:800;color:#0f172a;margin-bottom:4px">${verdictMeta.title}</div>
-          <div style="font-size:13px;color:#64748b">${verdictMeta.detail}</div>
+        <div style="text-align:center;padding:20px 16px;border-radius:12px;background:${statusOk ? '#dcfce7' : httpStatus >= 400 ? '#fee2e2' : '#fef3c7'};margin-bottom:16px">
+          <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${statusOk ? '#16a34a' : httpStatus >= 400 ? '#dc2626' : '#d97706'};margin-bottom:6px">${statusOk ? '正常' : httpStatus >= 400 ? '异常' : '需复查'}</div>
+          <div style="font-size:20px;font-weight:800;color:#0f172a;margin-bottom:4px">${statusOk ? '联通正常' : httpStatus >= 400 ? '联通失败' : '需复查'}</div>
+          <div style="font-size:13px;color:#64748b">${statusOk ? 'API 请求成功' : httpStatus >= 400 ? 'HTTP ' + httpStatus : '请核实扣费情况'}</div>
         </div>
-
-        ${delta !== null ? `
-        <div style="background:var(--soft);border-radius:var(--radius);padding:20px;text-align:center;margin-bottom:16px">
-          <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:8px">${delta > 0 ? '最终减少' : '最终变化'}</div>
-          <div style="font-size:56px;font-weight:800;line-height:1.1;color:${deltaClass}">${deltaText}</div>
-        </div>` : ''}
 
         <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:16px">
           <div style="background:#f1f5f9;border-radius:8px;padding:10px 12px">
@@ -952,7 +706,7 @@ window.ManualReport = {
   },
 
   clear() {
-    ['manual-provider','manual-base-url','manual-model','manual-http-status','manual-output-len','manual-prompt-tokens','manual-completion-tokens','manual-total-tokens','manual-cached-tokens','manual-cache-read','manual-cache-creation','manual-actual-cost','manual-before','manual-immediate','manual-after3','manual-after10','manual-note'].forEach(id => {
+    ['manual-provider','manual-base-url','manual-model','manual-http-status','manual-output-len','manual-prompt-tokens','manual-completion-tokens','manual-total-tokens','manual-cached-tokens','manual-actual-cost','manual-note'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.value = '';
     });

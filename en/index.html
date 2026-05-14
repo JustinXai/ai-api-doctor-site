@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AI API Doctor: AI API Billing Anomaly Checker</title>
-  <meta name="description" content="Check failed request charges, empty reply charges, cache anomalies, usage integrity, and possible model degradation for OpenAI-compatible API services. Generate a shareable AI API diagnostic report. Does not recommend or rank any relay providers." />
+  <meta name="description" content="Check failed request charges, empty reply charges, cache anomalies, usage integrity, and possible model degradation. Generate a shareable AI API diagnostic report. Does not recommend or rank any relay providers." />
   <meta name="robots" content="index, follow" />
   <link rel="canonical" href="https://aiapidoctor.com/en/" />
   <link rel="alternate" hreflang="zh-CN" href="https://aiapidoctor.com/" />
@@ -12,15 +12,11 @@
   <link rel="alternate" hreflang="x-default" href="https://aiapidoctor.com/" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="stylesheet" href="/assets/site.css" />
-
-  <!-- Open Graph -->
   <meta property="og:type" content="website" />
   <meta property="og:title" content="AI API Doctor: AI API Billing Anomaly Checker" />
-  <meta property="og:description" content="Check failed request charges, empty reply charges, cache anomalies, usage integrity, and possible model degradation. Generate a shareable AI API diagnostic report." />
+  <meta property="og:description" content="Check failed request charges, empty reply charges, cache anomalies, usage integrity, and possible model degradation. Generate a shareable diagnostic report." />
   <meta property="og:url" content="https://aiapidoctor.com/en/" />
   <meta property="og:locale" content="en_US" />
-
-  <!-- JSON-LD -->
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -96,7 +92,7 @@
       </div>
     </div>
 
-    <!-- Tool area: form left (48%) + report right (52%) -->
+    <!-- Tool area: form left + report right -->
     <div class="doctor-tool-area">
 
       <!-- Left: Form panel -->
@@ -123,13 +119,9 @@
                     Quick Check
                     <span class="mode-btn__desc">1 request</span>
                   </button>
-                  <button class="mode-btn" data-mode="standard" onclick="Doctor.setMode('standard')">
-                    Standard Check
-                    <span class="mode-btn__desc">~6 requests</span>
-                  </button>
-                  <button class="mode-btn" data-mode="deep" onclick="Doctor.setMode('deep')">
-                    Deep Check
-                    <span class="mode-btn__desc">~8-10 requests</span>
+                  <button class="mode-btn" data-mode="full" onclick="Doctor.setMode('full')">
+                    Full Doctor Check
+                    <span class="mode-btn__desc">More thorough</span>
                   </button>
                 </div>
 
@@ -144,8 +136,7 @@
 or:
 https://api.example.com/v1
 or:
-OPENAI_API_KEY=sk-...
-OPENAI_BASE_URL=https://...'
+OPENAI_API_KEY=sk-...'
                     rows="3"
                     oninput="Doctor.onConnectionInfoInput(this)"
                   ></textarea>
@@ -156,7 +147,6 @@ OPENAI_BASE_URL=https://...'
                 <div class="tool-form__group">
                   <label class="tool-form__label">Provider Name <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
                   <input id="doctor-provider" class="tool-form__input" placeholder="Provider name, optional" />
-                  <div class="tool-form__hint">If not set, the domain name will be used as provider name.</div>
                 </div>
 
                 <!-- Base URL -->
@@ -186,28 +176,18 @@ OPENAI_BASE_URL=https://...'
                   <div class="tool-form__hint">API Key is used only locally in your browser and is not uploaded to AI API Doctor.</div>
                 </div>
 
-                <!-- Model ID + read models -->
+                <!-- Model ID — simplified -->
                 <div class="tool-form__group">
                   <label class="tool-form__label">Model ID</label>
                   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-                    <input id="doctor-model" class="tool-form__input" placeholder="gpt-4o, deepseek-chat, claude-sonnet-4" style="flex:1;min-width:160px" />
-                    <button class="read-models-btn" type="button" id="read-models-btn" onclick="Doctor.readModelList()">Try Fetch Model List Beta</button>
+                    <input id="doctor-model" class="tool-form__input" placeholder="gpt-5.5" style="flex:1;min-width:160px" />
+                    <button class="read-models-btn" type="button" id="read-models-btn" onclick="Doctor.readModelList()">Fetch Models</button>
                   </div>
-                  <div style="margin-top:6px">
-                    <button class="common-models__btn" type="button" onclick="Doctor.showCommonModels()">Common Model Examples</button>
+                  <div class="tool-form__hint">
+                    Don't know the model ID? Try "Fetch Models" first. If it fails, copy the model name from your provider dashboard.
                   </div>
-                </div>
-
-                <!-- Model expected tier -->
-                <div class="tool-form__group">
-                  <label class="tool-form__label">Model Expected Tier <span style="font-weight:400;color:var(--muted)">(optional, affects interpretation only)</span></label>
-                  <div class="tier-toggle">
-                    <button class="tier-btn" data-tier="uncertain" onclick="Doctor.setTier('uncertain')">Uncertain</button>
-                    <button class="tier-btn" data-tier="light" onclick="Doctor.setTier('light')">Light</button>
-                    <button class="tier-btn active" data-tier="standard" onclick="Doctor.setTier('standard')">Standard</button>
-                    <button class="tier-btn" data-tier="advanced" onclick="Doctor.setTier('advanced')">Advanced</button>
-                  </div>
-                  <input type="hidden" id="doctor-tier" value="standard" />
+                  <!-- Inline model fetch results -->
+                  <div id="model-fetch-results" style="display:none"></div>
                 </div>
 
                 <!-- Interface -->
@@ -227,6 +207,18 @@ OPENAI_BASE_URL=https://...'
                   Show Advanced Options
                 </button>
                 <div class="advanced-panel" id="advanced-panel">
+
+                  <!-- Model tier -->
+                  <div class="tool-form__group" style="background:var(--soft);border-radius:var(--radius-sm);padding:12px;margin-bottom:8px">
+                    <label class="tool-form__label" style="margin-bottom:6px">Model Expected Tier <span style="font-weight:400;color:var(--muted)">(optional, affects interpretation)</span></label>
+                    <div class="tier-toggle">
+                      <button class="tier-btn active" data-tier="uncertain" onclick="Doctor.setTier('uncertain')">Uncertain</button>
+                      <button class="tier-btn" data-tier="light" onclick="Doctor.setTier('light')">Light</button>
+                      <button class="tier-btn" data-tier="standard" onclick="Doctor.setTier('standard')">Standard</button>
+                      <button class="tier-btn" data-tier="advanced" onclick="Doctor.setTier('advanced')">Advanced</button>
+                    </div>
+                    <input type="hidden" id="doctor-tier" value="uncertain" />
+                  </div>
 
                   <!-- Cache test -->
                   <div class="tool-form__group" style="background:var(--soft);border-radius:var(--radius-sm);padding:12px;margin-bottom:8px">
@@ -279,7 +271,7 @@ OPENAI_BASE_URL=https://...'
                       <input type="checkbox" id="sanity-test-toggle" onchange="Doctor.toggleSanity(this)" style="width:16px;height:16px;cursor:pointer;margin-top:2px;flex-shrink:0" />
                       <div>
                         <div style="font-size:13px;font-weight:600;color:var(--text)">Run Model Sanity Test</div>
-                        <div style="font-size:11px;color:var(--muted);margin-top:2px;line-height:1.4">Runs 5 lightweight tests for instruction following, reasoning, number traps, code understanding, and context retention. May consume a small amount of credits. Results only indicate possible degradation or performance anomalies — not an official model ranking.</div>
+                        <div style="font-size:11px;color:var(--muted);margin-top:2px;line-height:1.4">Runs 5 lightweight tests for instruction following, reasoning, number traps, code understanding, and context retention. May consume a small amount of credits. Results only indicate possible degradation — not an official model ranking.</div>
                       </div>
                     </label>
                   </div>
@@ -299,7 +291,7 @@ OPENAI_BASE_URL=https://...'
                 <div class="tool-actions">
                   <button id="doctor-run-btn" class="btn btn--primary btn--primary-run" onclick="Doctor.run()">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                    Start Diagnosis
+                    Start Quick Check
                   </button>
                   <button id="doctor-clear-btn" class="btn btn--secondary" onclick="Doctor.clear()">Clear</button>
                 </div>
@@ -310,22 +302,18 @@ OPENAI_BASE_URL=https://...'
             <!-- ── MANUAL REPORT TAB ── -->
             <div id="panel-manual" style="display:none">
               <div class="tool-form">
-
                 <div class="tool-form__group">
                   <label class="tool-form__label">Provider Name</label>
                   <input id="manual-provider" class="tool-form__input" placeholder="Provider name, optional" />
                 </div>
-
                 <div class="tool-form__group">
                   <label class="tool-form__label">Base URL</label>
                   <input id="manual-base-url" class="tool-form__input" placeholder="https://api.example.com/v1" />
                 </div>
-
                 <div class="tool-form__group">
                   <label class="tool-form__label">Model ID</label>
                   <input id="manual-model" class="tool-form__input" placeholder="gpt-4o" />
                 </div>
-
                 <div class="tool-form__row">
                   <div class="tool-form__group">
                     <label class="tool-form__label">Interface</label>
@@ -340,7 +328,6 @@ OPENAI_BASE_URL=https://...'
                     <input id="manual-http-status" class="tool-form__input" placeholder="200" type="number" />
                   </div>
                 </div>
-
                 <div class="tool-form__row">
                   <div class="tool-form__group">
                     <label class="tool-form__label">visible output length</label>
@@ -351,7 +338,6 @@ OPENAI_BASE_URL=https://...'
                     <input id="manual-prompt-tokens" class="tool-form__input" placeholder="0" type="number" />
                   </div>
                 </div>
-
                 <div class="tool-form__row">
                   <div class="tool-form__group">
                     <label class="tool-form__label">completion_tokens</label>
@@ -362,58 +348,20 @@ OPENAI_BASE_URL=https://...'
                     <input id="manual-total-tokens" class="tool-form__input" placeholder="0" type="number" />
                   </div>
                 </div>
-
                 <div class="tool-form__row">
                   <div class="tool-form__group">
                     <label class="tool-form__label">cached_tokens</label>
                     <input id="manual-cached-tokens" class="tool-form__input" placeholder="0" type="number" />
                   </div>
                   <div class="tool-form__group">
-                    <label class="tool-form__label">cache_read_input_tokens</label>
-                    <input id="manual-cache-read" class="tool-form__input" placeholder="0" type="number" />
-                  </div>
-                </div>
-
-                <div class="tool-form__row">
-                  <div class="tool-form__group">
-                    <label class="tool-form__label">cache_creation_input_tokens</label>
-                    <input id="manual-cache-creation" class="tool-form__input" placeholder="0" type="number" />
-                  </div>
-                  <div class="tool-form__group">
                     <label class="tool-form__label">actual cost (USD)</label>
                     <input id="manual-actual-cost" class="tool-form__input" placeholder="0.000000" type="number" step="0.000001" />
                   </div>
                 </div>
-
-                <div class="tool-form__group" style="background:var(--soft);border-radius:var(--radius-sm);padding:14px;margin-bottom:4px">
-                  <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:10px">Raw Quota Evidence (optional)</div>
-                  <div class="tool-form__row">
-                    <div class="tool-form__group">
-                      <label class="tool-form__label" style="font-size:11px">before</label>
-                      <input id="manual-before" class="tool-form__input" placeholder="99817234" type="number" />
-                    </div>
-                    <div class="tool-form__group">
-                      <label class="tool-form__label" style="font-size:11px">immediately after</label>
-                      <input id="manual-immediate" class="tool-form__input" placeholder="99817234" type="number" />
-                    </div>
-                  </div>
-                  <div class="tool-form__row" style="margin-top:8px">
-                    <div class="tool-form__group">
-                      <label class="tool-form__label" style="font-size:11px">after 3s</label>
-                      <input id="manual-after3" class="tool-form__input" placeholder="99817234" type="number" />
-                    </div>
-                    <div class="tool-form__group">
-                      <label class="tool-form__label" style="font-size:11px">after 10s</label>
-                      <input id="manual-after10" class="tool-form__input" placeholder="99817234" type="number" />
-                    </div>
-                  </div>
-                </div>
-
                 <div class="tool-form__group">
                   <label class="tool-form__label">Note <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
                   <textarea id="manual-note" class="tool-form__textarea" placeholder="Additional notes..." rows="2"></textarea>
                 </div>
-
                 <div class="tool-actions">
                   <button class="btn btn--primary" onclick="ManualReport.generate()" style="flex:2">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
@@ -421,7 +369,6 @@ OPENAI_BASE_URL=https://...'
                   </button>
                   <button class="btn btn--secondary" onclick="ManualReport.clear()">Clear</button>
                 </div>
-
               </div>
             </div><!-- /panel-manual -->
 
@@ -436,7 +383,7 @@ OPENAI_BASE_URL=https://...'
       <div class="doctor-report-panel">
         <div id="result-card">
           <div style="text-align:center;padding:40px 20px;color:#94a3b8;font-size:14px;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-lg)">
-            Fill in the fields and click "Start Diagnosis" to see your diagnostic report.
+            Fill in the fields and click a test button to see your diagnostic result.
           </div>
         </div>
       </div><!-- /doctor-report-panel -->
@@ -444,101 +391,6 @@ OPENAI_BASE_URL=https://...'
     </div><!-- /doctor-tool-area -->
   </div><!-- /doctor-layout -->
 </section>
-
-<!-- Model list modal -->
-<div class="model-modal-overlay" id="model-modal" onclick="if(event.target===this)Doctor.hideModelModal()">
-  <div class="model-modal" onclick="event.stopPropagation()">
-    <div class="model-modal__header">
-      <div class="model-modal__title">Select Model Example</div>
-      <button class="model-modal__close" onclick="Doctor.hideModelModal()">&times;</button>
-    </div>
-    <div class="model-modal__search">
-      <input
-        type="text"
-        class="model-search-input"
-        placeholder="Search models..."
-        oninput="filterModelList(this.value)"
-      />
-    </div>
-    <div class="model-modal__body">
-      <div class="model-modal__note">
-        These are common model examples only. Whether a model is available depends on your provider.
-      </div>
-      <div class="model-fetched-list"></div>
-
-      <div class="model-group" data-group="OpenAI">
-        <div class="model-group__title">OpenAI</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('gpt-4o')">gpt-4o</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('gpt-4o-mini')">gpt-4o-mini</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('gpt-4.5')">gpt-4.5</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('gpt-4.5-pro')">gpt-4.5-pro</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('gpt-4.5-mini')">gpt-4.5-mini</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('gpt-4.5-nano')">gpt-4.5-nano</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('gpt-4.1')">gpt-4.1</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('gpt-4.1-mini')">gpt-4.1-mini</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('gpt-4.1-nano')">gpt-4.1-nano</div>
-      </div>
-
-      <div class="model-group" data-group="Claude">
-        <div class="model-group__title">Claude</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('claude-opus-4-7')">claude-opus-4-7</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('claude-sonnet-4-6')">claude-sonnet-4-6</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('claude-haiku-4-5')">claude-haiku-4-5</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('claude-opus-4')">claude-opus-4</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('claude-sonnet-4')">claude-sonnet-4</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('claude-3.5-sonnet')">claude-3.5-sonnet</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('claude-3.5-haiku')">claude-3.5-haiku</div>
-      </div>
-
-      <div class="model-group" data-group="Gemini">
-        <div class="model-group__title">Gemini</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('gemini-3.1-pro-preview')">gemini-3.1-pro-preview</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('gemini-3.1-flash')">gemini-3.1-flash</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('gemini-2.5-flash')">gemini-2.5-flash</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('gemini-2.5-flash-lite')">gemini-2.5-flash-lite</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('gemini-2.0-flash')">gemini-2.0-flash</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('gemini-2.0-flash-exp')">gemini-2.0-flash-exp</div>
-      </div>
-
-      <div class="model-group" data-group="DeepSeek">
-        <div class="model-group__title">DeepSeek</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('deepseek-chat')">deepseek-chat</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('deepseek-reasoner')">deepseek-reasoner</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('deepseek-v3')">deepseek-v3</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('deepseek-r1')">deepseek-r1</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('deepseek-r1-distill-qwen-32b')">deepseek-r1-distill-qwen-32b</div>
-      </div>
-
-      <div class="model-group" data-group="Qwen">
-        <div class="model-group__title">Qwen</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('qwen-plus')">qwen-plus</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('qwen-max')">qwen-max</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('qwen-coder-plus')">qwen-coder-plus</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('qwen-long')">qwen-long</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('qwen-turbo')">qwen-turbo</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('qwen2.5-72b-instruct')">qwen2.5-72b-instruct</div>
-      </div>
-
-      <div class="model-group" data-group="Moonshot">
-        <div class="model-group__title">Moonshot</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('moonshot-v1-8k')">moonshot-v1-8k</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('moonshot-v1-32k')">moonshot-v1-32k</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('moonshot-v1-128k')">moonshot-v1-128k</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('kimi-k2')">kimi-k2</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('kimi-k2-preview')">kimi-k2-preview</div>
-      </div>
-
-      <div class="model-group" data-group="Other">
-        <div class="model-group__title">Other</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('mistral-large')">mistral-large</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('mistral-small')">mistral-small</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('groq/llama-3.3-70b-versatile')">groq/llama-3.3-70b-versatile</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('azure/gpt-4o')">azure/gpt-4o</div>
-        <div class="common-models__item" onclick="Doctor.selectModel('anthropic/claude-3.5-sonnet')">anthropic/claude-3.5-sonnet</div>
-      </div>
-    </div>
-  </div>
-</div>
 
 <!-- Below fold: SEO content -->
 <main>
@@ -602,7 +454,7 @@ OPENAI_BASE_URL=https://...'
     <div class="container container--narrow">
       <h2 class="section__title section__title--center">Why Did We Build AI API Doctor?</h2>
       <div class="card" style="font-size:15px;line-height:1.8;color:var(--text-muted)">
-        <p style="margin:0 0 16px">When I was building an AI API service, I discovered that many relay providers use a pre-charge mechanism:额度 is deducted when a request starts, and settled based on actual usage after the request ends.</p>
+        <p style="margin:0 0 16px">When I was building an AI API service, I discovered that many relay providers use a pre-charge mechanism: quota is deducted when a request starts, and settled based on actual usage after the request ends.</p>
         <p style="margin:0 0 16px">This mechanism itself is fine. But if failed requests, empty replies, upstream 503 errors, invalid models, or cache hits are not handled well, users may find that "they got no valid response but their quota changed".</p>
         <p style="margin:0">AI API Doctor's goal is not to convict any site — it's to turn billing, usage, cache, and model performance into a reproducible diagnostic report that users and providers can discuss based on evidence.</p>
       </div>
@@ -616,14 +468,14 @@ OPENAI_BASE_URL=https://...'
   <!-- Share Score Section -->
   <section class="section section--alt">
     <div class="container">
-      <h2 class="section__title section__title--center">Share Your AI API Doctor Score</h2>
+      <h2 class="section__title section__title--center">Share Your AI API Doctor Result</h2>
       <p class="section__desc section__title--center">
         After generating a report, copy one line to share in a forum post. You don't need to reveal your API Key or provider name.
       </p>
       <div class="card" style="max-width:600px;margin:0 auto">
         <div class="share-example">
           <div class="share-example__label">Example</div>
-          <div class="share-example__text">My AI API Doctor Score: 88/100 | Coverage: 70% | Diagnosis Complete | Report ID: AID-0514-K9P2</div>
+          <div class="share-example__text">My AI API Doctor Quick Check: Normal | Connectivity OK | Report ID: AID-0514-K9P2</div>
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px">
           <a href="/en/#doctor" class="btn btn--primary" style="flex:1;justify-content:center">
@@ -657,37 +509,8 @@ OPENAI_BASE_URL=https://...'
     </div>
   </section>
 
-  <!-- Use cases -->
-  <section class="section section--alt">
-    <div class="container">
-      <h2 class="section__title section__title--center">Who Is This For?</h2>
-      <div class="feature-grid">
-        <div class="card" style="text-align:center">
-          <div style="font-size:24px;margin-bottom:8px">&#128100;</div>
-          <div class="card__title">New API / One API Users</div>
-        </div>
-        <div class="card" style="text-align:center">
-          <div style="font-size:24px;margin-bottom:8px">&#127760;</div>
-          <div class="card__title">AI API Relay Users</div>
-        </div>
-        <div class="card" style="text-align:center">
-          <div style="font-size:24px;margin-bottom:8px">&#128736;</div>
-          <div class="card__title">Providers and Support Staff</div>
-        </div>
-        <div class="card" style="text-align:center">
-          <div style="font-size:24px;margin-bottom:8px">&#128187;</div>
-          <div class="card__title">Claude Code / Cline / Cursor Users</div>
-        </div>
-        <div class="card" style="text-align:center">
-          <div style="font-size:24px;margin-bottom:8px">&#128269;</div>
-          <div class="card__title">People Who Want to Verify Billing</div>
-        </div>
-      </div>
-    </div>
-  </section>
-
   <!-- CTA -->
-  <section class="section">
+  <section class="section section--alt">
     <div class="container" style="text-align:center">
       <h2 class="section__title">Start Your Diagnosis Now</h2>
       <p class="section__desc" style="max-width:480px;margin:0 auto 24px">
@@ -710,34 +533,6 @@ OPENAI_BASE_URL=https://...'
       <p style="margin-top:16px;font-size:13px;color:var(--muted)">
         The Chrome extension is under review. It's best for New API / One API users who need raw quota data from a logged-in console. A download link will be available once approved.
       </p>
-    </div>
-  </section>
-
-  <!-- FAQ summary -->
-  <section class="section section--alt">
-    <div class="container container--narrow">
-      <h2 class="section__title section__title--center">Frequently Asked Questions</h2>
-      <div style="display:flex;flex-direction:column;gap:8px">
-        <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px;display:flex;justify-content:space-between;align-items:center;gap:12px">
-          <span style="font-size:14px;font-weight:500;color:var(--text)">Why can't the web version directly test some Base URLs?</span>
-          <a href="/en/faq/" style="font-size:13px;color:var(--info);white-space:nowrap">See answer &rsaquo;</a>
-        </div>
-        <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px;display:flex;justify-content:space-between;align-items:center;gap:12px">
-          <span style="font-size:14px;font-weight:500;color:var(--text)">What is cached_tokens?</span>
-          <a href="/en/faq/" style="font-size:13px;color:var(--info);white-space:nowrap">See answer &rsaquo;</a>
-        </div>
-        <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px;display:flex;justify-content:space-between;align-items:center;gap:12px">
-          <span style="font-size:14px;font-weight:500;color:var(--text)">Why is usage integrity important?</span>
-          <a href="/en/faq/" style="font-size:13px;color:var(--info);white-space:nowrap">See answer &rsaquo;</a>
-        </div>
-        <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px;display:flex;justify-content:space-between;align-items:center;gap:12px">
-          <span style="font-size:14px;font-weight:500;color:var(--text)">Can this report prove a provider intentionally overcharges?</span>
-          <a href="/en/faq/" style="font-size:13px;color:var(--info);white-space:nowrap">See answer &rsaquo;</a>
-        </div>
-      </div>
-      <div style="text-align:center;margin-top:24px">
-        <a href="/en/faq/" class="btn btn--secondary">View All FAQs</a>
-      </div>
     </div>
   </section>
 
@@ -797,22 +592,21 @@ function updateCostEstimate() {
   const items = [];
 
   if (cfg) {
-    items.push({ text: cfg.requestsEn, type: 'base' });
+    items.push({ text: cfg.descEn, type: 'base' });
   } else {
-    items.push({ text: 'Basic model connectivity: ~1 request, minimal cost', type: 'base' });
+    items.push({ text: 'Basic model connectivity: 1 request, minimal cost', type: 'base' });
   }
 
-  if (cacheEnabled && (!cfg || !cfg.cacheTest)) {
-    items.push({ text: 'Cache detection enabled: 2 extra requests with longer prompt, may consume a small amount of credits', type: 'cache' });
+  if (cacheEnabled) {
+    items.push({ text: 'Cache hit detection: 2 extra requests with longer prompt, may consume a small amount of credits', type: 'cache' });
   }
-  if (priceEnabled && (!cfg || !cfg.priceAudit)) {
-    items.push({ text: 'Price audit enabled: uses basic connectivity request data, no extra requests', type: 'price' });
+  if (priceEnabled) {
+    items.push({ text: 'Price audit: uses existing usage data, no extra requests', type: 'price' });
   }
-  if (sanityEnabled && (!cfg || !cfg.modelSanity)) {
-    items.push({ text: 'Model sanity test enabled: 5 extra requests, may consume a small amount of credits', type: 'sanity' });
+  if (sanityEnabled) {
+    items.push({ text: 'Model sanity test: 5 extra requests, may consume a small amount of credits', type: 'sanity' });
   }
 
-  const bothEnabled = cacheEnabled && sanityEnabled;
   let html = items.map(item => {
     const dotColor = item.type === 'base' ? 'var(--success)' : 'var(--warning)';
     return `<div style="display:flex;align-items:flex-start;gap:8px;padding:3px 0">
@@ -820,12 +614,6 @@ function updateCostEstimate() {
       <span style="font-size:12px;color:var(--muted);line-height:1.5">${item.text}</span>
     </div>`;
   }).join('');
-
-  if (bothEnabled) {
-    html += `<div style="margin-top:8px;padding:8px 10px;background:#fef3c7;border-radius:6px;font-size:12px;color:#92400e;line-height:1.5">
-      Multiple test requests will be sent. Please confirm that you are willing to consume a small amount of API quota.
-    </div>`;
-  }
 
   lines.innerHTML = html;
   card.style.display = 'block';
@@ -847,43 +635,16 @@ window.ManualReport = {
     const completionTokens = num('manual-completion-tokens');
     const totalTokens = num('manual-total-tokens');
     const cachedTokens = num('manual-cached-tokens');
-    const cacheRead = num('manual-cache-read');
-    const before = num('manual-before');
-    const immediate = num('manual-immediate');
-    const after3 = num('manual-after3');
-    const after10 = num('manual-after10');
+    const actualCost = num('manual-actual-cost');
     const provider = get('manual-provider') || (baseUrl ? new URL(baseUrl.startsWith('http') ? baseUrl : 'https://' + baseUrl).hostname : 'Unknown');
-    const note = get('manual-note');
 
     if (!baseUrl) { window.showToast && window.showToast('Please fill in Base URL'); return; }
     if (!model) { window.showToast && window.showToast('Please fill in Model ID'); return; }
 
-    let verdict = 'unknown';
-    const hasEffectiveOutput = outputLen > 0 || completionTokens > 0;
-    if (before && after10) {
-      const delta = before - after10;
-      if (httpStatus >= 400 && !hasEffectiveOutput && delta === 0) verdict = 'failed_request_not_charged';
-      else if (httpStatus >= 400 && !hasEffectiveOutput && delta > 0) verdict = 'failed_request_charged';
-      else if (httpStatus >= 200 && httpStatus < 300 && !hasEffectiveOutput && delta > 0) verdict = 'empty_response_charged';
-      else if (immediate < before && after10 === before) verdict = 'precharge_refunded';
-      else if (delta === 0) verdict = 'failed_request_not_charged';
-    }
-
-    const verdictMeta = {
-      failed_request_not_charged: { status: 'ok', label: 'Normal', title: 'Failed Request Not Charged', detail: 'The request failed, but after 10 seconds the original quota was not reduced.' },
-      precharge_refunded: { status: 'ok', label: 'Normal', title: 'Pre-charge Refunded', detail: 'Quota was pre-charged after the request, but it was refunded within 10 seconds.' },
-      failed_request_charged: { status: 'danger', label: 'Anomaly Risk', title: 'Failed Request Overcharged', detail: 'The request failed with no valid output, but raw quota decreased after 10 seconds.' },
-      empty_response_charged: { status: 'danger', label: 'Anomaly Risk', title: 'Empty Reply Overcharged', detail: 'The request had no valid output, but raw quota decreased after 10 seconds.' },
-      raw_quota_unavailable: { status: 'warning', label: 'Risk', title: 'Cannot Read Raw Quota', detail: 'Raw quota evidence is missing. This report can only serve as a risk reference.' },
-      unknown: { status: 'warning', label: 'Needs Review', title: 'Cannot Determine', detail: 'Please provide more evidence or use the Chrome extension to read raw quota.' }
-    }[verdict] || { status: 'warning', label: 'Needs Review', title: 'Cannot Determine', detail: 'Please provide more evidence.' };
-
     const timestamp = new Date().toLocaleString('en-US', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
-    const delta = before && after10 ? before - after10 : null;
-    const deltaClass = delta > 0 ? 'var(--danger)' : 'var(--success)';
-    const deltaText = delta > 0 ? `-${Number(delta).toLocaleString('en-US')} quota` : delta === 0 ? '+0 quota' : '—';
-
     const usageComplete = promptTokens && completionTokens && totalTokens ? 'Complete' : promptTokens || totalTokens ? 'Incomplete' : 'Not Returned';
+    const hasEffectiveOutput = outputLen > 0 || completionTokens > 0;
+    const statusOk = httpStatus >= 200 && httpStatus < 400 && hasEffectiveOutput;
 
     const resultCard = f('result-card');
     if (!resultCard) return;
@@ -901,17 +662,11 @@ window.ManualReport = {
           </div>
         </div>
 
-        <div style="text-align:center;padding:20px 16px;border-radius:12px;background:${verdictMeta.status === 'ok' ? '#dcfce7' : verdictMeta.status === 'danger' ? '#fee2e2' : '#fef3c7'};margin-bottom:16px">
-          <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${verdictMeta.status === 'ok' ? '#16a34a' : verdictMeta.status === 'danger' ? '#dc2626' : '#d97706'};margin-bottom:6px">${verdictMeta.label}</div>
-          <div style="font-size:20px;font-weight:800;color:#0f172a;margin-bottom:4px">${verdictMeta.title}</div>
-          <div style="font-size:13px;color:#64748b">${verdictMeta.detail}</div>
+        <div style="text-align:center;padding:20px 16px;border-radius:12px;background:${statusOk ? '#dcfce7' : httpStatus >= 400 ? '#fee2e2' : '#fef3c7'};margin-bottom:16px">
+          <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${statusOk ? '#16a34a' : httpStatus >= 400 ? '#dc2626' : '#d97706'};margin-bottom:6px">${statusOk ? 'Normal' : httpStatus >= 400 ? 'Error' : 'Needs Review'}</div>
+          <div style="font-size:20px;font-weight:800;color:#0f172a;margin-bottom:4px">${statusOk ? 'Connectivity OK' : httpStatus >= 400 ? 'Connectivity Failed' : 'Needs Review'}</div>
+          <div style="font-size:13px;color:#64748b">${statusOk ? 'API request successful' : httpStatus >= 400 ? 'HTTP ' + httpStatus : 'Please verify billing'}</div>
         </div>
-
-        ${delta !== null ? `
-        <div style="background:var(--soft);border-radius:var(--radius);padding:20px;text-align:center;margin-bottom:16px">
-          <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:8px">${delta > 0 ? 'Final Reduction' : 'Final Change'}</div>
-          <div style="font-size:56px;font-weight:800;line-height:1.1;color:${deltaClass}">${deltaText}</div>
-        </div>` : ''}
 
         <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:16px">
           <div style="background:#f1f5f9;border-radius:8px;padding:10px 12px">
@@ -950,7 +705,7 @@ window.ManualReport = {
   },
 
   clear() {
-    ['manual-provider','manual-base-url','manual-model','manual-http-status','manual-output-len','manual-prompt-tokens','manual-completion-tokens','manual-total-tokens','manual-cached-tokens','manual-cache-read','manual-cache-creation','manual-actual-cost','manual-before','manual-immediate','manual-after3','manual-after10','manual-note'].forEach(id => {
+    ['manual-provider','manual-base-url','manual-model','manual-http-status','manual-output-len','manual-prompt-tokens','manual-completion-tokens','manual-total-tokens','manual-cached-tokens','manual-actual-cost'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.value = '';
     });
