@@ -37,7 +37,7 @@
         "name": "AI API Doctor 会上传或保存我的 API Key 吗？",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "Chrome 扩展版默认将 API Key 保存在浏览器本地 chrome.storage.local 中，不会主动上传到 Link-AI 或其他第三方服务器。诊断请求只会发送到你当前选择的 Base URL。建议使用测试专用 API Key，不要使用生产环境主 Key。"
+          "text": "API Key 保存在浏览器本地，不会主动上传到任何第三方服务器。诊断请求只会发送到你当前选择的 Base URL。建议使用测试专用 API Key，不要使用生产环境主 Key。"
         }
       },
       {
@@ -101,15 +101,15 @@
         "name": "AI API Doctor 推荐中转站吗？",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "AI API Doctor 不做中转站排行榜，也不会因为服务商不同改变诊断逻辑。Link-AI 是 AI API Doctor 的赞助方和默认内置示例 Provider。你可以使用 Link-AI，也可以删除、切换或添加任何 OpenAI-compatible Base URL。所有 Provider 使用同一套本地诊断逻辑，不会因为某个服务商是默认内置 Provider 就改变诊断结果。"
+          "text": "不会。AI API Doctor 是中立检测工具，不推荐、不排名任何中转站。报告只展示本次测试中的可复现信号，不证明服务商主观故意。"
         }
       },
       {
         "@type": "Question",
-        "name": "Link-AI 和 AI API Doctor 是什么关系？",
+        "name": "默认内置 Provider 和 AI API Doctor 是什么关系？",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "AI API Doctor 由 Link-AI 发起和赞助。Link-AI 在工具中作为默认内置 Provider，方便新用户快速理解 Base URL、API Key 和模型诊断流程。但 AI API Doctor 本身支持任意 OpenAI-compatible API 服务商，诊断逻辑对所有 Provider 一致。界面中使用「默认内置」标注 Link-AI，不会使用「推荐」「最佳中转」等措辞。"
+          "text": "AI API Doctor 是中立检测工具，支持任意 OpenAI-compatible API 服务商，诊断逻辑对所有 Provider 一致。界面中使用「默认内置」标注，不使用「推荐」「最佳中转」等措辞。"
         }
       },
       {
@@ -133,7 +133,7 @@
         "name": "AI API Doctor 是否开源？",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "插件端计划开源，方便用户检查 API Key 的存储方式、请求逻辑和诊断过程。API Key 默认保存在浏览器本地，不会主动上传到 Link-AI 或其他服务器。官网，品牌、服务端统计和商业服务可能不完全开源。"
+          "text": "插件端计划开源，方便用户检查 API Key 的存储方式、请求逻辑和诊断过程。API Key 默认保存在浏览器本地，不会主动上传到任何第三方服务器。官网，品牌、服务端统计和商业服务可能不完全开源。"
         }
       },
       {
@@ -649,7 +649,7 @@
         <a href="/faq/" class="active">FAQ</a>
         <a href="/privacy/">隐私</a>
         <a href="/support/">支持</a>
-        <a href="https://chrome.google.com/webstore" target="_blank" rel="noopener">下载插件</a>
+        <span style="color:var(--muted);font-size:13px">Chrome 插件审核中</span>
         <span class="lang-switcher">
           <span class="lang-switcher__current">中文</span>
           <span class="lang-switcher__sep">|</span>
@@ -727,7 +727,7 @@
       <div class="faq-answer">
         <div class="faq-answer-inner">
           <p>Chrome 扩展版默认将 API Key 保存在你的浏览器本地 <code>chrome.storage.local</code> 中。</p>
-          <p>AI API Doctor 不会主动把你的 API Key 上传到 Link-AI 或其他第三方服务器。</p>
+          <p>AI API Doctor 不会主动把你的 API Key 上传到任何第三方服务器。</p>
           <p>诊断请求只会发送到你当前选择的 Base URL。例如你选择了某个自定义中转站，诊断请求就会发送到该中转站的 API 地址。</p>
           <p><strong>建议你使用专门用于测试的 API Key，不要使用生产环境主 Key。</strong></p>
         </div>
@@ -1101,8 +1101,8 @@
       </div>
     </div>
 
-    <!-- Section 6: 中转站与 Link-AI 关系 -->
-    <div class="faq-group-title">中转站与 Link-AI 关系</div>
+    <!-- Section 6: 中立声明与默认 Provider -->
+    <div class="faq-group-title">中立声明</div>
 
     <div class="faq-card">
       <button class="faq-question" onclick="toggle(this)">
@@ -1111,32 +1111,34 @@
       </button>
       <div class="faq-answer">
         <div class="faq-answer-inner">
-          <p>AI API Doctor 不做中转站排行榜，也不会因为服务商不同改变诊断逻辑。</p>
-          <p>Link-AI 是 AI API Doctor 的赞助方和默认内置示例 Provider。你可以使用 Link-AI，也可以删除、切换或添加任何 OpenAI-compatible Base URL。</p>
-          <p>所有 Provider 使用同一套本地诊断逻辑。</p>
-          <p>我们不会因为某个服务商是默认内置 Provider，就改变诊断结果。</p>
+          <p>不会。AI API Doctor 是中立检测工具，不推荐、不排名任何中转站。</p>
+          <p>报告只展示本次测试中的可复现信号，不证明服务商主观故意。</p>
         </div>
       </div>
     </div>
 
     <div class="faq-card">
       <button class="faq-question" onclick="toggle(this)">
-        <span>Link-AI 和 AI API Doctor 是什么关系？</span>
+        <span>默认内置 Provider 和 AI API Doctor 是什么关系？</span>
         <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
       </button>
       <div class="faq-answer">
         <div class="faq-answer-inner">
-          <p>AI API Doctor 由 Link-AI 发起和赞助。</p>
-          <p>Link-AI 在工具中作为默认内置 Provider，方便新用户快速理解 Base URL、API Key 和模型诊断流程。</p>
-          <p>但 AI API Doctor 本身支持任意 OpenAI-compatible API 服务商，诊断逻辑对所有 Provider 一致。</p>
-          <p>界面中使用：</p>
-          <ul>
-            <li>Built-in / <strong>默认内置</strong></li>
-          </ul>
-          <p>不使用：</p>
-          <ul>
-            <li>Recommended / 推荐服务商 / 最佳中转</li>
-          </ul>
+          <p>AI API Doctor 是中立检测工具，支持任意 OpenAI-compatible API 服务商，诊断逻辑对所有 Provider 一致。</p>
+          <p>界面中使用「默认内置」标注，不使用「推荐」「最佳中转」等措辞。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>为什么要讲预扣费？</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>很多 AI API 服务会在请求开始时预扣额度，结束后再结算返还。</p>
+          <p>如果失败请求、空回复、上游错误等场景处理不好，就可能出现用户难以察觉的扣费异常。</p>
         </div>
       </div>
     </div>
@@ -1152,7 +1154,7 @@
       <div class="faq-answer">
         <div class="faq-answer-inner">
           <p>插件端计划开源，方便用户检查 API Key 的存储方式、请求逻辑和诊断过程。</p>
-          <p>API Key 默认保存在浏览器本地，不会主动上传到 Link-AI 或其他服务器。</p>
+          <p>API Key 默认保存在浏览器本地，不会主动上传到任何第三方服务器。</p>
           <p>官网、品牌、服务端统计和商业服务可能不完全开源。</p>
         </div>
       </div>
@@ -1164,7 +1166,7 @@
       <p>AI API Doctor 生成的报告适合发给站长或客服排查问题。报告会自动隐藏完整 API Key。</p>
       <div class="report-block"><span class="report-title">AI API Doctor Report</span>
 <span class="report-label">────────────────────────────────</span>
-<span class="report-label">Provider:</span> Link-AI
+<span class="report-label">Provider:</span> <span class="report-value">(已脱敏)</span>
 <span class="report-label">Base URL:</span> https://api.example.com/v1
 <span class="report-label">API Key:</span> sk-****abcd
 <span class="report-label">Model:</span> claude-opus-4.7
@@ -1191,6 +1193,65 @@
       <p>作者是一名长期构建 SaaS 和 AI 工具的独立开发者，关注内容工作流、AI API 配置、自动化生产线和开发者工具体验。</p>
       <p>AI API Doctor 的目标不是给中转站做"真假审判"，而是帮助用户在真实使用场景中诊断 API Key、Base URL、模型权限、Token 用量和客户端配置问题。</p>
       <p>项目会尽量保持诊断逻辑透明、边界清晰，并优先避免误伤正常服务商。</p>
+    </div>
+
+    <!-- Section 8: 模型智商检测 -->
+    <div class="faq-group-title">模型智商检测</div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>模型智商检测是什么意思？</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>它是一个轻量的模型表现测试，包含指令遵守、基础推理、数字陷阱、代码理解和上下文保持。</p>
+          <p>它不是官方 IQ，也不能证明模型真假，只用于发现明显降智或能力异常。</p>
+          <p>开启方式：在体检台高级设置中勾选"加测模型智商 / 降智检测"。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>为什么 9.11 和 9.9 这种题有争议？</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>这类题容易引发讨论，也能暴露部分模型的数字推理问题。</p>
+          <p>但单题不能代表模型整体能力，所以 AI API Doctor 会把它作为模型表现分的一部分，而不是唯一判断标准。</p>
+          <p>模型表现分由 5 个测试综合计算：指令遵守、基础推理、数字陷阱、代码理解和上下文保持。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>需要公开中转站名称吗？</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>不需要。</p>
+          <p>AI API Doctor 是中立工具，不要求你公开服务商名称，也不推荐或排名任何中转站。</p>
+          <p>晒分时只需要报告体检分、模型表现分和一句话发现，不需要透露任何关于服务商的信息。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>这是要求好评或安装插件吗？</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>不是。</p>
+          <p>你可以只使用网页版，不需要安装插件，不需要给 Chrome 商店好评，也不需要强制在社交媒体分享。</p>
+          <p>只需要在需要时生成体检报告，有需要时贴出一行晒分即可。</p>
+        </div>
+      </div>
     </div>
 
     <!-- CTA Section -->
@@ -1227,7 +1288,7 @@
       <a href="https://aiapidoctor.com/support">支持</a>
     </p>
     <p style="margin-top:4px">最后更新：2026 年 5 月 14 日</p>
-    <p style="margin-top:4px; color:#9ca3af">Powered by Link-AI</p>
+    <p style="margin-top:4px; color:#9ca3af">AI API Doctor &middot; 不推荐、不排名任何中转站</p>
   </footer>
 
   <script>

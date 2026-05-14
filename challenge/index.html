@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI API 体检分挑战 - AI API Doctor</title>
+  <meta name="description" content="AI API 体检分挑战：生成 AI API 体检报告，贴出一行结果，帮助发现误判、兼容性问题和中转站扣费风险。" />
+  <meta name="robots" content="index, follow" />
+  <link rel="canonical" href="https://aiapidoctor.com/challenge/" />
+  <link rel="alternate" hreflang="en" href="https://aiapidoctor.com/en/challenge/" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="stylesheet" href="/assets/site.css" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="AI API 体检分挑战" />
+  <meta property="og:description" content="生成 AI API 体检报告，贴出一行结果即可参与。不需要公开 API Key，也不需要公开服务商名称。" />
+  <meta property="og:url" content="https://aiapidoctor.com/challenge/" />
+</head>
+<body>
+
+<!-- Header -->
+<header class="site-header">
+  <div class="container site-header__inner">
+    <a href="/" class="site-logo">
+      <div class="site-logo__icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+        </svg>
+      </div>
+      AI API Doctor
+    </a>
+    <nav class="site-nav">
+      <a href="/">首页</a>
+      <a href="/#doctor">体检台</a>
+      <a href="/report/">报告生成</a>
+      <a href="/faq/">FAQ</a>
+      <a href="/privacy/">隐私</a>
+      <a href="/support/">支持</a>
+      <span class="lang-switcher">
+        <a href="/en/challenge/" class="lang-switcher__link">English</a>
+        <span class="lang-switcher__sep">|</span>
+        <span class="lang-switcher__current">中文</span>
+      </span>
+    </nav>
+  </div>
+</header>
+
+<!-- Hero -->
+<section class="challenge-hero">
+  <div class="challenge-hero__badge">&#9878;&#65039; 公开活动</div>
+  <h1 style="font-size:clamp(24px,5vw,36px);font-weight:800;letter-spacing:-0.5px;margin-bottom:16px">AI API 体检分挑战</h1>
+  <p style="color:var(--muted);font-size:17px;max-width:520px;margin:0 auto;line-height:1.7">
+    生成你的 AI API 体检报告，贴出一行结果即可参与。不需要公开 API Key，也不需要公开服务商名称。
+  </p>
+</section>
+
+<!-- Main content -->
+<main class="challenge-content">
+
+  <div class="challenge-card">
+    <div class="challenge-card__title">什么是 AI API 体检分挑战？</div>
+    <div class="challenge-card__desc">
+      <p>这是一个面向 AI API 用户的公开测试活动。你可以用 AI API Doctor 生成一份体检报告，然后在论坛或群聊中贴出一行结果。</p>
+      <p style="margin-top:12px">你的晒分可以帮助：</p>
+      <ul style="padding-left:20px;margin-top:8px;color:var(--muted);font-size:14px;line-height:2">
+        <li>帮助其他用户发现误判、兼容性问题</li>
+        <li>暴露 CORS 问题和服务商扣费风险</li>
+        <li>建立社区对各中转站透明度的共识</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="challenge-card">
+    <div class="challenge-card__title">推荐格式</div>
+    <div class="challenge-card__desc">
+      <p>在论坛、群聊或评论区贴出以下格式（一行或多行均可）：</p>
+    </div>
+    <div class="challenge-format-block">我的 AI API 体检分：{score}/100｜API：{apiScore}/100｜模型：{modelScore}/100｜{mainFinding}｜报告 ID：{reportId}
+https://aiapidoctor.com/</div>
+    <div class="challenge-card__desc" style="margin-top:8px">
+      如果不想开启模型表现检测，模型部分可以写"模型：未检测"。
+    </div>
+  </div>
+
+  <div class="challenge-card">
+    <div class="challenge-card__title">可选补充信息</div>
+    <div class="challenge-card__desc">
+      <p>如果你愿意，可以补充以下信息（不强制）：</p>
+    </div>
+    <div class="challenge-format-block">接口类型：OpenAI Chat
+是否遇到 CORS：否
+哪里不好用：无</div>
+    <div class="challenge-card__desc" style="margin-top:8px">
+      这些信息可以帮助其他人了解不同中转站在不同场景下的表现。
+    </div>
+  </div>
+
+  <div class="challenge-card">
+    <div class="challenge-card__title">安全提醒</div>
+    <div class="challenge-warning">
+      <strong>不要贴以下内容：</strong>
+      <ul style="padding-left:20px;margin-top:8px;line-height:2">
+        <li>完整 API Key</li>
+        <li>账号密码</li>
+        <li>敏感余额截图</li>
+        <li>你不想公开的站点名称</li>
+      </ul>
+    </div>
+    <div class="challenge-card__desc">
+      <p>体检分报告只展示技术信号，不证明服务商故意多扣费，也不代表模型真假。模型表现分仅用于发现明显降智或能力异常，不代表官方模型排名。</p>
+    </div>
+  </div>
+
+  <div class="challenge-card">
+    <div class="challenge-card__title">参与方式</div>
+    <div class="challenge-card__desc">
+      <ol style="padding-left:20px;line-height:2.2;font-size:14px">
+        <li>打开 <a href="/#doctor">AI API Doctor 体检台</a>，填写 Base URL 和 API Key</li>
+        <li>点击"开始体检"，等待检测完成</li>
+        <li>点击"复制一行晒分"，粘贴到论坛或群聊</li>
+        <li>可选：开启"加测模型智商"获得更完整报告</li>
+      </ol>
+    </div>
+    <div style="margin-top:16px">
+      <a href="/#doctor" class="btn btn--primary" style="display:inline-flex;align-items:center;gap:8px;padding:12px 24px;border-radius:var(--radius);font-size:15px;font-weight:600;text-decoration:none">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        开始体检
+      </a>
+    </div>
+  </div>
+
+  <div class="challenge-card" style="background:#f8fafc;border-color:#e2e8f0">
+    <div class="challenge-card__title" style="color:var(--muted)">常见问题</div>
+    <div class="challenge-card__desc">
+      <p><strong>Q：我需要安装插件吗？</strong></p>
+      <p style="color:var(--muted);font-size:14px;margin-top:4px;margin-bottom:12px">不需要。网页版即可完成全部检测，包括模型表现分。</p>
+
+      <p><strong>Q：需要给好评或强制分享吗？</strong></p>
+      <p style="color:var(--muted);font-size:14px;margin-top:4px;margin-bottom:12px">不需要。你只需要贴一行体检分，不需要安装插件，不需要给好评，不需要强制推荐。</p>
+
+      <p><strong>Q：服务商知道我测了什么吗？</strong></p>
+      <p style="color:var(--muted);font-size:14px;margin-top:4px">AI API Doctor 不会把结果上传到第三方。检测请求只发送到你填写的 Base URL。</p>
+    </div>
+  </div>
+
+</main>
+
+<!-- Footer -->
+<footer class="site-footer">
+  <div class="container site-footer__inner">
+    <div class="site-logo" style="font-size:15px;margin-bottom:8px">
+      <div class="site-logo__icon" style="width:28px;height:28px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px">
+          <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+        </svg>
+      </div>
+      AI API Doctor
+    </div>
+    <div class="site-footer__links">
+      <a href="/">首页</a>
+      <a href="/#doctor">体检台</a>
+      <a href="/report/">报告生成</a>
+      <a href="/faq/">FAQ</a>
+      <a href="/privacy/">隐私</a>
+      <a href="/support/">支持</a>
+    </div>
+    <p class="site-footer__note">
+      本工具不是法律审计报告，只展示可复现的技术信号。模型表现分仅用于发现明显异常或降智风险，不代表官方模型排名。
+    </p>
+    <p style="color:#9ca3af;font-size:12px;margin-top:4px">&copy; 2026 AI API Doctor &middot; aiapidoctor.com</p>
+  </div>
+</footer>
+
+</body>
+</html>

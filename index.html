@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AI API Doctor：AI API 扣费异常检测工具</title>
-  <meta name="description" content="检测 AI API 中转站失败请求扣费、空回复扣费、缓存命中、模型联通、usage 完整性和价格差异，生成可发给站长的诊断报告。" />
+  <meta name="description" content="检测 AI API 中转站失败扣费，空回复扣费、缓存异常、usage 完整性和模型降智，生成可分享的 AI API 体检报告。不推荐、不排名任何中转站。" />
   <meta name="robots" content="index, follow" />
   <link rel="canonical" href="https://aiapidoctor.com/" />
   <link rel="alternate" hreflang="zh-CN" href="https://aiapidoctor.com/" />
@@ -16,7 +16,7 @@
   <!-- Open Graph -->
   <meta property="og:type" content="website" />
   <meta property="og:title" content="AI API Doctor：AI API 扣费异常检测工具" />
-  <meta property="og:description" content="检测 AI API 中转站失败请求扣费、空回复扣费、缓存命中、模型联通、usage 完整性和价格差异，生成可发给站长的诊断报告。" />
+  <meta property="og:description" content="检测 AI API 中转站失败扣费，空回复扣费、缓存异常、usage 完整性和模型降智，生成可分享的 AI API 体检报告。不推荐、不排名任何中转站。" />
   <meta property="og:url" content="https://aiapidoctor.com/" />
   <meta property="og:locale" content="zh_CN" />
 
@@ -28,7 +28,7 @@
     "name": "AI API Doctor",
     "applicationCategory": "DeveloperApplication",
     "operatingSystem": "Web, Chrome",
-    "description": "AI API billing anomaly detection tool. Detects failed-request charges, empty-reply billing anomalies, cache hits, model connectivity, usage integrity, and cost differences.",
+    "description": "AI API billing anomaly detection tool. Detects failed-request charges, empty-reply charges, cache anomalies, usage integrity issues, and model degradation. Generates shareable diagnostic reports. Does not recommend or rank any relay providers.",
     "url": "https://aiapidoctor.com",
     "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
   }
@@ -78,24 +78,24 @@
       </div>
       <h1>AI API 扣费异常检测工具</h1>
       <p class="doctor-left__sub">
-        检测失败请求、空回复、缓存命中、模型联通和 usage 价格差异。API Key 只在你的浏览器本地使用，不上传到 AI API Doctor。
+        检测失败扣费、空回复扣费、缓存异常、usage 完整性和模型降智，生成可分享的 AI API 体检报告。API Key 只在你的浏览器本地使用，不上传到 AI API Doctor。
       </p>
       <div class="doctor-trust-badges">
         <span class="doctor-trust-badge doctor-trust-badge--green">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
           API Key 本地使用
         </span>
-        <span class="doctor-trust-badge doctor-trust-badge--blue">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-          支持 OpenAI-compatible API
+        <span class="doctor-trust-badge doctor-trust-badge--neutral">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+          不推荐任何中转站
         </span>
         <span class="doctor-trust-badge">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-          可生成发给站长的诊断报告
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+          报告自动脱敏
         </span>
       </div>
       <div class="doctor-left__tip">
-        <strong>提示：</strong>网页版检测可能受浏览器 CORS 限制。如果检测失败，可以使用 <a href="https://chrome.google.com/webstore" target="_blank" rel="noopener">Chrome 插件</a>读取 New API / One API raw quota，或切换到手动报告模式。
+        <strong>提示：</strong>网页版检测可能受浏览器 CORS 限制。如遇 CORS 问题，可以切换到手动报告模式，或等待 Chrome 插件审核通过后使用。
       </div>
     </div>
 
@@ -193,6 +193,18 @@ OPENAI_BASE_URL=https://..."
                 </div>
               </div>
 
+              <!-- Model expected tier -->
+              <div class="tool-form__group">
+                <label class="tool-form__label">模型预期档位 <span style="font-weight:400;color:var(--muted)">（可选，影响解释，不强行影响原始分）</span></label>
+                <div class="tier-toggle">
+                  <button class="tier-btn" data-tier="uncertain" onclick="Doctor.setTier('uncertain')">不确定</button>
+                  <button class="tier-btn" data-tier="light" onclick="Doctor.setTier('light')">轻量模型</button>
+                  <button class="tier-btn active" data-tier="standard" onclick="Doctor.setTier('standard')">标准模型</button>
+                  <button class="tier-btn" data-tier="advanced" onclick="Doctor.setTier('advanced')">高级模型</button>
+                </div>
+                <input type="hidden" id="doctor-tier" value="standard" />
+              </div>
+
               <!-- Interface -->
               <div class="tool-form__group">
                 <label class="tool-form__label">接口类型</label>
@@ -214,7 +226,7 @@ OPENAI_BASE_URL=https://..."
                 <!-- Cache test -->
                 <div class="tool-form__group" style="background:var(--soft);border-radius:var(--radius-sm);padding:14px;margin-bottom:10px">
                   <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
-                    <input type="checkbox" id="cache-test-toggle" onchange="Doctor.toggleCache(this)" style="width:16px;height:16px;cursor:pointer" />
+                    <input type="checkbox" id="cache-test-toggle" onchange="Doctor.toggleCache(this);updateCostEstimate()" style="width:16px;height:16px;cursor:pointer" />
                     <div>
                       <div style="font-size:13px;font-weight:600;color:var(--text)">缓存命中检测</div>
                       <div style="font-size:11px;color:var(--muted);margin-top:2px">开启后会发送两次较长测试请求，可能消耗少量额度。</div>
@@ -225,7 +237,7 @@ OPENAI_BASE_URL=https://..."
                 <!-- Price audit -->
                 <div class="tool-form__group" style="background:var(--soft);border-radius:var(--radius-sm);padding:14px;margin-bottom:10px">
                   <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:10px">
-                    <input type="checkbox" id="price-test-toggle" onchange="Doctor.togglePrice(this)" style="width:16px;height:16px;cursor:pointer" />
+                    <input type="checkbox" id="price-test-toggle" onchange="Doctor.togglePrice(this);updateCostEstimate()" style="width:16px;height:16px;cursor:pointer" />
                     <div>
                       <div style="font-size:13px;font-weight:600;color:var(--text)">价格核对</div>
                       <div style="font-size:11px;color:var(--muted);margin-top:2px">根据 usage 和价格计算理论成本，与实际扣费对比。</div>
@@ -256,7 +268,28 @@ OPENAI_BASE_URL=https://..."
                   </div>
                 </div>
 
+                <!-- Model Sanity Test -->
+                <div class="tool-form__group" style="background:var(--soft);border-radius:var(--radius-sm);padding:14px;margin-bottom:10px">
+                  <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+                    <input type="checkbox" id="sanity-test-toggle" onchange="Doctor.toggleSanity(this);updateCostEstimate()" style="width:16px;height:16px;cursor:pointer" />
+                    <div>
+                      <div style="font-size:13px;font-weight:600;color:var(--text)">加测模型智商 / 降智检测</div>
+                      <div style="font-size:11px;color:var(--muted);margin-top:2px">Run Model Sanity Test</div>
+                      <div style="font-size:10px;color:var(--muted);margin-top:3px;line-height:1.4">会额外发送 5 个轻量测试，检查指令遵守、推理、数字陷阱、代码理解和上下文保持。可能消耗少量额度。结果仅用于发现明显降智或能力异常，不代表官方模型排名。</div>
+                    </div>
+                  </label>
+                </div>
+
               </div><!-- /advanced-panel -->
+
+              <!-- Cost estimation card -->
+              <div id="cost-estimate-card" class="cost-estimate-card" style="display:none">
+                <div class="cost-estimate-card__header">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                  预计请求次数
+                </div>
+                <div id="cost-estimate-lines" class="cost-estimate-card__lines"></div>
+              </div>
 
               <!-- Actions -->
               <div class="tool-actions">
@@ -462,59 +495,62 @@ OPENAI_BASE_URL=https://..."
     </div>
   </section>
 
-  <!-- Extension vs Web -->
+  <!-- Story Section -->
   <section class="section">
     <div class="container container--narrow">
-      <h2 class="section__title section__title--center">Chrome 插件版 vs 网页版</h2>
-      <div class="card">
-        <div style="overflow-x:auto">
-          <table class="compare-table">
-            <thead>
-              <tr>
-                <th>功能</th>
-                <th>Chrome 插件</th>
-                <th>网页版</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>自动读取 New API raw quota</td>
-                <td><span class="badge badge--success">支持</span></td>
-                <td><span class="badge badge--neutral">不支持</span></td>
-              </tr>
-              <tr>
-                <td>需要在网页输入 API Key</td>
-                <td><span class="badge badge--neutral">否（本地存储）</span></td>
-                <td><span class="badge badge--neutral">本地检测模式需要</span></td>
-              </tr>
-              <tr>
-                <td>模型联通检测</td>
-                <td><span class="badge badge--success">支持</span></td>
-                <td><span class="badge badge--success">支持</span></td>
-              </tr>
-              <tr>
-                <td>usage 完整性</td>
-                <td><span class="badge badge--success">支持</span></td>
-                <td><span class="badge badge--success">支持</span></td>
-              </tr>
-              <tr>
-                <td>缓存命中检测</td>
-                <td><span class="badge badge--neutral">暂不支持</span></td>
-                <td><span class="badge badge--success">支持</span></td>
-              </tr>
-              <tr>
-                <td>价格核对</td>
-                <td><span class="badge badge--neutral">简单支持</span></td>
-                <td><span class="badge badge--success">完整支持</span></td>
-              </tr>
-              <tr>
-                <td>手动生成报告</td>
-                <td><span class="badge badge--success">支持</span></td>
-                <td><span class="badge badge--success">支持</span></td>
-              </tr>
-            </tbody>
-          </table>
+      <h2 class="section__title section__title--center">为什么做 AI API Doctor？</h2>
+      <div class="card" style="font-size:15px;line-height:1.8;color:var(--text-muted)">
+        <p style="margin:0 0 16px">我自己在做 AI API 服务时发现，很多中转站采用预扣费机制：请求开始时先扣额度，结束后再根据 usage 结算返还。</p>
+        <p style="margin:0 0 16px">这套机制本身没问题，但如果失败请求、空回复、上游 503、无效模型、缓存命中等场景处理不好，用户可能会遇到"没有拿到有效回答，但额度发生变化"的情况。</p>
+        <p style="margin:0">AI API Doctor 的目标不是给任何站点定罪，而是把扣费、usage、缓存和模型表现变成一张可复现的体检报告，让用户和站长可以基于证据沟通。</p>
+      </div>
+      <div style="margin-top:20px;padding:14px 18px;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);font-size:13px;color:var(--text-muted);display:flex;align-items:flex-start;gap:8px">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--info)" stroke-width="2" style="flex-shrink:0;margin-top:2px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        AI API Doctor 不推荐、不排名任何中转站。报告只展示本次测试中的可复现信号，不证明服务商主观故意。
+      </div>
+    </div>
+  </section>
+
+  <!-- Share Score Section -->
+  <section class="section section--alt">
+    <div class="container">
+      <h2 class="section__title section__title--center">晒你的 AI API 体检分</h2>
+      <p class="section__desc section__title--center">
+        生成报告后，复制一行结果即可回帖。你不需要公开 API Key，也不需要公开站点名称。
+      </p>
+      <div class="card" style="max-width:600px;margin:0 auto">
+        <div class="share-example">
+          <div class="share-example__label">示例</div>
+          <div class="share-example__text">我的 AI API 体检分：88/100｜API：92/100｜模型：76/100｜模型表现需复查｜报告 ID：AID-0514-K9P2</div>
         </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px">
+          <a href="/#doctor" class="btn btn--primary" style="flex:1;justify-content:center">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            开始体检
+          </a>
+          <a href="/challenge/" class="btn btn--secondary" style="flex:1;justify-content:center">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            了解更多
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Extension Status -->
+  <section class="section">
+    <div class="container container--narrow">
+      <h2 class="section__title section__title--center">Chrome 插件</h2>
+      <div class="card" style="text-align:center;padding:32px 24px">
+        <div style="font-size:32px;margin-bottom:12px">&#128679;</div>
+        <div class="card__title" style="margin-bottom:8px">Chrome 插件审核中</div>
+        <p style="font-size:14px;color:var(--text-muted);max-width:400px;margin:0 auto 16px">
+          插件版适合 New API / One API 用户，可在已登录控制台读取 raw quota。审核通过后会放出下载链接。
+        </p>
+        <a href="/guides/billing-anomaly/" class="btn btn--secondary btn--sm">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          查看检测原理
+        </a>
       </div>
     </div>
   </section>
@@ -564,11 +600,14 @@ OPENAI_BASE_URL=https://..."
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
           手动报告生成
         </a>
-        <a href="https://chrome.google.com/webstore" target="_blank" rel="noopener" class="btn btn--secondary btn--lg">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          下载 Chrome 插件
+        <a href="/guides/billing-anomaly/" class="btn btn--secondary btn--lg">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          查看检测原理
         </a>
       </div>
+      <p style="margin-top:16px;font-size:13px;color:var(--muted)">
+        Chrome 插件版审核中。插件适合 New API / One API 用户，可在已登录控制台读取 raw quota。审核通过后会放出下载链接。
+      </p>
     </div>
   </section>
 
@@ -622,7 +661,7 @@ OPENAI_BASE_URL=https://..."
       <a href="/support/">支持</a>
     </div>
     <p class="site-footer__note">
-      本工具不是法律审计报告，只展示可复现的技术信号，不证明服务商故意多扣费。
+      AI API Doctor 不推荐、不排名任何中转站。报告只展示本次测试中的可复现信号，不证明服务商主观故意。
     </p>
     <p style="color:#9ca3af;font-size:12px;margin-top:4px">&copy; 2026 AI API Doctor &middot; aiapidoctor.com</p>
   </div>
@@ -639,6 +678,49 @@ function switchTab(tab) {
   document.getElementById('tab-manual').classList.toggle('active', tab === 'manual');
   document.getElementById('panel-local').style.display = tab === 'local' ? 'block' : 'none';
   document.getElementById('panel-manual').style.display = tab === 'manual' ? 'block' : 'none';
+}
+
+/* ── Cost estimation card updater ─────────────────────── */
+function updateCostEstimate() {
+  const cacheEnabled = document.getElementById('cache-test-toggle')?.checked || false;
+  const priceEnabled = document.getElementById('price-test-toggle')?.checked || false;
+  const sanityEnabled = document.getElementById('sanity-test-toggle')?.checked || false;
+
+  const card = document.getElementById('cost-estimate-card');
+  const lines = document.getElementById('cost-estimate-lines');
+  if (!card || !lines) return;
+
+  const items = [];
+
+  items.push({ text: '基础模型联通：预计请求 1 次，消耗极低', type: 'base' });
+
+  if (cacheEnabled) {
+    items.push({ text: '开启缓存检测：额外请求 2 次，包含较长 prompt，可能消耗少量额度', type: 'cache' });
+  }
+  if (priceEnabled) {
+    items.push({ text: '开启价格核对：使用基础联通请求数据，不额外请求', type: 'price' });
+  }
+  if (sanityEnabled) {
+    items.push({ text: '开启模型智商检测：额外请求 5 次，可能消耗少量额度', type: 'sanity' });
+  }
+
+  const bothEnabled = cacheEnabled && sanityEnabled;
+  let html = items.map(item => {
+    const dotColor = item.type === 'base' ? 'var(--success)' : 'var(--warning)';
+    return `<div style="display:flex;align-items:flex-start;gap:8px;padding:4px 0">
+      <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${dotColor};margin-top:6px;flex-shrink:0"></span>
+      <span style="font-size:12px;color:var(--muted);line-height:1.5">${item.text}</span>
+    </div>`;
+  }).join('');
+
+  if (bothEnabled) {
+    html += `<div style="margin-top:8px;padding:8px 10px;background:#fef3c7;border-radius:6px;font-size:12px;color:#92400e;line-height:1.5">
+      本次会发送多次测试请求，请确认你愿意消耗少量 API 额度。
+    </div>`;
+  }
+
+  lines.innerHTML = html;
+  card.style.display = 'block';
 }
 
 /* ── Manual Report Controller ──────────────────────────── */
@@ -794,6 +876,7 @@ function escHtml(str) {
 /* ── Init ─────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', () => {
   if (window.Doctor) window.Doctor.init();
+  updateCostEstimate();
 });
 </script>
 

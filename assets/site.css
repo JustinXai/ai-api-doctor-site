@@ -860,6 +860,61 @@ a:hover { text-decoration: underline; }
 .price-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 .price-row-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 
+/* Cost estimation card */
+.cost-estimate-card {
+  background: var(--soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  animation: slide-in 0.2s ease-out;
+}
+@keyframes slide-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.cost-estimate-card__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+.cost-estimate-card__header svg { flex-shrink: 0; }
+
+/* Model tier toggle */
+.tier-toggle {
+  display: flex;
+  background: var(--soft);
+  border-radius: var(--radius-sm);
+  padding: 3px;
+  gap: 2px;
+}
+.tier-btn {
+  flex: 1;
+  padding: 7px 8px;
+  border-radius: 6px;
+  border: none;
+  background: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: var(--font);
+  text-align: center;
+}
+.tier-btn.active {
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+.tier-btn:hover:not(.active) { color: var(--text); }
+
 /* Status indicator */
 .status-dot {
   display: inline-block;
@@ -1078,3 +1133,104 @@ a:hover { text-decoration: underline; }
   .delta-section__value { font-size: 44px; }
   .billing-report-card { padding: 16px; }
 }
+
+/* Share example */
+.share-example {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: var(--radius);
+  padding: 16px;
+}
+.share-example__label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin-bottom: 8px;
+}
+.share-example__text {
+  font-size: 13px;
+  font-family: var(--mono);
+  color: var(--text);
+  line-height: 1.6;
+  word-break: break-all;
+}
+
+/* Report actions */
+.report-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.report-actions .btn {
+  flex: 1;
+  min-width: 100px;
+}
+
+/* Challenge page */
+.challenge-hero {
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  padding: 64px 24px 48px;
+  text-align: center;
+}
+.challenge-hero__badge {
+  display: inline-block;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: 20px;
+  margin-bottom: 16px;
+  letter-spacing: 0.5px;
+}
+.challenge-content {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 40px 24px 80px;
+}
+.challenge-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  margin-bottom: 24px;
+  box-shadow: var(--shadow);
+}
+.challenge-card__title {
+  font-size: 17px;
+  font-weight: 700;
+  margin-bottom: 12px;
+  color: var(--text);
+}
+.challenge-card__desc {
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.7;
+}
+.challenge-format-block {
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 12px 0;
+}
+.challenge-warning {
+  background: var(--danger-bg);
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  font-size: 13px;
+  color: #991b1b;
+  line-height: 1.6;
+  margin-bottom: 16px;
+}
+.challenge-warning strong { font-weight: 700; }

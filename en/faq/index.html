@@ -160,6 +160,22 @@
           "@type": "Answer",
           "text": "No. Reports only show reproducible technical signals suitable for communication with the provider or support team. Final balances, deductions, and billing are controlled by the provider's backend. AI API Doctor cannot directly access all providers' billing systems. Conclusions should be understood as usage signal verification, not a financial audit."
         }
+      },
+      {
+        "@type": "Question",
+        "name": "Does AI API Doctor recommend relay stations?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "No. AI API Doctor is a neutral diagnostic tool. It does not recommend or rank any relay providers. Reports show reproducible signals from a local test and do not prove intent."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Why explain pre-deduction billing?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Many AI API services pre-charge quota at the start of a request and settle after based on actual usage. If failed requests, empty replies, or upstream errors are not handled correctly, billing anomalies may occur that are difficult for users to notice."
+        }
       }
     ]
   }
@@ -948,11 +964,11 @@
     </div>
 
     <!-- Section 4: Chrome Extension vs Web -->
-    <div class="faq-group-title">Chrome Extension vs. Web Version</div>
+    <div class="faq-group-title">Chrome Extension Status</div>
 
     <!-- Comparison Table -->
     <div class="comparison-section">
-      <h2>Chrome Extension vs. Web Version</h2>
+      <h2>Chrome Extension Under Review</h2>
       <div class="comparison-table-wrap">
         <table class="comparison-table">
           <thead>
@@ -1002,7 +1018,7 @@
         </table>
       </div>
       <div class="comparison-note">
-        Both versions generate shareable diagnostic reports suitable for customer support communication. Choose the Chrome extension for precise forensics and automatic raw quota reading; choose the web version for quick manual reports and mobile sharing.
+        The Chrome extension is currently under review. A download link will be available once the review passes. The web version supports manual report generation and is suitable for customer support communication.
       </div>
     </div>
 
@@ -1041,14 +1057,99 @@
       <p>The project strives to keep diagnostic logic transparent, boundaries clear, and to prioritize avoiding false positives against legitimate providers.</p>
     </div>
 
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>Does AI API Doctor recommend relay stations?</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>No. AI API Doctor is a neutral diagnostic tool. It does not recommend or rank any relay providers.</p>
+          <p>Reports show reproducible signals from a local test and do not prove intent.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>Why explain pre-deduction billing?</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>Many AI API services pre-charge quota at the start of a request and settle after based on actual usage.</p>
+          <p>If failed requests, empty replies, or upstream errors are not handled correctly, billing anomalies may occur that are difficult for users to notice.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Section 5: Model Sanity Test -->
+    <div class="faq-group-title">Model Sanity Test</div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>What does "Model Sanity Test" mean?</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>It is a lightweight model performance test, covering instruction following, basic reasoning, number traps, code understanding, and context retention.</p>
+          <p>It is not an official IQ test and cannot prove model authenticity. It is only used to detect obvious degradation or performance anomalies.</p>
+          <p>To enable: check "Run Model Sanity Test" in the advanced settings of the Diagnostic Lab.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>Why is the 9.11 vs 9.9 question controversial?</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>This type of question tends to spark debate and can expose number-trap reasoning issues in some models.</p>
+          <p>However, a single question cannot represent a model's overall capability. AI API Doctor includes it as part of the Model Sanity Score rather than as the sole judgment.</p>
+          <p>The Model Sanity Score is calculated from 5 tests: instruction following, basic reasoning, number trap, code understanding, and context retention.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>Do I need to disclose the relay station name?</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>No.</p>
+          <p>AI API Doctor is a neutral tool. It does not require you to disclose the provider name, nor does it recommend or rank any relay station.</p>
+          <p>When sharing your score, you only need to report your health score, model sanity score, and one-line finding — no information about the provider is required.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>Does AI API Doctor require positive reviews or extension installation?</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>No.</p>
+          <p>You can use the web version only. No Chrome extension installation required. No positive review required. No forced social media sharing required.</p>
+          <p>Just generate a diagnostic report when needed and post a one-line score if you want to participate in the challenge.</p>
+        </div>
+      </div>
+    </div>
+
     <!-- CTA Section -->
     <div class="cta-section">
       <h2>Start Diagnosing</h2>
-      <p>Download the Chrome extension and test whether your configuration is working correctly with your own API Key.</p>
+      <p>Run a local diagnostic test to check whether your API Key, Base URL, and model configuration are working correctly.</p>
       <div class="cta-buttons">
-        <a href="https://chrome.google.com/webstore" target="_blank" rel="noopener" class="cta-btn cta-btn-primary">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          Download Chrome Extension
+        <a href="/en/" class="cta-btn cta-btn-primary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          Start Diagnosis
         </a>
         <a href="/en/report/" class="cta-btn cta-btn-secondary">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>

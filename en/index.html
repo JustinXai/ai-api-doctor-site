@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AI API Doctor: AI API Billing Anomaly Checker</title>
-  <meta name="description" content="Check failed request charges, empty reply charges, cache hits, model connectivity, usage integrity, and usage-based cost differences for OpenAI-compatible API relay services." />
+  <meta name="description" content="Check failed request charges, empty reply charges, cache anomalies, usage integrity, and possible model degradation for OpenAI-compatible API services. Generate a shareable AI API diagnostic report. Does not recommend or rank any relay providers." />
   <meta name="robots" content="index, follow" />
   <link rel="canonical" href="https://aiapidoctor.com/en/" />
   <link rel="alternate" hreflang="zh-CN" href="https://aiapidoctor.com/" />
@@ -16,7 +16,7 @@
   <!-- Open Graph -->
   <meta property="og:type" content="website" />
   <meta property="og:title" content="AI API Doctor: AI API Billing Anomaly Checker" />
-  <meta property="og:description" content="Check failed request charges, empty reply charges, cache hits, model connectivity, usage integrity, and usage-based cost differences." />
+  <meta property="og:description" content="Check failed request charges, empty reply charges, cache anomalies, usage integrity, and possible model degradation. Generate a shareable AI API diagnostic report. Does not recommend or rank any relay providers." />
   <meta property="og:url" content="https://aiapidoctor.com/en/" />
   <meta property="og:locale" content="en_US" />
 
@@ -28,7 +28,7 @@
     "name": "AI API Doctor",
     "applicationCategory": "DeveloperApplication",
     "operatingSystem": "Web, Chrome",
-    "description": "AI API billing anomaly detection tool. Detects failed-request charges, empty-reply billing anomalies, cache hits, model connectivity, usage integrity, and cost differences.",
+    "description": "AI API billing anomaly detection tool. Detects failed-request charges, empty-reply charges, cache anomalies, usage integrity issues, and model degradation. Generates shareable diagnostic reports. Does not recommend or rank any relay providers.",
     "url": "https://aiapidoctor.com/en/",
     "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
   }
@@ -78,24 +78,24 @@
       </div>
       <h1>AI API Billing Anomaly Checker</h1>
       <p class="doctor-left__sub">
-        Check failed requests, empty replies, cache hits, model connectivity, usage integrity, and usage-based cost differences. API Keys are used locally in your browser and are not uploaded to AI API Doctor.
+        Check failed request charges, empty reply charges, cache anomalies, usage integrity, and possible model degradation. Generate a shareable AI API diagnostic report. API Keys are used locally in your browser and are not uploaded to AI API Doctor.
       </p>
       <div class="doctor-trust-badges">
         <span class="doctor-trust-badge doctor-trust-badge--green">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
           API Key Stored Locally
         </span>
-        <span class="doctor-trust-badge doctor-trust-badge--blue">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-          OpenAI-compatible API
+        <span class="doctor-trust-badge doctor-trust-badge--neutral">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+          Does Not Recommend Relay Providers
         </span>
         <span class="doctor-trust-badge">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-          Generate shareable diagnostic reports
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+          Reports Auto-anonymized
         </span>
       </div>
       <div class="doctor-left__tip">
-        <strong>Note:</strong> Web-based tests may be blocked by browser CORS restrictions. If that happens, use the <a href="https://chrome.google.com/webstore" target="_blank" rel="noopener">Chrome extension</a> or switch to manual report mode.
+        <strong>Note:</strong> Web-based tests may be blocked by browser CORS restrictions. If that happens, switch to manual report mode or wait for the Chrome extension to pass review.
       </div>
     </div>
 
@@ -192,6 +192,17 @@ OPENAI_API_KEY=sk-...&#10;OPENAI_BASE_URL=https://...'
                 <input type="hidden" id="doctor-interface" value="OpenAI Chat" />
               </div>
 
+              <div class="tool-form__group">
+                <label class="tool-form__label">Model Expected Tier <span style="font-weight:400;color:var(--muted)">(optional, affects interpretation only)</span></label>
+                <div class="tier-toggle">
+                  <button class="tier-btn" data-tier="uncertain" onclick="Doctor.setTier('uncertain')">Uncertain</button>
+                  <button class="tier-btn" data-tier="light" onclick="Doctor.setTier('light')">Light</button>
+                  <button class="tier-btn active" data-tier="standard" onclick="Doctor.setTier('standard')">Standard</button>
+                  <button class="tier-btn" data-tier="advanced" onclick="Doctor.setTier('advanced')">Advanced</button>
+                </div>
+                <input type="hidden" id="doctor-tier" value="standard" />
+              </div>
+
               <!-- Advanced -->
               <button class="advanced-toggle" id="advanced-toggle" type="button" onclick="Doctor.toggleAdvanced()">
                 <svg class="advanced-toggle__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
@@ -201,7 +212,7 @@ OPENAI_API_KEY=sk-...&#10;OPENAI_BASE_URL=https://...'
 
                 <div class="tool-form__group" style="background:var(--soft);border-radius:var(--radius-sm);padding:14px;margin-bottom:10px">
                   <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
-                    <input type="checkbox" id="cache-test-toggle" onchange="Doctor.toggleCache(this)" style="width:16px;height:16px;cursor:pointer" />
+                    <input type="checkbox" id="cache-test-toggle" onchange="Doctor.toggleCache(this);updateCostEstimate()" style="width:16px;height:16px;cursor:pointer" />
                     <div>
                       <div style="font-size:13px;font-weight:600;color:var(--text)">Cache Hit Detection</div>
                       <div style="font-size:11px;color:var(--muted);margin-top:2px">Sends two long test requests and may consume a small amount of credits.</div>
@@ -211,7 +222,7 @@ OPENAI_API_KEY=sk-...&#10;OPENAI_BASE_URL=https://...'
 
                 <div class="tool-form__group" style="background:var(--soft);border-radius:var(--radius-sm);padding:14px;margin-bottom:10px">
                   <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:10px">
-                    <input type="checkbox" id="price-test-toggle" onchange="Doctor.togglePrice(this)" style="width:16px;height:16px;cursor:pointer" />
+                    <input type="checkbox" id="price-test-toggle" onchange="Doctor.togglePrice(this);updateCostEstimate()" style="width:16px;height:16px;cursor:pointer" />
                     <div>
                       <div style="font-size:13px;font-weight:600;color:var(--text)">Price Audit</div>
                       <div style="font-size:11px;color:var(--muted);margin-top:2px">Calculate expected cost from usage and compare with actual deduction.</div>
@@ -241,8 +252,29 @@ OPENAI_API_KEY=sk-...&#10;OPENAI_BASE_URL=https://...'
                   </div>
                 </div>
 
+                <div class="tool-form__group" style="background:var(--soft);border-radius:var(--radius-sm);padding:14px;margin-bottom:10px">
+                  <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+                    <input type="checkbox" id="sanity-test-toggle" onchange="Doctor.toggleSanity(this);updateCostEstimate()" style="width:16px;height:16px;cursor:pointer" />
+                    <div>
+                      <div style="font-size:13px;font-weight:600;color:var(--text)">Run Model Sanity Test</div>
+                      <div style="font-size:11px;color:var(--muted);margin-top:2px">加测模型智商 / 降智检测</div>
+                      <div style="font-size:10px;color:var(--muted);margin-top:3px;line-height:1.4">Runs 5 lightweight tests for instruction following, reasoning, number traps, code understanding, and context retention. May consume a small amount of credits. Results only indicate possible degradation or performance anomalies — not an official model ranking.</div>
+                    </div>
+                  </label>
+                </div>
+
               </div><!-- /advanced-panel -->
 
+              <!-- Cost estimation card -->
+              <div id="cost-estimate-card" class="cost-estimate-card" style="display:none">
+                <div class="cost-estimate-card__header">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                  Estimated Request Count
+                </div>
+                <div id="cost-estimate-lines" class="cost-estimate-card__lines"></div>
+              </div>
+
+              <!-- Actions -->
               <div class="tool-actions">
                 <button id="doctor-run-btn" class="btn btn--primary btn--primary-run" onclick="Doctor.run()">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
@@ -444,59 +476,62 @@ OPENAI_API_KEY=sk-...&#10;OPENAI_BASE_URL=https://...'
     </div>
   </section>
 
-  <!-- Extension vs Web -->
+  <!-- Story Section -->
   <section class="section">
     <div class="container container--narrow">
-      <h2 class="section__title section__title--center">Chrome Extension vs. Web Version</h2>
-      <div class="card">
-        <div style="overflow-x:auto">
-          <table class="compare-table">
-            <thead>
-              <tr>
-                <th>Feature</th>
-                <th>Chrome Extension</th>
-                <th>Web Version</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>Read New API raw quota automatically</td>
-                <td><span class="badge badge--success">Yes</span></td>
-                <td><span class="badge badge--neutral">No</span></td>
-              </tr>
-              <tr>
-                <td>Requires API Key on webpage</td>
-                <td><span class="badge badge--neutral">No (local storage)</span></td>
-                <td><span class="badge badge--neutral">Local test mode only</span></td>
-              </tr>
-              <tr>
-                <td>Model connectivity check</td>
-                <td><span class="badge badge--success">Yes</span></td>
-                <td><span class="badge badge--success">Yes</span></td>
-              </tr>
-              <tr>
-                <td>Usage integrity</td>
-                <td><span class="badge badge--success">Yes</span></td>
-                <td><span class="badge badge--success">Yes</span></td>
-              </tr>
-              <tr>
-                <td>Cache hit detection</td>
-                <td><span class="badge badge--neutral">Not yet</span></td>
-                <td><span class="badge badge--success">Yes</span></td>
-              </tr>
-              <tr>
-                <td>Price audit</td>
-                <td><span class="badge badge--neutral">Basic</span></td>
-                <td><span class="badge badge--success">Full support</span></td>
-              </tr>
-              <tr>
-                <td>Manual report generation</td>
-                <td><span class="badge badge--success">Yes</span></td>
-                <td><span class="badge badge--success">Yes</span></td>
-              </tr>
-            </tbody>
-          </table>
+      <h2 class="section__title section__title--center">Why AI API Doctor?</h2>
+      <div class="card" style="font-size:15px;line-height:1.8;color:var(--text-muted)">
+        <p style="margin:0 0 16px">When building AI API relay services, I noticed many platforms use a pre-deduction model:额度 is charged at the start of a request and settled after based on actual usage.</p>
+        <p style="margin:0 0 16px">This mechanism is fine in principle, but if failed requests, empty replies, upstream 503 errors, invalid models, or cache hits are not handled correctly, users may find their balance changed without receiving a valid response.</p>
+        <p style="margin:0">AI API Doctor does not aim to condemn any site. Instead, it turns billing, usage, cache, and model performance into a reproducible diagnostic report, enabling users and operators to communicate based on evidence.</p>
+      </div>
+      <div style="margin-top:20px;padding:14px 18px;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);font-size:13px;color:var(--text-muted);display:flex;align-items:flex-start;gap:8px">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--info)" stroke-width="2" style="flex-shrink:0;margin-top:2px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        AI API Doctor does not recommend or rank API relay providers. Reports show reproducible signals from a local test and do not prove intent.
+      </div>
+    </div>
+  </section>
+
+  <!-- Share Score Section -->
+  <section class="section section--alt">
+    <div class="container">
+      <h2 class="section__title section__title--center">Share Your AI API Doctor Score</h2>
+      <p class="section__desc section__title--center">
+        After generating a report, copy a one-line result to post in forums or group chats. You don't need to reveal your API Key or provider name.
+      </p>
+      <div class="card" style="max-width:600px;margin:0 auto">
+        <div class="share-example">
+          <div class="share-example__label">Example</div>
+          <div class="share-example__text">My AI API Doctor Score: 88/100 | API: 92/100 | Model: 76/100 | Needs Review | Report ID: AID-0514-K9P2</div>
         </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px">
+          <a href="/en/#doctor" class="btn btn--primary" style="flex:1;justify-content:center">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Start Diagnosis
+          </a>
+          <a href="/en/challenge/" class="btn btn--secondary" style="flex:1;justify-content:center">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            Learn More
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Extension Status -->
+  <section class="section">
+    <div class="container container--narrow">
+      <h2 class="section__title section__title--center">Chrome Extension</h2>
+      <div class="card" style="text-align:center;padding:32px 24px">
+        <div style="font-size:32px;margin-bottom:12px">&#128679;</div>
+        <div class="card__title" style="margin-bottom:8px">Chrome Extension Under Review</div>
+        <p style="font-size:14px;color:var(--text-muted);max-width:400px;margin:0 auto 16px">
+          The extension is designed for New API / One API users, allowing raw quota reading from a logged-in console. A download link will be available once the review passes.
+        </p>
+        <a href="/guides/billing-anomaly/" class="btn btn--secondary btn--sm">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          View Detection Principles
+        </a>
       </div>
     </div>
   </section>
@@ -546,11 +581,14 @@ OPENAI_API_KEY=sk-...&#10;OPENAI_BASE_URL=https://...'
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
           Manual Report
         </a>
-        <a href="https://chrome.google.com/webstore" target="_blank" rel="noopener" class="btn btn--secondary btn--lg">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          Get Chrome Extension
+        <a href="/guides/billing-anomaly/" class="btn btn--secondary btn--lg">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          View Detection Principles
         </a>
       </div>
+      <p style="margin-top:16px;font-size:13px;color:var(--muted)">
+        Chrome Extension under review. Suitable for New API / One API users. Download link will be available after review passes.
+      </p>
     </div>
   </section>
 
@@ -604,7 +642,7 @@ OPENAI_API_KEY=sk-...&#10;OPENAI_BASE_URL=https://...'
       <a href="/en/support/">Support</a>
     </div>
     <p class="site-footer__note">
-      This tool is not a legal audit report and only shows reproducible technical signals. It does not prove intentional overbilling by the provider.
+      AI API Doctor does not recommend or rank API relay providers. Reports show reproducible signals from a local test and do not prove intent.
     </p>
     <p style="color:#9ca3af;font-size:12px;margin-top:4px">&copy; 2026 AI API Doctor &middot; aiapidoctor.com</p>
   </div>
@@ -650,6 +688,40 @@ function copyToClipboard(text, msg) {
     try { document.execCommand('copy'); showToast(msg || 'Copied'); } catch(_) { showToast('Copy failed'); }
     document.body.removeChild(ta);
   }
+}
+
+function updateCostEstimate() {
+  const cacheEnabled = document.getElementById('cache-test-toggle')?.checked || false;
+  const priceEnabled = document.getElementById('price-test-toggle')?.checked || false;
+  const sanityEnabled = document.getElementById('sanity-test-toggle')?.checked || false;
+
+  const card = document.getElementById('cost-estimate-card');
+  const lines = document.getElementById('cost-estimate-lines');
+  if (!card || !lines) return;
+
+  const items = [];
+  items.push({ text: 'Basic model connectivity: ~1 request, minimal usage', type: 'base' });
+  if (cacheEnabled) items.push({ text: 'Cache hit detection: +2 requests with longer prompt, may consume credits', type: 'cache' });
+  if (priceEnabled) items.push({ text: 'Price audit: uses connectivity data, no extra requests', type: 'price' });
+  if (sanityEnabled) items.push({ text: 'Model sanity test: +5 requests, may consume credits', type: 'sanity' });
+
+  const bothEnabled = cacheEnabled && sanityEnabled;
+  let html = items.map(item => {
+    const dotColor = item.type === 'base' ? 'var(--success)' : 'var(--warning)';
+    return `<div style="display:flex;align-items:flex-start;gap:8px;padding:4px 0">
+      <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${dotColor};margin-top:6px;flex-shrink:0"></span>
+      <span style="font-size:12px;color:var(--muted);line-height:1.5">${item.text}</span>
+    </div>`;
+  }).join('');
+
+  if (bothEnabled) {
+    html += `<div style="margin-top:8px;padding:8px 10px;background:#fef3c7;border-radius:6px;font-size:12px;color:#92400e;line-height:1.5">
+      Multiple requests will be sent. Please ensure you are willing to consume a small amount of API credits.
+    </div>`;
+  }
+
+  lines.innerHTML = html;
+  card.style.display = 'block';
 }
 
 function buildProviderReportEN(result, formData) {
@@ -724,6 +796,21 @@ function buildMarkdownEN(result, formData) {
     '',
     `Generated by AI API Doctor · ${result.timestamp}`
   ].filter(Boolean).join('\n');
+}
+
+// getMainFindingEn — mirrors test.js getMainFindingEn for local report generation
+function getMainFindingEn(result) {
+  const v = result.billingIntegrity?.verdict;
+  if (v === 'failed_request_charged' || v === 'empty_response_charged') return 'Failed request / empty reply charge risk detected';
+  if (result.modelSanityScore !== null) {
+    if (result.modelSanityScore < 50) return 'Possible model degradation risk detected';
+    if (result.modelSanityScore < 70) return 'Model performance needs review';
+  }
+  if (result.usageIntegrity === 'missing' || result.usageIntegrity === 'incomplete') return 'Incomplete usage data returned';
+  if (result.cacheHit?.status === 'hit') return 'Cache fields returned';
+  if (result.cacheHit?.status === 'no_hit') return 'Cache fields not returned';
+  if (v === 'failed_request_not_charged' || v === 'precharge_refunded') return 'Failed request not charged';
+  return 'Diagnosis complete';
 }
 
 // Override Doctor methods for English
@@ -827,6 +914,7 @@ window.ManualReport = {
 
 document.addEventListener('DOMContentLoaded', () => {
   if (window.Doctor) window.Doctor.init();
+  updateCostEstimate();
 });
 </script>
 
