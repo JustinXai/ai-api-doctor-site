@@ -1155,21 +1155,21 @@ function renderQuickReport(result, formData) {
   const bg = statusBgMap[qf.status] || '#f1f5f9';
 
   const usageState = assessUsageIntegrity(conn);
-  const usageText = usageState === 'complete' ? 'yes' : usageState === 'incomplete' ? 'partial' : 'no';
+  const usageText = (usageState === 'complete' || usageState === 'incomplete') ? 'yes' : 'no';
 
   const title = zh ? '基础联通检测' : 'Basic Connectivity Check';
   const titleSuffix = qf.status === 'pass' ? (zh ? '完成' : 'Complete') : qf.status === 'blocked' ? (zh ? '受阻' : 'Blocked') : qf.status === 'fail' ? (zh ? '失败' : 'Failed') : qf.status === 'warn' ? (zh ? '需复查' : 'Needs Review') : (zh ? '未知' : 'Unknown');
   const untestedNote = zh
     ? '未开启的检测：扣费完整性、缓存命中、模型表现、价格核对。切换到「完整体检」可继续检查。'
     : 'Unchecked: Billing integrity, Cache hit, Model performance, Price audit. Switch to "Full Check" to continue.';
-  const labelApiKey = zh ? 'API Key Anonymized' : 'API Key 已脱敏';
-  const labelLocalBrowser = zh ? 'Local Browser Test' : '本地浏览器检测';
-  const labelSaveImg = zh ? 'Save Image' : '保存图片';
-  const labelCopy = zh ? 'Copy Result' : '复制结果';
-  const reportNodeLabel = zh ? 'Report ID' : '报告 ID';
+  const labelApiKey = zh ? 'API Key 已脱敏' : 'API Key Anonymized';
+  const labelLocalBrowser = zh ? '本地浏览器检测' : 'Local Browser Test';
+  const labelSaveImg = zh ? '保存图片' : 'Save Image';
+  const labelCopy = zh ? '复制结果' : 'Copy Result';
+  const reportNodeLabel = zh ? '报告 ID' : 'Report ID';
   const safeNote = zh
-    ? 'API Key anonymized. This report only shows reproducible signals from this test and does not prove intentional overcharging or model authenticity.'
-    : 'API Key 已脱敏。本报告只展示本次测试中的可复现信号，不证明服务商故意多扣费，也不证明模型真假。';
+    ? 'API Key 已脱敏。本报告只展示本次测试中的可复现信号，不证明服务商故意多扣费，也不证明模型真假。'
+    : 'API Key anonymized. This report only shows reproducible signals from this test and does not prove intentional overcharging or model authenticity.';
   const localBrowser = zh ? 'API Key stored locally' : 'API Key 本地使用';
 
   const html = `
@@ -1283,43 +1283,43 @@ function renderFullReport(result, formData) {
 
   const L = {
     reportTitle:        zh ? 'AI API 体检报告' : 'AI API Diagnostic Report',
-    apiKeyAnonymized:  zh ? 'API Key Anonymized' : 'API Key 已脱敏',
-    localBrowser:       zh ? 'Local Browser Test' : '本地浏览器检测',
-    overallScore:       zh ? 'Overall Score' : '综合分',
-    apiScoreLabel:      zh ? 'API Health Score' : 'API 体检分',
-    coverage:           zh ? 'Coverage' : '覆盖度',
-    confidence:         zh ? 'Confidence' : '置信度',
-    modelScoreLabel:   zh ? 'Model Score' : '模型表现分',
-    basedOnTested:     zh ? 'Based on tested items' : '基于已测项目',
-    confidenceHigh:    zh ? 'High' : '高',
-    confidenceMid:     zh ? 'Medium' : '中',
-    confidenceLow:     zh ? 'Low' : '低',
-    testedItems:       zh ? 'Tested Items' : '已测项目',
-    untestedItems:     zh ? 'Untested Items' : '未测项目',
-    notEnabled:        zh ? 'Not enabled' : '未开启',
-    mainFinding:       zh ? 'Main Finding' : '主要发现',
-    reportId:          zh ? 'Report ID' : '报告 ID',
-    saveImage:         zh ? 'Save Image' : '保存图片',
-    copyMarkdown:      zh ? 'Copy Markdown' : '复制 Markdown',
-    copyForProvider:   zh ? 'Copy for Provider' : '复制给站长',
-    copyOneLine:       zh ? 'Copy Score Line' : '复制一行晒分',
-    copyForum:         zh ? 'Copy Forum Reply' : '复制论坛回复',
-    safetyNote:        zh ? 'API Key anonymized. This report only shows reproducible signals and does not prove intentional overcharging or model authenticity. Model score is for anomaly detection only, not an official ranking.' : 'API Key 已脱敏。本报告只展示本次测试中的可复现信号，不证明服务商故意多扣费，也不证明模型真假。模型表现分仅用于发现明显异常或降智风险，不代表官方模型排名。',
-    heroSubOk:         zh ? 'All test items passed.' : '所有检测项均通过。',
-    heroSubFail:       zh ? 'Anomalies detected — see details below.' : '检测中发现异常，请查看下方详情。',
-    heroSubWarn:       zh ? 'Some items need attention — see details below.' : '部分检测项需要关注，请查看下方详情。',
-    heroSubPartial:    zh ? 'Some items completed — see results below.' : '部分检测项已完成，结果请见下方。',
-    heroSubBasic:      zh ? 'Model connectivity and basic response tested. Billing, cache, and model performance not checked.' : '已完成模型联通和基础响应检测，未运行扣费/缓存/模型表现检测。',
-    heroTitleComplete:   zh ? 'Diagnosis Complete' : '体检完成',
-    heroTitleRisk:       zh ? 'Risk Detected' : '发现风险',
-    heroTitleReview:     zh ? 'Needs Review' : '需要复查',
-    heroTitlePartial:    zh ? 'Partial Diagnosis Complete' : '部分体检完成',
-    heroTitleBasic:      zh ? 'Basic Test Complete' : '基础检测完成',
-    heroStatusOk:         zh ? 'Normal' : '正常',
-    heroStatusDanger:    zh ? 'Anomaly Risk' : '异常风险',
-    heroStatusWarn:      zh ? 'Needs Review' : '需复查',
-    heroStatusComplete:   zh ? 'Complete' : '完成',
-    heroStatusBlocked:    zh ? 'Blocked' : '受阻',
+    apiKeyAnonymized:  zh ? 'API Key 已脱敏' : 'API Key Anonymized',
+    localBrowser:       zh ? '本地浏览器检测' : 'Local Browser Test',
+    overallScore:       zh ? '综合分' : 'Overall Score',
+    apiScoreLabel:      zh ? 'API 体检分' : 'API Health Score',
+    coverage:           zh ? '覆盖度' : 'Coverage',
+    confidence:         zh ? '置信度' : 'Confidence',
+    modelScoreLabel:   zh ? '模型表现分' : 'Model Score',
+    basedOnTested:     zh ? '基于已测项目' : 'Based on tested items',
+    confidenceHigh:    zh ? '高' : 'High',
+    confidenceMid:     zh ? '中' : 'Medium',
+    confidenceLow:     zh ? '低' : 'Low',
+    testedItems:       zh ? '已测项目' : 'Tested Items',
+    untestedItems:     zh ? '未测项目' : 'Untested Items',
+    notEnabled:        zh ? '未开启' : 'Not enabled',
+    mainFinding:       zh ? '主要发现' : 'Main Finding',
+    reportId:          zh ? '报告 ID' : 'Report ID',
+    saveImage:         zh ? '保存图片' : 'Save Image',
+    copyMarkdown:      zh ? '复制 Markdown' : 'Copy Markdown',
+    copyForProvider:   zh ? '复制给站长' : 'Copy for Provider',
+    copyOneLine:       zh ? '复制一行晒分' : 'Copy Score Line',
+    copyForum:         zh ? '复制论坛回复' : 'Copy Forum Reply',
+    safetyNote:        zh ? 'API Key 已脱敏。本报告只展示本次测试中的可复现信号，不证明服务商故意多扣费，也不证明模型真假。模型表现分仅用于发现明显异常或降智风险，不代表官方模型排名。' : 'API Key anonymized. This report only shows reproducible signals and does not prove intentional overcharging or model authenticity. Model score is for anomaly detection only, not an official ranking.',
+    heroSubOk:         zh ? '所有检测项均通过。' : 'All test items passed.',
+    heroSubFail:       zh ? '检测中发现异常，请查看下方详情。' : 'Anomalies detected — see details below.',
+    heroSubWarn:       zh ? '部分检测项需要关注，请查看下方详情。' : 'Some items need attention — see details below.',
+    heroSubPartial:    zh ? '部分检测项已完成，结果请见下方。' : 'Some items completed — see results below.',
+    heroSubBasic:      zh ? '已完成模型联通和基础响应检测，未运行扣费/缓存/模型表现检测。' : 'Model connectivity and basic response tested. Billing, cache, and model performance not checked.',
+    heroTitleComplete:   zh ? '体检完成' : 'Diagnosis Complete',
+    heroTitleRisk:       zh ? '发现风险' : 'Risk Detected',
+    heroTitleReview:     zh ? '需要复查' : 'Needs Review',
+    heroTitlePartial:    zh ? '部分体检完成' : 'Partial Diagnosis Complete',
+    heroTitleBasic:      zh ? '基础检测完成' : 'Basic Test Complete',
+    heroStatusOk:         zh ? '正常' : 'Normal',
+    heroStatusDanger:    zh ? '异常风险' : 'Anomaly Risk',
+    heroStatusWarn:      zh ? '需复查' : 'Needs Review',
+    heroStatusComplete:   zh ? '完成' : 'Complete',
+    heroStatusBlocked:    zh ? '受阻' : 'Blocked',
     heroTitleMap: {
       '体检完成': 'Diagnosis Complete',
       '发现风险': 'Risk Detected',
@@ -1331,12 +1331,12 @@ function renderFullReport(result, formData) {
       '正常': 'Normal', '异常风险': 'Anomaly Risk', '需复查': 'Needs Review',
       '完成': 'Complete', '受阻': 'Blocked'
     },
-    connectivityLabel:   zh ? 'Model Connectivity' : '模型联通',
-    usageLabel:           zh ? 'Usage Integrity' : 'usage 完整性',
-    billingLabel:         zh ? 'Billing Integrity' : '扣费完整性',
-    cacheLabel:           zh ? 'Cache Hit' : '缓存命中',
-    priceLabel:           zh ? 'Price Audit' : '价格核对',
-    modelSanityLabel:     zh ? 'Model Performance' : '模型表现',
+    connectivityLabel:   zh ? '模型联通' : 'Model Connectivity',
+    usageLabel:           zh ? 'usage 完整性' : 'Usage Integrity',
+    billingLabel:         zh ? '扣费完整性' : 'Billing Integrity',
+    cacheLabel:           zh ? '缓存命中' : 'Cache Hit',
+    priceLabel:           zh ? '价格核对' : 'Price Audit',
+    modelSanityLabel:     zh ? '模型表现' : 'Model Performance',
   };
 
   const heroTitle = L.heroTitleMap[scored.heroTitle] ? L.heroTitleMap[scored.heroTitle] : scored.heroTitle;
@@ -1353,7 +1353,7 @@ function renderFullReport(result, formData) {
 
   const stateColor = { pass: '#16a34a', warn: '#d97706', fail: '#dc2626', blocked: '#64748b', skipped: '#94a3b8' };
   const stateBg = { pass: '#dcfce7', warn: '#fef3c7', fail: '#fee2e2', blocked: '#f1f5f9', skipped: '#f1f5f9' };
-  const stateText = zh ? { pass: 'Pass', warn: 'Needs Review', fail: 'Fail', blocked: 'Blocked', skipped: 'Not Tested' } : { pass: '通过', warn: '需复查', fail: '异常', blocked: '受阻', skipped: '未检测' };
+  const stateText = zh ? { pass: '通过', warn: '需复查', fail: '异常', blocked: '受阻', skipped: '未检测' } : { pass: 'Pass', warn: 'Needs Review', fail: 'Fail', blocked: 'Blocked', skipped: 'Not Tested' };
   const stateDot = { pass: '#16a34a', warn: '#d97706', fail: '#dc2626', blocked: '#94a3b8', skipped: '#94a3b8' };
 
   function dimCard(item, muted) {
@@ -1610,6 +1610,37 @@ function buildMarkdownReport(result, formData) {
   const scored = result._scored;
   const dims = scored ? scored.dims : {};
   const conn = result.connectivity || {};
+  const isQuick = result.mode === 'quick';
+
+  if (isQuick) {
+    const qf = getQuickFinding(result, lang);
+    const reportLines = [
+      `## ${zh ? 'AI API 基础联通检测' : 'AI API Basic Connectivity Check'}`,
+      '',
+      `**${zh ? '状态' : 'Status'}:** ${qf.label} | **${zh ? '一句话发现' : 'Finding'}:** ${qf.text}`,
+      `**${zh ? '报告 ID' : 'Report ID'}:** ${result.reportId}`,
+      '',
+      `### ${zh ? '技术摘要' : 'Technical Summary'}`,
+      `| ${zh ? '项目' : 'Item'} | ${zh ? '值' : 'Value'} |`,
+      `|------|----|`,
+      `| Base URL | ${formData.baseUrl || '—'} |`,
+      `| Model | ${formData.model || '—'} |`,
+      `| Interface | ${formData.interfaceType || '—'} |`,
+      `| HTTP | ${conn.status || '—'} |`,
+      `| Latency | ${conn.latency ? conn.latency + 'ms' : '—'} |`,
+      `| Visible Output | ${conn.visibleLength > 0 ? 'Yes' : 'No'} |`,
+      `| completion_tokens | ${conn.completionTokens ?? '—'} |`,
+      `| total_tokens | ${conn.totalTokens ?? '—'} |`,
+      `| cached_tokens | ${conn.cachedTokens ?? '—'} |`,
+      '',
+      `### ${zh ? '安全说明' : 'Safety Notice'}`,
+      zh ? '本报告不包含 API Key，只展示本次测试中的可复现信号，不证明服务商故意多扣费，也不证明模型真假。' : 'This report does not contain API Key and only shows reproducible signals from this test. It does not prove intentional overcharging or model authenticity.',
+      '',
+      `${zh ? '由 AI API Doctor 生成' : 'Generated by AI API Doctor'} · ${result.timestamp}`
+    ].filter(Boolean).join('\n');
+    return reportLines;
+  }
+
   const mainFinding = scored ? (zh ? getMainFinding(result, dims) : getMainFindingEn(result, dims)) : getQuickFinding(result, lang).text;
   const overallScore = scored ? scored.overallScore : null;
   const apiScore = scored ? scored.score : null;
@@ -1625,19 +1656,19 @@ function buildMarkdownReport(result, formData) {
   }
 
   const dimLabels = {
-    connectivity: zh ? 'Model Connectivity' : '模型联通',
-    usage: zh ? 'Usage Integrity' : 'usage 完整性',
-    billing: zh ? 'Billing Integrity' : '扣费完整性',
-    cache: zh ? 'Cache Hit' : '缓存命中',
-    price: zh ? 'Price Audit' : '价格核对',
+    connectivity: zh ? '模型联通' : 'Model Connectivity',
+    usage: zh ? 'usage 完整性' : 'Usage Integrity',
+    billing: zh ? '扣费完整性' : 'Billing Integrity',
+    cache: zh ? '缓存命中' : 'Cache Hit',
+    price: zh ? '价格核对' : 'Price Audit',
   };
 
   const stateLabels = {
-    pass: zh ? 'Pass' : '通过',
-    warn: zh ? 'Needs Review' : '需复查',
-    fail: zh ? 'Fail' : '异常',
-    blocked: zh ? 'Blocked' : '受阻',
-    skipped: zh ? 'Skipped' : '未检测',
+    pass: zh ? '通过' : 'Pass',
+    warn: zh ? '需复查' : 'Needs Review',
+    fail: zh ? '异常' : 'Fail',
+    blocked: zh ? '受阻' : 'Blocked',
+    skipped: zh ? '未检测' : 'Skipped',
   };
 
   const testedDimLines = Object.entries(dimLabels).map(([key, label]) => {
@@ -1647,21 +1678,21 @@ function buildMarkdownReport(result, formData) {
   }).filter(Boolean).join('\n');
 
   const lines = [
-    `## ${zh ? 'AI API Diagnostic Report' : 'AI API 体检报告'}`,
+    `## ${zh ? 'AI API 体检报告' : 'AI API Diagnostic Report'}`,
     '',
-    `**${zh ? 'Overall Score' : '综合分'}:** ${overallScore !== null ? overallScore + '/100' : '—'} | **${zh ? 'API Health Score' : 'API 体检分'}:** ${apiScore !== null ? apiScore + '/100' : '—'} | **${zh ? 'Model Score' : '模型表现分'}:** ${modelScore !== null ? modelScore + '/100' : zh ? 'Not tested' : '未检测'}`,
-    `**${zh ? 'Coverage' : '覆盖度'}:** ${coverage}% | **${zh ? 'Confidence' : '置信度'}:** ${zh ? { high: 'High', medium: 'Medium', low: 'Low' }[confidence] : { high: '高', medium: '中', low: '低' }[confidence]} | **${zh ? 'Main Finding' : '主要发现'}:** ${mainFinding}`,
-    `**${zh ? 'Report ID' : '报告 ID'}:** ${result.reportId} | **Report Fingerprint:** ${result.reportFingerprint || '—'}`,
+    `**${zh ? '综合分' : 'Overall Score'}:** ${overallScore !== null ? overallScore + '/100' : '—'} | **${zh ? 'API 体检分' : 'API Health Score'}:** ${apiScore !== null ? apiScore + '/100' : '—'} | **${zh ? '模型表现分' : 'Model Score'}:** ${modelScore !== null ? modelScore + '/100' : zh ? '未检测' : 'Not tested'}`,
+    `**${zh ? '覆盖度' : 'Coverage'}:** ${coverage}% | **${zh ? '置信度' : 'Confidence'}:** ${zh ? { high: '高', medium: '中', low: '低' }[confidence] : { high: 'High', medium: 'Medium', low: 'Low' }[confidence]} | **${zh ? '主要发现' : 'Main Finding'}:** ${mainFinding}`,
+    `**${zh ? '报告 ID' : 'Report ID'}:** ${result.reportId} | **Report Fingerprint:** ${result.reportFingerprint || '—'}`,
     '',
-    `### ${zh ? 'Test Dimensions' : '检测维度'}`,
-    `| ${zh ? 'Dimension' : '维度'} | ${zh ? 'Result' : '结果'} |`,
+    `### ${zh ? '检测维度' : 'Test Dimensions'}`,
+    `| ${zh ? '维度' : 'Dimension'} | ${zh ? '结果' : 'Result'} |`,
     `|------|------|`,
     testedDimLines,
     '',
-    modelScore !== null && result.modelSanity ? `### ${zh ? 'Model Performance' : '模型表现分'}\n${sanityLines}` : '',
+    modelScore !== null && result.modelSanity ? `### ${zh ? '模型表现分' : 'Model Performance'}\n${sanityLines}` : '',
     '',
-    `### ${zh ? 'Technical Summary' : '技术摘要'}`,
-    `| ${zh ? 'Item' : '项目'} | ${zh ? 'Value' : '值'} |`,
+    `### ${zh ? '技术摘要' : 'Technical Summary'}`,
+    `| ${zh ? '项目' : 'Item'} | ${zh ? '值' : 'Value'} |`,
     `|------|----|`,
     `| Base URL | ${formData.baseUrl || '—'} |`,
     `| Model | ${formData.model || '—'} |`,
@@ -1672,10 +1703,10 @@ function buildMarkdownReport(result, formData) {
     `| total_tokens | ${conn.totalTokens ?? '—'} |`,
     `| cached_tokens | ${conn.cachedTokens ?? '—'} |`,
     '',
-    `### ${zh ? 'Safety Notice' : '安全说明'}`,
-    zh ? 'This report does not contain API Key and only shows reproducible signals from this test. It does not prove intentional overcharging or model authenticity. Model score is for anomaly detection only, not an official ranking.' : '本报告不包含 API Key，只展示本次测试中的可复现信号，不证明服务商故意多扣费。模型表现分仅用于发现明显异常或降智风险，不代表官方模型排名。',
+    `### ${zh ? '安全说明' : 'Safety Notice'}`,
+    zh ? '本报告不包含 API Key，只展示本次测试中的可复现信号，不证明服务商故意多扣费。模型表现分仅用于发现明显异常或降智风险，不代表官方模型排名。' : 'This report does not contain API Key and only shows reproducible signals from this test. It does not prove intentional overcharging or model authenticity. Model score is for anomaly detection only, not an official ranking.',
     '',
-    `${zh ? 'Generated by AI API Doctor' : '由 AI API Doctor 生成'} · ${result.timestamp}`
+    `${zh ? '由 AI API Doctor 生成' : 'Generated by AI API Doctor'} · ${result.timestamp}`
   ].filter(Boolean).join('\n');
 
   return lines;
@@ -1690,7 +1721,8 @@ function buildProviderReport(result, formData) {
   const scored = result._scored;
   const dims = scored ? scored.dims : {};
   const conn = result.connectivity || {};
-  const mainFinding = scored ? (zh ? getMainFinding(result, dims) : getMainFindingEn(result, dims)) : getQuickFinding(result, lang).text;
+  const isQuick = result.mode === 'quick';
+  const mainFinding = isQuick ? getQuickFinding(result, lang).text : (scored ? (zh ? getMainFinding(result, dims) : getMainFindingEn(result, dims)) : '');
   const overallScore = scored ? scored.overallScore : null;
   const apiScore = scored ? scored.score : null;
   const modelScore = scored ? scored.modelSanityScore : null;
@@ -1720,14 +1752,14 @@ function buildProviderReport(result, formData) {
   const reportLines = [
     greeting,
     '',
-    overallScore !== null
+    overallScore !== null && !isQuick
       ? `${zh ? 'Overall Score' : '综合分'}：${overallScore}/100（${zh ? 'Coverage' : '覆盖度'} ${coverage}%）`
       : `${zh ? 'Basic Connectivity Check' : '基础联通检测'}：${mainFinding}`,
     `${zh ? 'Main Finding' : '主要发现'}：${mainFinding}`,
     `${zh ? 'Report ID' : '报告 ID'}：${result.reportId}`,
   ];
 
-  if (scored) {
+  if (!isQuick && scored) {
     reportLines.push(
       '',
       zh ? 'Test Results:' : '检测结果：',
@@ -1771,47 +1803,119 @@ function buildProviderReport(result, formData) {
 
 /* ═══════════════════════════════════════════════════════
    Save image — dedicated export clone
+   Two templates: quick (no scores) and full (with scores)
    ═══════════════════════════════════════════════════════ */
 async function saveDiagnosticImage() {
-  const sourceNode = document.getElementById('result-card');
-  if (!sourceNode) { showToast('Report node not found'); return; }
+  const result = window.Doctor ? window.Doctor._result : null;
+  const formData = window.Doctor ? window.Doctor._formData : null;
 
   try {
     await new Promise(requestAnimationFrame);
     await document.fonts.ready.catch(() => undefined);
 
-    if (typeof htmlToImage !== 'undefined') {
-      const clone = sourceNode.cloneNode(true);
-      clone.style.cssText = [
-        'position:fixed',
-        'top:-9999px',
-        'left:-9999px',
-        'width:1080px',
-        'background:#f8fafc',
-        'padding:48px',
-        'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif',
-        'box-sizing:border-box',
-        'border:none',
-        'border-radius:0'
-      ].join(';');
-      document.body.appendChild(clone);
-
-      const dataUrl = await htmlToImage.toPng(clone, {
-        pixelRatio: 1,
-        cacheBust: true,
-        backgroundColor: '#f8fafc',
-        width: 1080
-      });
-
-      document.body.removeChild(clone);
-      downloadDataUrl(dataUrl, `aiapidoctor-report-${Date.now()}.png`);
-      showToast('Report image saved');
-    } else {
-      showToast('Image generation failed, please use browser screenshot or copy report text.');
+    if (typeof htmlToImage === 'undefined') {
+      showToast('Image generation failed, please use browser screenshot.');
+      return;
     }
+
+    let clone;
+    if (result && result.mode === 'quick') {
+      clone = buildQuickImageNode(result, formData);
+    } else {
+      const sourceNode = document.getElementById('result-card');
+      if (!sourceNode) { showToast('Report node not found'); return; }
+      clone = sourceNode.cloneNode(true);
+    }
+
+    clone.style.cssText = [
+      'position:fixed',
+      'top:-9999px',
+      'left:-9999px',
+      'width:1080px',
+      'background:#f8fafc',
+      'padding:48px',
+      'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif',
+      'box-sizing:border-box',
+      'border:none',
+      'border-radius:0'
+    ].join(';');
+    document.body.appendChild(clone);
+
+    const dataUrl = await htmlToImage.toPng(clone, {
+      pixelRatio: 1,
+      cacheBust: true,
+      backgroundColor: '#f8fafc',
+      width: 1080
+    });
+
+    document.body.removeChild(clone);
+    downloadDataUrl(dataUrl, `aiapidoctor-report-${Date.now()}.png`);
+    showToast('Report image saved');
   } catch (err) {
     showToast('Image generation failed, please use browser screenshot.');
   }
+}
+
+function buildQuickImageNode(result, formData) {
+  const lang = getDocLang();
+  const zh = lang !== 'en';
+  const conn = result.connectivity || {};
+  const qf = getQuickFinding(result, lang);
+
+  const statusColorMap = { pass: '#16a34a', warn: '#d97706', fail: '#dc2626', blocked: '#64748b', unknown: '#94a3b8' };
+  const statusBgMap = { pass: '#dcfce7', warn: '#fef3c7', fail: '#fee2e2', blocked: '#f1f5f9', unknown: '#f1f5f9' };
+  const sc = statusColorMap[qf.status] || '#94a3b8';
+  const bg = statusBgMap[qf.status] || '#f1f5f9';
+
+  const title = zh ? '基础联通检测' : 'Basic Connectivity Check';
+  const titleSuffix = qf.status === 'pass' ? (zh ? '完成' : 'Complete')
+    : qf.status === 'blocked' ? (zh ? '受阻' : 'Blocked')
+    : qf.status === 'fail' ? (zh ? '失败' : 'Failed')
+    : qf.status === 'warn' ? (zh ? '需复查' : 'Needs Review')
+    : (zh ? '未知' : 'Unknown');
+  const safeNote = zh
+    ? 'API Key 已脱敏。本报告只展示本次测试中的可复现信号，不证明服务商故意多扣费。'
+    : 'API Key anonymized. This report only shows reproducible signals from this test and does not prove intentional overcharging.';
+
+  const node = document.createElement('div');
+  node.innerHTML = `
+    <div style="border-bottom:1px solid #e2e8f0;padding-bottom:16px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+      <div>
+        <div style="font-size:18px;font-weight:700;color:#0f172a">AI API Doctor</div>
+        <div style="font-size:13px;color:#64748b;margin-top:2px">${escHtml(title)}</div>
+      </div>
+      <div style="text-align:right;font-size:12px;color:#64748b;line-height:1.8">
+        <div>${zh ? 'API Key 已脱敏' : 'API Key Anonymized'}</div>
+        <div>${result.timestamp}</div>
+      </div>
+    </div>
+    <div style="text-align:center;padding:20px 16px;border-radius:12px;background:${bg};margin-bottom:16px">
+      <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${sc};margin-bottom:6px">${escHtml(qf.label)}</div>
+      <div style="font-size:20px;font-weight:800;color:#0f172a;margin-bottom:4px">${escHtml(title)} ${escHtml(titleSuffix)}</div>
+      <div style="font-size:13px;color:#64748b">${escHtml(qf.text)}</div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px">
+      <div style="background:#f1f5f9;border-radius:8px;padding:10px 12px">
+        <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.5px">HTTP</div>
+        <div style="font-size:12px;font-weight:700;color:${conn.status >= 400 ? '#dc2626' : '#16a34a'};font-family:monospace;margin-top:2px">${conn.status || '—'}</div>
+      </div>
+      <div style="background:#f1f5f9;border-radius:8px;padding:10px 12px">
+        <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.5px">Latency</div>
+        <div style="font-size:12px;font-weight:600;color:#0f172a;font-family:monospace;margin-top:2px">${conn.latency ? conn.latency + 'ms' : '—'}</div>
+      </div>
+      <div style="background:#f1f5f9;border-radius:8px;padding:10px 12px">
+        <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.5px">usage Returned</div>
+        <div style="font-size:12px;font-weight:600;color:#0f172a;margin-top:2px">${conn.totalTokens != null ? 'Yes' : 'No'}</div>
+      </div>
+      <div style="background:#f1f5f9;border-radius:8px;padding:10px 12px">
+        <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.5px">Model</div>
+        <div style="font-size:12px;font-weight:600;color:#0f172a;font-family:monospace;margin-top:2px">${escHtml(formData?.model || '—')}</div>
+      </div>
+    </div>
+    <div style="font-size:11px;color:#94a3b8;line-height:1.5;padding:10px 12px;background:#f9fafb;border-radius:8px;margin-bottom:12px">${escHtml(safeNote)}</div>
+    <div style="text-align:center;font-size:11px;color:#94a3b8;margin-top:4px">${zh ? '报告 ID' : 'Report ID'}：${result.reportId} · aiapidoctor.com</div>
+  `;
+  return node;
 }
 
 function downloadDataUrl(dataUrl, filename) {
@@ -1908,8 +2012,8 @@ function showInlineModelResults(result) {
   const displayModels = models.slice(0, 20);
   const hasMore = models.length > 20;
 
-  const headerText = zh ? `Found ${total} models, click to fill:` : `读取到 ${total} 个模型，点击填入：`;
-  const searchPlaceholder = zh ? 'Search...' : '搜索...';
+  const headerText = zh ? `读取到 ${total} 个模型，点击填入：` : `Found ${total} models, click to fill:`;
+  const searchPlaceholder = zh ? '搜索...' : 'Search...';
 
   let html = `<div style="margin-top:8px;padding:12px;background:#f1f5f9;border-radius:8px;font-size:12px;color:#374151;line-height:1.5">
     <div style="font-weight:600;margin-bottom:8px">${headerText}</div>
@@ -2049,15 +2153,6 @@ window.Doctor = {
       runBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> ${btnText}`;
     }
 
-    if (mode === 'full') {
-      const panel = document.getElementById('advanced-panel');
-      const toggle = document.getElementById('advanced-toggle');
-      if (panel && toggle) {
-        panel.classList.add('open');
-        toggle.classList.add('open');
-      }
-    }
-
     if (typeof updateCostEstimate === 'function') updateCostEstimate();
   },
 
@@ -2088,13 +2183,13 @@ window.Doctor = {
     const lang = getDocLang();
     const zh = lang !== 'en';
 
-    if (!baseUrl) { showToast(zh ? 'Please fill in Base URL first' : '请先填写 Base URL'); return; }
-    if (!apiKey) { showToast(zh ? 'Please fill in API Key first' : '请先填写 API Key'); return; }
+    if (!baseUrl) { showToast(zh ? '请先填写 Base URL' : 'Please fill in Base URL first'); return; }
+    if (!apiKey) { showToast(zh ? '请先填写 API Key' : 'Please fill in API Key first'); return; }
 
     const btn = document.getElementById('read-models-btn');
     if (btn) {
       btn.disabled = true;
-      btn.textContent = zh ? 'Reading...' : '读取中...';
+      btn.textContent = zh ? '读取中...' : 'Reading...';
     }
 
     try {
@@ -2107,7 +2202,7 @@ window.Doctor = {
 
     if (btn) {
       btn.disabled = false;
-      btn.textContent = zh ? 'Auto Read Models' : '自动读取模型';
+      btn.textContent = zh ? '自动读取模型' : 'Fetch Models';
     }
   },
 
@@ -2138,8 +2233,8 @@ window.Doctor = {
     const lang = getDocLang();
     const zh = lang !== 'en';
 
-    if (!baseUrl) { showToast(zh ? 'Please fill in Base URL' : '请填写 Base URL'); return; }
-    if (!model) { showToast(zh ? 'Please fill in Model ID' : '请填写 Model ID'); return; }
+    if (!baseUrl) { showToast(zh ? '请填写 Base URL' : 'Please fill in Base URL'); return; }
+    if (!model) { showToast(zh ? '请填写 Model ID' : 'Please fill in Model ID'); return; }
 
     saveConfigToStorage({ baseUrl, providerName, model, interfaceType });
 
@@ -2148,8 +2243,8 @@ window.Doctor = {
 
     const isQuick = this._mode === 'quick';
     const btnRunningLabel = zh
-      ? (isQuick ? 'Running Quick Check...' : 'Running Full Check...')
-      : '检测中...';
+      ? '检测中...'
+      : (isQuick ? 'Running Quick Check...' : 'Running Full Check...');
 
     const btn = document.getElementById('doctor-run-btn');
     const clearBtn = document.getElementById('doctor-clear-btn');
@@ -2194,7 +2289,7 @@ window.Doctor = {
       clearTimeout(timeout);
     } catch (err) {
       if (err.name === 'AbortError') {
-        showToast(zh ? 'Diagnosis timed out (90s). Please retry or use Chrome extension.' : '检测超时（90秒），请重试或使用 Chrome 插件');
+        showToast(zh ? '检测超时（90秒），请重试或使用 Chrome 插件' : 'Diagnosis timed out (90s). Please retry or use Chrome extension.');
       }
     }
 
@@ -2224,12 +2319,12 @@ window.Doctor = {
     const mode = this._mode;
 
     const steps = [
-      zh ? 'Model Connectivity Check' : '模型联通检测',
-      zh ? 'Usage Integrity' : 'usage 完整性',
-      mode === 'full' && document.getElementById('cache-test-toggle')?.checked ? (zh ? 'Cache Hit Test' : '缓存命中检测') : null,
-      mode === 'full' && document.getElementById('price-test-toggle')?.checked ? (zh ? 'Price Audit' : '价格核对') : null,
-      mode === 'full' && document.getElementById('sanity-test-toggle')?.checked ? (zh ? 'Model Performance Test (5 dims)' : '模型表现检测（5项）') : null,
-      zh ? 'Calculating Score' : '计算体检分'
+      zh ? '模型联通检测' : 'Model Connectivity Check',
+      zh ? 'usage 完整性' : 'Usage Integrity',
+      mode === 'full' && document.getElementById('cache-test-toggle')?.checked ? (zh ? '缓存命中检测' : 'Cache Hit Test') : null,
+      mode === 'full' && document.getElementById('price-test-toggle')?.checked ? (zh ? '价格核对' : 'Price Audit') : null,
+      mode === 'full' && document.getElementById('sanity-test-toggle')?.checked ? (zh ? '模型表现检测（5项）' : 'Model Performance Test (5 dims)') : null,
+      zh ? '计算体检分' : 'Calculating Score'
     ].filter(Boolean);
 
     const container = document.getElementById('diag-progress');
@@ -2265,12 +2360,12 @@ window.Doctor = {
     if (typeof updateCostEstimate === 'function') updateCostEstimate();
     document.getElementById('result-card').innerHTML = `
       <div style="text-align:center;padding:40px 20px;color:#94a3b8;font-size:14px;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-lg)">
-        ${zh ? 'Fill in the information and click the diagnosis button to view results.' : '填写信息后点击检测按钮，即可查看诊断结果。'}
+        ${zh ? '填写信息后点击检测按钮，即可查看诊断结果。' : 'Fill in the information and click the diagnosis button to view results.'}
       </div>`;
     this._result = null;
     this._formData = null;
     if (this._controller) this._controller.abort();
-    showToast(zh ? 'Cleared' : '已清空');
+    showToast(zh ? '已清空' : 'Cleared');
   },
 
   async saveImage() {
@@ -2278,19 +2373,19 @@ window.Doctor = {
   },
 
   copyMarkdown() {
-    if (!this._result) { showToast(getDocLang() !== 'en' ? 'Please run diagnosis first' : '请先进行检测'); return; }
+    if (!this._result) { showToast(zh ? '请先进行检测' : 'Please run diagnosis first'); return; }
     const md = buildMarkdownReport(this._result, this._formData);
-    copyToClipboard(md, getDocLang() !== 'en' ? 'Markdown copied' : 'Markdown 已复制');
+    copyToClipboard(md, zh ? 'Markdown 已复制' : 'Markdown copied');
   },
 
   copyForProvider() {
-    if (!this._result) { showToast(getDocLang() !== 'en' ? 'Please run diagnosis first' : '请先进行检测'); return; }
+    if (!this._result) { showToast(getDocLang() !== 'en' ? '请先进行检测' : 'Please run diagnosis first'); return; }
     const text = buildProviderReport(this._result, this._formData);
-    copyToClipboard(text, getDocLang() !== 'en' ? 'Report copied, can send to provider' : '报告文本已复制，可发给站长');
+    copyToClipboard(text, getDocLang() !== 'en' ? '报告文本已复制，可发给站长' : 'Report copied, can send to provider');
   },
 
   copyOneLine() {
-    if (!this._result) { showToast(getDocLang() !== 'en' ? 'Please run diagnosis first' : '请先进行检测'); return; }
+    if (!this._result) { showToast(zh ? '请先进行检测' : 'Please run diagnosis first'); return; }
     const result = this._result;
     const lang = getDocLang();
     const zh = lang !== 'en';
@@ -2298,9 +2393,9 @@ window.Doctor = {
     if (result.mode === 'quick') {
       const qf = getQuickFinding(result, lang);
       const text = zh
-        ? `My AI API Quick Check: ${qf.label} | ${qf.text} | Report ID: ${result.reportId}\nhttps://aiapidoctor.com/`
-        : `我的 AI API 快速检测：${qf.label}｜${qf.text}｜报告 ID：${result.reportId}\nhttps://aiapidoctor.com/`;
-      copyToClipboard(text, zh ? 'Result copied' : '结果已复制');
+        ? `我的 AI API 快速检测：${qf.label}｜${qf.text}｜报告 ID：${result.reportId}\nhttps://aiapidoctor.com/`
+        : `My AI API Quick Check: ${qf.label} | ${qf.text} | Report ID: ${result.reportId}\nhttps://aiapidoctor.com/`;
+      copyToClipboard(text, zh ? '结果已复制' : 'Result copied');
     } else {
       const scored = result._scored;
       const dims = scored.dims;
@@ -2308,14 +2403,14 @@ window.Doctor = {
       const mainFinding = zh ? getMainFinding(result, dims) : getMainFindingEn(result, dims);
       const overallScore = scored.overallScore;
       const text = zh
-        ? `My AI API Doctor Score: ${overallScore !== null ? overallScore : '—'}/100 | Coverage: ${coverage}% | ${mainFinding} | Report ID: ${result.reportId}\nhttps://aiapidoctor.com/`
-        : `我的 AI API 体检分：${overallScore !== null ? overallScore : '—'}/100｜覆盖度 ${coverage}%｜${mainFinding}｜报告 ID：${result.reportId}\nhttps://aiapidoctor.com/`;
-      copyToClipboard(text, zh ? 'Score line copied' : '一行晒分已复制');
+        ? `我的 AI API 体检分：${overallScore !== null ? overallScore : '—'}/100｜覆盖度 ${coverage}%｜${mainFinding}｜报告 ID：${result.reportId}\nhttps://aiapidoctor.com/`
+        : `My AI API Doctor Score: ${overallScore !== null ? overallScore : '—'}/100 | Coverage: ${coverage}% | ${mainFinding} | Report ID: ${result.reportId}\nhttps://aiapidoctor.com/`;
+      copyToClipboard(text, zh ? '一行晒分已复制' : 'Score line copied');
     }
   },
 
   copyForum() {
-    if (!this._result) { showToast(getDocLang() !== 'en' ? 'Please run diagnosis first' : '请先进行检测'); return; }
+    if (!this._result) { showToast(zh ? '请先进行检测' : 'Please run diagnosis first'); return; }
     const result = this._result;
     const lang = getDocLang();
     const zh = lang !== 'en';
@@ -2323,12 +2418,12 @@ window.Doctor = {
     if (result.mode === 'quick') {
       const qf = getQuickFinding(result, lang);
       const text = [
-        zh ? 'I tested the AI API:' : '我测了一下 AI API：',
-        `${zh ? 'Quick Check' : '快速检测'}：${qf.label}（${qf.text}）`,
-        `${zh ? 'Report ID' : '报告 ID'}：${result.reportId}`,
+        zh ? '我测了一下 AI API：' : 'I tested the AI API:',
+        `${zh ? '快速检测' : 'Quick Check'}：${qf.label}（${qf.text}）`,
+        `${zh ? '报告 ID' : 'Report ID'}：${result.reportId}`,
         `https://aiapidoctor.com/`
       ].join('\n');
-      copyToClipboard(text, zh ? 'Forum reply copied' : '论坛回复已复制');
+      copyToClipboard(text, zh ? '论坛回复已复制' : 'Forum reply copied');
     } else {
       const scored = result._scored;
       const dims = scored.dims;
@@ -2336,13 +2431,13 @@ window.Doctor = {
       const mainFinding = zh ? getMainFinding(result, dims) : getMainFindingEn(result, dims);
       const overallScore = scored.overallScore;
       const text = [
-        zh ? 'I tested the AI API:' : '我测了一下 AI API：',
-        `${zh ? 'Health Score' : '体检分'}：${overallScore !== null ? overallScore + '/100' : '—'}（${zh ? 'Coverage' : '覆盖度'} ${coverage}%）`,
-        `${zh ? 'Main Finding' : '主要发现'}：${mainFinding}`,
-        `${zh ? 'Report ID' : '报告 ID'}：${result.reportId}`,
+        zh ? '我测了一下 AI API：' : 'I tested the AI API:',
+        `${zh ? '体检分' : 'Health Score'}：${overallScore !== null ? overallScore + '/100' : '—'}（${zh ? '覆盖度' : 'Coverage'} ${coverage}%）`,
+        `${zh ? '主要发现' : 'Main Finding'}：${mainFinding}`,
+        `${zh ? '报告 ID' : 'Report ID'}：${result.reportId}`,
         `https://aiapidoctor.com/`
       ].join('\n');
-      copyToClipboard(text, zh ? 'Forum reply copied' : '论坛回复已复制');
+      copyToClipboard(text, zh ? '论坛回复已复制' : 'Forum reply copied');
     }
   }
 };
