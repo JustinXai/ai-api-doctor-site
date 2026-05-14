@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AI API Doctor｜AI API 扣费异常检测工具</title>
-  <meta name="description" content="检测 New API / One API 中转站失败请求、空回复、预扣未返还有没有扣 raw quota，并生成可发给站长的扣费检测报告。" />
+  <title>AI API Doctor：AI API 扣费异常检测工具</title>
+  <meta name="description" content="检测 AI API 中转站失败请求扣费、空回复扣费、缓存命中、模型联通、usage 完整性和价格差异，生成可发给站长的诊断报告。" />
   <meta name="robots" content="index, follow" />
   <link rel="canonical" href="https://aiapidoctor.com/" />
   <link rel="alternate" hreflang="zh-CN" href="https://aiapidoctor.com/" />
@@ -15,15 +15,10 @@
 
   <!-- Open Graph -->
   <meta property="og:type" content="website" />
-  <meta property="og:title" content="AI API Doctor｜AI API 扣费异常检测工具" />
-  <meta property="og:description" content="检测 New API / One API 中转站失败请求、空回复、预扣未返还有没有扣 raw quota，并生成可发给站长的扣费检测报告。" />
+  <meta property="og:title" content="AI API Doctor：AI API 扣费异常检测工具" />
+  <meta property="og:description" content="检测 AI API 中转站失败请求扣费、空回复扣费、缓存命中、模型联通、usage 完整性和价格差异，生成可发给站长的诊断报告。" />
   <meta property="og:url" content="https://aiapidoctor.com/" />
   <meta property="og:locale" content="zh_CN" />
-
-  <!-- Twitter Card -->
-  <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="AI API Doctor｜AI API 扣费异常检测工具" />
-  <meta name="twitter:description" content="检测 New API / One API 中转站失败请求、空回复、预扣未返还有没有扣 raw quota。" />
 
   <!-- JSON-LD -->
   <script type="application/ld+json">
@@ -33,7 +28,7 @@
     "name": "AI API Doctor",
     "applicationCategory": "DeveloperApplication",
     "operatingSystem": "Web, Chrome",
-    "description": "AI API billing anomaly detection tool. Detects failed-request charges and empty-reply billing anomalies in New API / One API relay stations.",
+    "description": "AI API billing anomaly detection tool. Detects failed-request charges, empty-reply billing anomalies, cache hits, model connectivity, usage integrity, and cost differences.",
     "url": "https://aiapidoctor.com",
     "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
   }
@@ -53,18 +48,15 @@
       AI API Doctor
     </a>
     <button class="nav-toggle" aria-label="菜单" onclick="document.querySelector('.site-nav').classList.toggle('open')">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-        <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
-      </svg>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
     </button>
     <nav class="site-nav">
-      <a href="/">首页</a>
-      <a href="/report/">手动生成报告</a>
-      <a href="/guides/billing-anomaly/">检测原理</a>
+      <a href="/" class="active">首页</a>
+      <a href="/#doctor">体检台</a>
+      <a href="/report/">报告生成</a>
       <a href="/faq/">FAQ</a>
       <a href="/privacy/">隐私</a>
       <a href="/support/">支持</a>
-      <a href="https://chrome.google.com/webstore" target="_blank" rel="noopener">下载插件</a>
       <span class="lang-switcher">
         <span class="lang-switcher__current">中文</span>
         <span class="lang-switcher__sep">|</span>
@@ -74,137 +66,413 @@
   </div>
 </header>
 
-<!-- Hero -->
-<section class="hero">
-  <div class="container">
-    <div class="hero__badge">扣费异常检测</div>
-    <h1 class="hero__title">AI API 扣费异常检测工具</h1>
-    <p class="hero__sub">检测 New API / One API 中转站失败请求、空回复、预扣未返还有没有扣 raw quota，并生成可发给站长的扣费检测报告。</p>
-    <div class="hero__actions">
-      <a href="/report/" class="btn btn--primary btn--lg">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 10"/></svg>
-        手动生成报告
-      </a>
-      <a href="https://chrome.google.com/webstore" target="_blank" rel="noopener" class="btn btn--secondary btn--lg">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        下载 Chrome 插件
-      </a>
-      <a href="/guides/billing-anomaly/" class="btn btn--secondary btn--lg">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-        查看检测原理
-      </a>
+<!-- Doctor Section: Left + Right layout -->
+<section id="doctor" class="doctor-section">
+  <div class="doctor-layout container" style="max-width:100%;padding:0 20px">
+
+    <!-- Left: Copy -->
+    <div class="doctor-left">
+      <div class="doctor-left__badge">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        AI API 扣费体检
+      </div>
+      <h1>AI API 扣费异常检测工具</h1>
+      <p class="doctor-left__sub">
+        检测失败请求、空回复、缓存命中、模型联通和 usage 价格差异。API Key 只在你的浏览器本地使用，不上传到 AI API Doctor。
+      </p>
+      <div class="doctor-trust-badges">
+        <span class="doctor-trust-badge doctor-trust-badge--green">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          API Key 本地使用
+        </span>
+        <span class="doctor-trust-badge doctor-trust-badge--blue">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          支持 OpenAI-compatible API
+        </span>
+        <span class="doctor-trust-badge">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          可生成发给站长的诊断报告
+        </span>
+      </div>
+      <div class="doctor-left__tip">
+        <strong>提示：</strong>网页版检测可能受浏览器 CORS 限制。如果检测失败，可以使用 <a href="https://chrome.google.com/webstore" target="_blank" rel="noopener">Chrome 插件</a>读取 New API / One API raw quota，或切换到手动报告模式。
+      </div>
     </div>
-  </div>
+
+    <!-- Right: Tool -->
+    <div class="doctor-right">
+      <div class="tool-card" id="tool-card">
+
+        <!-- Card header -->
+        <div class="tool-card__header">
+          <div class="tool-card__title">开始体检</div>
+        </div>
+
+        <div class="tool-card__body">
+
+          <!-- Tabs -->
+          <div class="tool-tabs">
+            <button class="tool-tab active" id="tab-local" onclick="switchTab('local')">本地检测 Beta</button>
+            <button class="tool-tab" id="tab-manual" onclick="switchTab('manual')">手动报告</button>
+          </div>
+
+          <!-- ── LOCAL TEST TAB ── -->
+          <div id="panel-local">
+            <div class="tool-form">
+
+              <!-- Connection info paste -->
+              <div class="tool-form__group">
+                <label class="tool-form__label">粘贴连接信息</label>
+                <textarea
+                  id="doctor-conn-info"
+                  class="tool-form__textarea"
+                  placeholder="支持 New API 连接信息、Base URL、API Key 或 cURL。例如：
+{&quot;_type&quot;:&quot;newapi_channel_conn&quot;,&quot;key&quot;:&quot;sk-...&quot;,&quot;url&quot;:&quot;https://api.example.com&quot;}
+或：
+https://api.example.com/v1
+或：
+OPENAI_API_KEY=sk-...
+OPENAI_BASE_URL=https://..."
+                  rows="4"
+                  oninput="Doctor.onConnectionInfoInput(this)"
+                ></textarea>
+                <div class="tool-form__hint">自动解析 JSON、cURL、ENV 格式。解析后请检查下方字段是否正确。</div>
+              </div>
+
+              <!-- Provider name -->
+              <div class="tool-form__group">
+                <label class="tool-form__label">服务商名称 <span style="font-weight:400;color:var(--muted)">（可选）</span></label>
+                <input id="doctor-provider" class="tool-form__input" placeholder="服务商名称，可选" />
+                <div class="tool-form__hint">不填则自动使用域名作为服务商名称。</div>
+              </div>
+
+              <!-- Base URL -->
+              <div class="tool-form__group">
+                <label class="tool-form__label">Base URL</label>
+                <input
+                  id="doctor-base-url"
+                  class="tool-form__input"
+                  placeholder="https://api.example.com/v1"
+                  oninput="Doctor.normalizeBaseUrl(this)"
+                />
+                <div class="tool-form__hint" id="base-url-hint" style="display:none;color:var(--warning)">
+                  Base URL 末尾似乎缺少 <code>/v1</code>，已自动修正。如需手动补充请修改上方字段。
+                </div>
+              </div>
+
+              <!-- API Key -->
+              <div class="tool-form__group">
+                <label class="tool-form__label">API Key</label>
+                <input
+                  id="doctor-api-key"
+                  type="password"
+                  class="tool-form__input tool-form__input--key"
+                  placeholder="sk-..."
+                  autocomplete="off"
+                />
+                <div class="tool-form__hint">API Key 仅在当前浏览器内用于本地测试，不会上传到 AI API Doctor。</div>
+              </div>
+
+              <!-- Model ID + common models -->
+              <div class="tool-form__group">
+                <label class="tool-form__label">Model ID</label>
+                <div style="display:flex;gap:8px;align-items:center">
+                  <input id="doctor-model" class="tool-form__input" placeholder="gpt-4o, deepseek-chat, claude-sonnet-4" style="flex:1" />
+                  <div class="common-models">
+                    <button class="common-models__btn" type="button" onclick="Doctor.showCommonModels(this)">常见模型</button>
+                    <div class="common-models__list">
+                      <div class="common-models__item" onclick="Doctor.selectModel('gpt-4o')">gpt-4o</div>
+                      <div class="common-models__item" onclick="Doctor.selectModel('gpt-4o-mini')">gpt-4o-mini</div>
+                      <div class="common-models__item" onclick="Doctor.selectModel('deepseek-chat')">deepseek-chat</div>
+                      <div class="common-models__item" onclick="Doctor.selectModel('deepseek-reasoner')">deepseek-reasoner</div>
+                      <div class="common-models__item" onclick="Doctor.selectModel('claude-sonnet-4')">claude-sonnet-4</div>
+                      <div class="common-models__item" onclick="Doctor.selectModel('claude-opus-4')">claude-opus-4</div>
+                      <div class="common-models__item" onclick="Doctor.selectModel('gemini-2.5-flash')">gemini-2.5-flash</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Interface -->
+              <div class="tool-form__group">
+                <label class="tool-form__label">接口类型</label>
+                <div class="interface-toggle">
+                  <button class="interface-btn active" data-type="OpenAI Chat" onclick="Doctor.setInterface('OpenAI Chat')">OpenAI Chat</button>
+                  <button class="interface-btn" data-type="OpenAI Responses" onclick="Doctor.setInterface('OpenAI Responses')">OpenAI Responses</button>
+                  <button class="interface-btn" data-type="Claude Messages" onclick="Doctor.setInterface('Claude Messages')">Claude Messages</button>
+                </div>
+                <input type="hidden" id="doctor-interface" value="OpenAI Chat" />
+              </div>
+
+              <!-- Advanced settings -->
+              <button class="advanced-toggle" id="advanced-toggle" type="button" onclick="Doctor.toggleAdvanced()">
+                <svg class="advanced-toggle__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+                展开高级检测项
+              </button>
+              <div class="advanced-panel" id="advanced-panel">
+
+                <!-- Cache test -->
+                <div class="tool-form__group" style="background:var(--soft);border-radius:var(--radius-sm);padding:14px;margin-bottom:10px">
+                  <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+                    <input type="checkbox" id="cache-test-toggle" onchange="Doctor.toggleCache(this)" style="width:16px;height:16px;cursor:pointer" />
+                    <div>
+                      <div style="font-size:13px;font-weight:600;color:var(--text)">缓存命中检测</div>
+                      <div style="font-size:11px;color:var(--muted);margin-top:2px">开启后会发送两次较长测试请求，可能消耗少量额度。</div>
+                    </div>
+                  </label>
+                </div>
+
+                <!-- Price audit -->
+                <div class="tool-form__group" style="background:var(--soft);border-radius:var(--radius-sm);padding:14px;margin-bottom:10px">
+                  <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:10px">
+                    <input type="checkbox" id="price-test-toggle" onchange="Doctor.togglePrice(this)" style="width:16px;height:16px;cursor:pointer" />
+                    <div>
+                      <div style="font-size:13px;font-weight:600;color:var(--text)">价格核对</div>
+                      <div style="font-size:11px;color:var(--muted);margin-top:2px">根据 usage 和价格计算理论成本，与实际扣费对比。</div>
+                    </div>
+                  </label>
+                  <div class="price-row-4">
+                    <div>
+                      <div class="tool-form__label" style="font-size:11px">input price / 1M</div>
+                      <input id="price-input" class="tool-form__input" placeholder="0.5" type="number" step="0.001" />
+                    </div>
+                    <div>
+                      <div class="tool-form__label" style="font-size:11px">output price / 1M</div>
+                      <input id="price-output" class="tool-form__input" placeholder="1.5" type="number" step="0.001" />
+                    </div>
+                    <div>
+                      <div class="tool-form__label" style="font-size:11px">cached read / 1M</div>
+                      <input id="price-cached-read" class="tool-form__input" placeholder="默认=input×0.5" type="number" step="0.001" />
+                    </div>
+                    <div>
+                      <div class="tool-form__label" style="font-size:11px">cached write / 1M</div>
+                      <input id="price-cached-write" class="tool-form__input" placeholder="默认=input" type="number" step="0.001" />
+                    </div>
+                  </div>
+                  <div class="tool-form__group" style="margin-top:8px">
+                    <div class="tool-form__label" style="font-size:11px">actual cost (USD)</div>
+                    <input id="price-actual" class="tool-form__input" placeholder="可选，如 0.000123" type="number" step="0.000001" />
+                    <div class="tool-form__hint">不同服务商缓存折扣不同，请以站点公示价格为准。</div>
+                  </div>
+                </div>
+
+              </div><!-- /advanced-panel -->
+
+              <!-- Actions -->
+              <div class="tool-actions">
+                <button id="doctor-run-btn" class="btn btn--primary btn--primary-run" onclick="Doctor.run()">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                  开始体检
+                </button>
+                <button id="doctor-clear-btn" class="btn btn--secondary" onclick="Doctor.clear()">清空</button>
+              </div>
+
+            </div><!-- /tool-form -->
+          </div><!-- /panel-local -->
+
+          <!-- ── MANUAL REPORT TAB ── -->
+          <div id="panel-manual" style="display:none">
+            <div class="tool-form">
+
+              <div class="tool-form__group">
+                <label class="tool-form__label">Provider Name</label>
+                <input id="manual-provider" class="tool-form__input" placeholder="服务商名称，可选" />
+              </div>
+
+              <div class="tool-form__group">
+                <label class="tool-form__label">Base URL</label>
+                <input id="manual-base-url" class="tool-form__input" placeholder="https://api.example.com/v1" />
+              </div>
+
+              <div class="tool-form__group">
+                <label class="tool-form__label">Model ID</label>
+                <input id="manual-model" class="tool-form__input" placeholder="gpt-4o" />
+              </div>
+
+              <div class="tool-form__row">
+                <div class="tool-form__group">
+                  <label class="tool-form__label">Interface</label>
+                  <select id="manual-interface" class="tool-form__select">
+                    <option>OpenAI Chat</option>
+                    <option>OpenAI Responses</option>
+                    <option>Claude Messages</option>
+                  </select>
+                </div>
+                <div class="tool-form__group">
+                  <label class="tool-form__label">HTTP Status</label>
+                  <input id="manual-http-status" class="tool-form__input" placeholder="200" type="number" />
+                </div>
+              </div>
+
+              <div class="tool-form__row">
+                <div class="tool-form__group">
+                  <label class="tool-form__label">visible output length</label>
+                  <input id="manual-output-len" class="tool-form__input" placeholder="0" type="number" />
+                </div>
+                <div class="tool-form__group">
+                  <label class="tool-form__label">prompt_tokens</label>
+                  <input id="manual-prompt-tokens" class="tool-form__input" placeholder="0" type="number" />
+                </div>
+              </div>
+
+              <div class="tool-form__row">
+                <div class="tool-form__group">
+                  <label class="tool-form__label">completion_tokens</label>
+                  <input id="manual-completion-tokens" class="tool-form__input" placeholder="0" type="number" />
+                </div>
+                <div class="tool-form__group">
+                  <label class="tool-form__label">total_tokens</label>
+                  <input id="manual-total-tokens" class="tool-form__input" placeholder="0" type="number" />
+                </div>
+              </div>
+
+              <div class="tool-form__row">
+                <div class="tool-form__group">
+                  <label class="tool-form__label">cached_tokens</label>
+                  <input id="manual-cached-tokens" class="tool-form__input" placeholder="0" type="number" />
+                </div>
+                <div class="tool-form__group">
+                  <label class="tool-form__label">cache_read_input_tokens</label>
+                  <input id="manual-cache-read" class="tool-form__input" placeholder="0" type="number" />
+                </div>
+              </div>
+
+              <div class="tool-form__row">
+                <div class="tool-form__group">
+                  <label class="tool-form__label">cache_creation_input_tokens</label>
+                  <input id="manual-cache-creation" class="tool-form__input" placeholder="0" type="number" />
+                </div>
+                <div class="tool-form__group">
+                  <label class="tool-form__label">actual cost (USD)</label>
+                  <input id="manual-actual-cost" class="tool-form__input" placeholder="0.000000" type="number" step="0.000001" />
+                </div>
+              </div>
+
+              <div class="tool-form__group" style="background:var(--soft);border-radius:var(--radius-sm);padding:14px;margin-bottom:4px">
+                <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:10px">Raw Quota 证据（可选）</div>
+                <div class="tool-form__row">
+                  <div class="tool-form__group">
+                    <label class="tool-form__label" style="font-size:11px">before</label>
+                    <input id="manual-before" class="tool-form__input" placeholder="99817234" type="number" />
+                  </div>
+                  <div class="tool-form__group">
+                    <label class="tool-form__label" style="font-size:11px">immediately after</label>
+                    <input id="manual-immediate" class="tool-form__input" placeholder="99817234" type="number" />
+                  </div>
+                </div>
+                <div class="tool-form__row">
+                  <div class="tool-form__group">
+                    <label class="tool-form__label" style="font-size:11px">after 3s</label>
+                    <input id="manual-after3" class="tool-form__input" placeholder="99817234" type="number" />
+                  </div>
+                  <div class="tool-form__group">
+                    <label class="tool-form__label" style="font-size:11px">after 10s</label>
+                    <input id="manual-after10" class="tool-form__input" placeholder="99817234" type="number" />
+                  </div>
+                </div>
+              </div>
+
+              <div class="tool-form__group">
+                <label class="tool-form__label">备注 <span style="font-weight:400;color:var(--muted)">（可选）</span></label>
+                <textarea id="manual-note" class="tool-form__textarea" placeholder="补充说明..." rows="2"></textarea>
+              </div>
+
+              <div class="tool-actions">
+                <button class="btn btn--primary" onclick="ManualReport.generate()" style="flex:2">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                  生成报告
+                </button>
+                <button class="btn btn--secondary" onclick="ManualReport.clear()">清空</button>
+              </div>
+
+            </div>
+          </div><!-- /panel-manual -->
+
+          <!-- Result card -->
+          <div id="result-card" style="margin-top:24px">
+            <div style="text-align:center;padding:40px 20px;color:#94a3b8;font-size:14px">
+              填写信息后点击"开始体检"，即可查看诊断报告。
+            </div>
+          </div>
+
+          <!-- Diagnosis progress -->
+          <div id="diag-progress" style="margin-top:16px"></div>
+
+        </div><!-- /tool-card__body -->
+      </div><!-- /tool-card -->
+    </div><!-- /doctor-right -->
+
+  </div><!-- /doctor-layout -->
 </section>
 
+<!-- Below fold: SEO content -->
 <main>
 
-  <!-- Sample Report Card -->
+  <!-- Why -->
   <section class="section">
-    <div class="container">
-      <div class="card" style="text-align:center; margin-bottom:12px">
-        <div style="font-size:13px; color:var(--muted); margin-bottom:16px">
-          示例报告 — 正常：失败请求未扣费
-        </div>
-        <div id="hero-report" class="billing-report-card" style="text-align:left; display:inline-block; width:100%; max-width:600px">
-          <div class="report-header">
-            <div>
-              <div class="report-header__brand">AI API Doctor</div>
-              <div class="report-header__sub">扣费异常检测报告</div>
-            </div>
-            <div class="report-header__meta">
-              <div>API Key 未包含</div>
-              <div>手动报告示例</div>
-            </div>
-          </div>
-          <div class="verdict-hero verdict--ok">
-            <div class="verdict-hero__status" style="color:var(--success)">✓ 正常</div>
-            <div class="verdict-hero__title">失败请求未扣费</div>
-            <div class="verdict-hero__detail">请求失败，但 10 秒后原始额度未减少。</div>
-          </div>
-          <div class="delta-section">
-            <div class="delta-section__label">最终变化</div>
-            <div class="delta-section__value" style="color:var(--success)">+0 <span class="delta-section__unit">quota</span></div>
-            <div class="delta-section__usd">约合金额：$0.000000</div>
-          </div>
-          <div class="evidence-chain">
-            <div class="evidence-node">
-              <div class="evidence-node__label">检测前</div>
-              <div class="evidence-node__value">99,817,234</div>
-            </div>
-            <div class="evidence-arrow">→</div>
-            <div class="evidence-node">
-              <div class="evidence-node__label">HTTP</div>
-              <div class="evidence-node__value" style="color:var(--danger)">503</div>
-            </div>
-            <div class="evidence-arrow">→</div>
-            <div class="evidence-node">
-              <div class="evidence-node__label">10 秒后</div>
-              <div class="evidence-node__value">99,817,234</div>
-            </div>
-          </div>
-          <div class="safety-note">本报告不包含 API Key，只展示本次测试中的可复现信号，不证明服务商故意多扣费。</div>
-          <div class="report-footer">
-            <span>由 AI API Doctor 生成</span>
-            <span>aiapidoctor.com</span>
-          </div>
-        </div>
-        <p style="font-size:12px; color:var(--muted); margin-top:16px">
-          这是一个示例报告。真实检测建议使用 Chrome 插件读取 raw quota，或在网页手动填写 raw quota 数据生成报告。
-        </p>
-      </div>
-    </div>
-  </section>
-
-  <!-- Section 1: Why -->
-  <section class="section section--alt">
     <div class="container">
       <h2 class="section__title section__title--center">为什么需要这个工具？</h2>
-      <p class="section__desc section__title--center">很多 AI API 中转站采用预扣费机制。问题是：失败请求、空回复、上游 503、超时或无有效产物请求，有时也可能留下最终扣费。AI API Doctor 用 raw quota 证据链帮助你判断：这次请求到底有没有最终扣余额。</p>
+      <p class="section__desc section__title--center">
+        很多 AI API 中转站采用预扣费机制。请求失败、空回复、上游 503、超时、缓存命中等情况，都可能让用户难以判断实际扣费是否合理。AI API Doctor 通过可复现信号帮助用户和站长沟通。
+      </p>
     </div>
   </section>
 
-  <!-- Section 2: Core features -->
-  <section class="section">
+  <!-- Five dimensions -->
+  <section class="section section--alt">
     <div class="container">
-      <h2 class="section__title section__title--center">三个核心卖点</h2>
-      <div class="feature-grid">
-        <div class="card feature-card">
-          <div class="feature-card__icon feature-card__icon--blue">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <h2 class="section__title section__title--center">五个检测维度</h2>
+      <div class="dimensions-grid">
+        <div class="dim-card">
+          <div class="dim-card__icon dim-card__icon--blue">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
           </div>
-          <div class="feature-card__title">读取 raw quota，不看前台余额</div>
-          <div class="feature-card__desc">前台余额常常只显示两位小数，一次 $0.0001 级别的变化看不出来。raw quota 可以看到更细粒度的额度变化。</div>
+          <div class="dim-card__title">扣费完整性</div>
+          <div class="dim-card__desc">检测失败请求和空回复是否最终扣费，等待 10 秒确认预扣返还。</div>
         </div>
-        <div class="card feature-card">
-          <div class="feature-card__icon feature-card__icon--green">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <div class="dim-card">
+          <div class="dim-card__icon dim-card__icon--green">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
           </div>
-          <div class="feature-card__title">等待 10 秒确认最终结算</div>
-          <div class="feature-card__desc">部分站点会先预扣再返还。必须等待结算完成后，才能区分"临时预扣"和"最终扣费"。</div>
+          <div class="dim-card__title">模型联通</div>
+          <div class="dim-card__desc">验证 Base URL、API Key、模型权限和 HTTP 状态是否正常。</div>
         </div>
-        <div class="card feature-card">
-          <div class="feature-card__icon feature-card__icon--orange">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        <div class="dim-card">
+          <div class="dim-card__icon dim-card__icon--purple">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
           </div>
-          <div class="feature-card__title">生成可发给站长的报告</div>
-          <div class="feature-card__desc">报告包含 HTTP 状态、模型名、raw quota 变化、时间、脱敏说明和站长修复建议，便于客服沟通。</div>
+          <div class="dim-card__title">usage 完整性</div>
+          <div class="dim-card__desc">检查响应是否返回 prompt_tokens、completion_tokens 和 total_tokens。</div>
+        </div>
+        <div class="dim-card">
+          <div class="dim-card__icon dim-card__icon--orange">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+          </div>
+          <div class="dim-card__title">缓存命中</div>
+          <div class="dim-card__desc">发送两次相同请求，检测 cached_tokens / cache_read_input_tokens 是否返回。</div>
+        </div>
+        <div class="dim-card">
+          <div class="dim-card__icon dim-card__icon--red">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+          </div>
+          <div class="dim-card__title">价格核对</div>
+          <div class="dim-card__desc">根据 usage 和价格计算理论成本，与实际扣费对比，判断是否存在异常。</div>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- Section 3: Plugin vs Web comparison -->
-  <section class="section section--alt">
+  <!-- Extension vs Web -->
+  <section class="section">
     <div class="container container--narrow">
-      <h2 class="section__title section__title--center">插件版和网页版有什么区别？</h2>
+      <h2 class="section__title section__title--center">Chrome 插件版 vs 网页版</h2>
       <div class="card">
         <div style="overflow-x:auto">
           <table class="compare-table">
             <thead>
               <tr>
                 <th>功能</th>
-                <th>插件版</th>
+                <th>Chrome 插件</th>
                 <th>网页版</th>
               </tr>
             </thead>
@@ -215,29 +483,34 @@
                 <td><span class="badge badge--neutral">不支持</span></td>
               </tr>
               <tr>
-                <td>不需要输入 API Key</td>
-                <td><span class="badge badge--neutral">需要（本地）</span></td>
-                <td><span class="badge badge--success">不需要</span></td>
+                <td>需要在网页输入 API Key</td>
+                <td><span class="badge badge--neutral">否（本地存储）</span></td>
+                <td><span class="badge badge--neutral">本地检测模式需要</span></td>
               </tr>
               <tr>
-                <td>适合桌面端精确取证</td>
-                <td><span class="badge badge--success">是</span></td>
-                <td><span class="badge badge--neutral">否</span></td>
+                <td>模型联通检测</td>
+                <td><span class="badge badge--success">支持</span></td>
+                <td><span class="badge badge--success">支持</span></td>
               </tr>
               <tr>
-                <td>适合手机访问和分享</td>
-                <td><span class="badge badge--neutral">否</span></td>
-                <td><span class="badge badge--success">是</span></td>
+                <td>usage 完整性</td>
+                <td><span class="badge badge--success">支持</span></td>
+                <td><span class="badge badge--success">支持</span></td>
               </tr>
               <tr>
-                <td>自动跑失败请求扣费检测</td>
-                <td><span class="badge badge--success">是</span></td>
-                <td><span class="badge badge--neutral">否</span></td>
+                <td>缓存命中检测</td>
+                <td><span class="badge badge--neutral">暂不支持</span></td>
+                <td><span class="badge badge--success">支持</span></td>
               </tr>
               <tr>
-                <td>生成可分享的报告图</td>
-                <td><span class="badge badge--success">是</span></td>
-                <td><span class="badge badge--success">是</span></td>
+                <td>价格核对</td>
+                <td><span class="badge badge--neutral">简单支持</span></td>
+                <td><span class="badge badge--success">完整支持</span></td>
+              </tr>
+              <tr>
+                <td>手动生成报告</td>
+                <td><span class="badge badge--success">支持</span></td>
+                <td><span class="badge badge--success">支持</span></td>
               </tr>
             </tbody>
           </table>
@@ -246,85 +519,83 @@
     </div>
   </section>
 
-  <!-- Section 4: Use cases -->
-  <section class="section">
+  <!-- Use cases -->
+  <section class="section section--alt">
     <div class="container">
       <h2 class="section__title section__title--center">适用对象</h2>
-      <div class="feature-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr))">
+      <div class="feature-grid" style="grid-template-columns: repeat(auto-fit, minmax(160px, 1fr))">
         <div class="card" style="text-align:center">
-          <div style="font-size:24px; margin-bottom:8px">👤</div>
+          <div style="font-size:24px;margin-bottom:8px">&#128100;</div>
           <div class="card__title">New API / One API 用户</div>
         </div>
         <div class="card" style="text-align:center">
-          <div style="font-size:24px; margin-bottom:8px">🔄</div>
-          <div class="card__title">中转站用户</div>
+          <div style="font-size:24px;margin-bottom:8px">&#127760;</div>
+          <div class="card__title">AI API 中转站用户</div>
         </div>
         <div class="card" style="text-align:center">
-          <div style="font-size:24px; margin-bottom:8px">🛠️</div>
+          <div style="font-size:24px;margin-bottom:8px">&#128736;</div>
           <div class="card__title">站长和客服</div>
         </div>
         <div class="card" style="text-align:center">
-          <div style="font-size:24px; margin-bottom:8px">🤖</div>
+          <div style="font-size:24px;margin-bottom:8px">&#128187;</div>
           <div class="card__title">Claude Code / Cline / Cursor 用户</div>
         </div>
         <div class="card" style="text-align:center">
-          <div style="font-size:24px; margin-bottom:8px">🔍</div>
+          <div style="font-size:24px;margin-bottom:8px">&#128269;</div>
           <div class="card__title">想核对扣费异常的人</div>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- Section 5: Result examples -->
-  <section class="section section--alt">
-    <div class="container">
-      <h2 class="section__title section__title--center">五种检测结果</h2>
-      <div class="result-cards">
-        <div class="result-card result-card--ok">
-          <div class="result-card__status">✓ 正常</div>
-          <div class="result-card__title">失败请求未扣费</div>
-          <div class="result-card__desc">请求失败，但 10 秒后 raw quota 未减少。</div>
-        </div>
-        <div class="result-card result-card--ok">
-          <div class="result-card__status">✓ 正常</div>
-          <div class="result-card__title">预扣已返还</div>
-          <div class="result-card__desc">请求后曾预扣额度，但 10 秒内已返还。</div>
-        </div>
-        <div class="result-card result-card--warning">
-          <div class="result-card__status">⚠ 风险</div>
-          <div class="result-card__title">无法读取原始余额</div>
-          <div class="result-card__desc">raw quota 不可用，只能作为风险参考。</div>
-        </div>
-        <div class="result-card result-card--danger">
-          <div class="result-card__status">✕ 异常</div>
-          <div class="result-card__title">失败请求扣费</div>
-          <div class="result-card__desc">请求失败且无有效输出，但 10 秒后 raw quota 减少。</div>
-        </div>
-        <div class="result-card result-card--danger">
-          <div class="result-card__status">✕ 异常</div>
-          <div class="result-card__title">空回复扣费</div>
-          <div class="result-card__desc">请求无有效输出，但 10 秒后 raw quota 减少。</div>
-        </div>
+  <!-- CTA -->
+  <section class="section">
+    <div class="container" style="text-align:center">
+      <h2 class="section__title">立即开始体检</h2>
+      <p class="section__desc" style="max-width:480px;margin:0 auto 24px">
+        填写 Base URL 和 API Key，本地检测模型联通、usage 完整性和扣费证据。
+      </p>
+      <div class="action-row action-row--center">
+        <a href="/#doctor" class="btn btn--primary btn--lg">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          开始体检
+        </a>
+        <a href="/report/" class="btn btn--secondary btn--lg">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          手动报告生成
+        </a>
+        <a href="https://chrome.google.com/webstore" target="_blank" rel="noopener" class="btn btn--secondary btn--lg">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          下载 Chrome 插件
+        </a>
       </div>
     </div>
   </section>
 
-  <!-- Section 6: CTA -->
-  <section class="section">
-    <div class="container" style="text-align:center">
-      <h2 class="section__title">现在生成一份扣费检测报告</h2>
-      <p class="section__desc" style="max-width:480px; margin:0 auto 24px">
-        不需要安装插件，手动填写 raw quota 数据即可生成可分享的检测报告。
-      </p>
-      <div class="action-row action-row--center">
-        <a href="/report/" class="btn btn--primary btn--lg">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-          手动生成报告
-        </a>
-        <a href="https://chrome.google.com/webstore" target="_blank" rel="noopener" class="btn btn--secondary btn--lg">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          下载 Chrome 插件
-        </a>
+  <!-- FAQ summary -->
+  <section class="section section--alt">
+    <div class="container container--narrow">
+      <h2 class="section__title section__title--center">常见问题</h2>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px;display:flex;justify-content:space-between;align-items:center;gap:12px">
+          <span style="font-size:14px;font-weight:500;color:var(--text)">网页版为什么有时不能直接检测 Base URL？</span>
+          <a href="/faq/" style="font-size:13px;color:var(--info);white-space:nowrap">查看答案 &rsaquo;</a>
+        </div>
+        <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px;display:flex;justify-content:space-between;align-items:center;gap:12px">
+          <span style="font-size:14px;font-weight:500;color:var(--text)">cached_tokens 是什么？</span>
+          <a href="/faq/" style="font-size:13px;color:var(--info);white-space:nowrap">查看答案 &rsaquo;</a>
+        </div>
+        <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px;display:flex;justify-content:space-between;align-items:center;gap:12px">
+          <span style="font-size:14px;font-weight:500;color:var(--text)">usage 完整性为什么重要？</span>
+          <a href="/faq/" style="font-size:13px;color:var(--info);white-space:nowrap">查看答案 &rsaquo;</a>
+        </div>
+        <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px;display:flex;justify-content:space-between;align-items:center;gap:12px">
+          <span style="font-size:14px;font-weight:500;color:var(--text)">这个报告能证明服务商故意多扣费吗？</span>
+          <a href="/faq/" style="font-size:13px;color:var(--info);white-space:nowrap">查看答案 &rsaquo;</a>
+        </div>
+      </div>
+      <div style="text-align:center;margin-top:24px">
+        <a href="/faq/" class="btn btn--secondary">查看全部 FAQ</a>
       </div>
     </div>
   </section>
@@ -334,7 +605,7 @@
 <!-- Footer -->
 <footer class="site-footer">
   <div class="container site-footer__inner">
-    <div class="site-logo" style="font-size:15px; margin-bottom:8px">
+    <div class="site-logo" style="font-size:15px;margin-bottom:8px">
       <div class="site-logo__icon" style="width:28px;height:28px">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px">
           <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
@@ -344,18 +615,187 @@
     </div>
     <div class="site-footer__links">
       <a href="/">首页</a>
-      <a href="/report/">生成报告</a>
-      <a href="/guides/billing-anomaly/">检测原理</a>
+      <a href="/#doctor">体检台</a>
+      <a href="/report/">报告生成</a>
       <a href="/faq/">FAQ</a>
       <a href="/privacy/">隐私</a>
       <a href="/support/">支持</a>
     </div>
     <p class="site-footer__note">
-      本工具只展示可复现信号，不证明服务商故意多扣费。如有疑问请联系站长或客服核对。
+      本工具不是法律审计报告，只展示可复现的技术信号，不证明服务商故意多扣费。
     </p>
-    <p style="color:#9ca3af; font-size:12px; margin-top:4px">© 2026 AI API Doctor · aiapidoctor.com</p>
+    <p style="color:#9ca3af;font-size:12px;margin-top:4px">&copy; 2026 AI API Doctor &middot; aiapidoctor.com</p>
   </div>
 </footer>
+
+<div id="toast" class="toast" style="display:none"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.min.js"></script>
+<script src="/assets/test.js"></script>
+<script>
+/* ── Tab switcher ──────────────────────────────────────── */
+function switchTab(tab) {
+  document.getElementById('tab-local').classList.toggle('active', tab === 'local');
+  document.getElementById('tab-manual').classList.toggle('active', tab === 'manual');
+  document.getElementById('panel-local').style.display = tab === 'local' ? 'block' : 'none';
+  document.getElementById('panel-manual').style.display = tab === 'manual' ? 'block' : 'none';
+}
+
+/* ── Manual Report Controller ──────────────────────────── */
+window.ManualReport = {
+  generate() {
+    const f = id => document.getElementById(id);
+    const get = (id, fallback = '') => f(id)?.value?.trim() || fallback;
+    const num = id => parseFloat(f(id)?.value) || 0;
+
+    const baseUrl = get('manual-base-url');
+    const model = get('manual-model');
+    const interfaceType = get('manual-interface');
+    const httpStatus = num('manual-http-status');
+    const outputLen = num('manual-output-len');
+    const promptTokens = num('manual-prompt-tokens');
+    const completionTokens = num('manual-completion-tokens');
+    const totalTokens = num('manual-total-tokens');
+    const cachedTokens = num('manual-cached-tokens');
+    const cacheRead = num('manual-cache-read');
+    const cacheCreation = num('manual-cache-creation');
+    const actualCost = num('manual-actual-cost');
+    const before = num('manual-before');
+    const immediate = num('manual-immediate');
+    const after3 = num('manual-after3');
+    const after10 = num('manual-after10');
+    const provider = get('manual-provider') || (baseUrl ? new URL(baseUrl.startsWith('http') ? baseUrl : 'https://' + baseUrl).hostname : 'Unknown');
+    const note = get('manual-note');
+
+    if (!baseUrl) { window.showToast && window.showToast('请填写 Base URL'); return; }
+    if (!model) { window.showToast && window.showToast('请填写 Model ID'); return; }
+
+    // Determine verdict
+    let verdict = 'unknown';
+    const hasEffectiveOutput = outputLen > 0 || completionTokens > 0;
+    if (before && after10) {
+      const delta = before - after10;
+      if (httpStatus >= 400 && !hasEffectiveOutput && delta === 0) verdict = 'failed_request_not_charged';
+      else if (httpStatus >= 400 && !hasEffectiveOutput && delta > 0) verdict = 'failed_request_charged';
+      else if (httpStatus >= 200 && httpStatus < 300 && !hasEffectiveOutput && delta > 0) verdict = 'empty_response_charged';
+      else if (immediate < before && after10 === before) verdict = 'precharge_refunded';
+      else if (delta === 0) verdict = 'failed_request_not_charged';
+    }
+
+    const verdictMeta = {
+      failed_request_not_charged: { status: 'ok', label: '正常', title: '失败请求未扣费', detail: '请求失败，但 10 秒后原始额度未减少。' },
+      precharge_refunded: { status: 'ok', label: '正常', title: '预扣已返还', detail: '请求后曾预扣额度，但 10 秒内已返还。' },
+      failed_request_charged: { status: 'danger', label: '异常风险', title: '失败请求扣费异常', detail: '请求失败且无有效输出，但 10 秒后 raw quota 减少。' },
+      empty_response_charged: { status: 'danger', label: '异常风险', title: '空回复扣费异常', detail: '请求无有效输出，但 10 秒后 raw quota 减少。' },
+      raw_quota_unavailable: { status: 'warning', label: '风险', title: '无法读取原始余额', detail: '缺少 raw quota 证据，本次只能作为风险参考。' },
+      unknown: { status: 'warning', label: '需复查', title: '无法判断', detail: '请补充更多证据或使用 Chrome 插件读取 raw quota。' }
+    }[verdict] || { status: 'warning', label: '需复查', title: '无法判断', detail: '请补充更多证据。' };
+
+    const timestamp = new Date().toLocaleString('zh-CN', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+    const delta = before && after10 ? before - after10 : null;
+    const deltaClass = delta > 0 ? 'var(--danger)' : 'var(--success)';
+    const deltaText = delta > 0 ? `−${Number(delta).toLocaleString('en-US')} quota` : delta === 0 ? '+0 quota' : '—';
+
+    const usageComplete = promptTokens && completionTokens && totalTokens ? '完整' : promptTokens || totalTokens ? '不完整' : '未返回';
+
+    const resultCard = f('result-card');
+    if (!resultCard) return;
+
+    resultCard.innerHTML = `
+      <div class="result-card-new">
+        <div class="report-header">
+          <div>
+            <div class="report-header__brand">AI API Doctor</div>
+            <div class="report-header__sub">${verdictMeta.title}</div>
+          </div>
+          <div class="report-header__meta">
+            <div>API Key 未包含</div>
+            <div>手动报告</div>
+          </div>
+        </div>
+
+        <div class="verdict-hero verdict--${verdictMeta.status}">
+          <div class="verdict-hero__status">${verdictMeta.label}</div>
+          <div class="verdict-hero__title">${verdictMeta.title}</div>
+          <div class="verdict-hero__detail">${verdictMeta.detail}</div>
+        </div>
+
+        ${delta !== null ? `
+        <div class="delta-section">
+          <div class="delta-section__label">${delta > 0 ? '最终减少' : '最终变化'}</div>
+          <div class="delta-section__value" style="color:${deltaClass}">${deltaText}</div>
+        </div>` : ''}
+
+        <div class="result-tech-grid">
+          <div class="result-tech-item">
+            <div class="result-tech-item__label">Base URL</div>
+            <div class="result-tech-item__value">${escHtml(baseUrl)}</div>
+          </div>
+          <div class="result-tech-item">
+            <div class="result-tech-item__label">模型</div>
+            <div class="result-tech-item__value">${escHtml(model)}</div>
+          </div>
+          <div class="result-tech-item">
+            <div class="result-tech-item__label">接口</div>
+            <div class="result-tech-item__value">${escHtml(interfaceType)}</div>
+          </div>
+          <div class="result-tech-item">
+            <div class="result-tech-item__label">HTTP 状态</div>
+            <div class="result-tech-item__value" style="color:${httpStatus >= 400 ? 'var(--danger)' : 'var(--success)'}">${httpStatus || '—'}</div>
+          </div>
+          <div class="result-tech-item">
+            <div class="result-tech-item__label">output_tokens</div>
+            <div class="result-tech-item__value">${completionTokens || '—'}</div>
+          </div>
+          <div class="result-tech-item">
+            <div class="result-tech-item__label">total_tokens</div>
+            <div class="result-tech-item__value">${totalTokens || '—'}</div>
+          </div>
+          <div class="result-tech-item">
+            <div class="result-tech-item__label">cached_tokens</div>
+            <div class="result-tech-item__value">${cachedTokens || cacheRead || '—'}</div>
+          </div>
+          <div class="result-tech-item">
+            <div class="result-tech-item__label">usage 完整性</div>
+            <div class="result-tech-item__value">${usageComplete}</div>
+          </div>
+          ${actualCost ? `<div class="result-tech-item"><div class="result-tech-item__label">实际扣费</div><div class="result-tech-item__value">$${actualCost.toFixed(6)}</div></div>` : ''}
+        </div>
+
+        <div class="safety-note">本报告不包含 API Key，只展示本次测试中的可复现信号，不证明服务商故意多扣费。</div>
+
+        <div class="report-footer">
+          <span>由 AI API Doctor 生成</span>
+          <span>aiapidoctor.com</span>
+        </div>
+      </div>
+    `;
+
+    resultCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  },
+
+  clear() {
+    ['manual-provider','manual-base-url','manual-model','manual-http-status','manual-output-len','manual-prompt-tokens','manual-completion-tokens','manual-total-tokens','manual-cached-tokens','manual-cache-read','manual-cache-creation','manual-actual-cost','manual-before','manual-immediate','manual-after3','manual-after10','manual-note'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+    const card = document.getElementById('result-card');
+    if (card) card.innerHTML = `<div style="text-align:center;padding:40px 20px;color:#94a3b8;font-size:14px">填写信息后点击"生成报告"，即可查看诊断报告。</div>`;
+    window.showToast && window.showToast('已清空');
+  }
+};
+
+/* ── EscHTML helper (also needed by manual report) ─────── */
+function escHtml(str) {
+  if (!str && str !== 0) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* ── Init ─────────────────────────────────────────────── */
+document.addEventListener('DOMContentLoaded', () => {
+  if (window.Doctor) window.Doctor.init();
+});
+</script>
 
 </body>
 </html>

@@ -159,6 +159,46 @@
           "@type": "Answer",
           "text": "AI API Doctor 由 @norike0718 发起并公开构建。作者是一名长期构建 SaaS 和 AI 工具的独立开发者，关注内容工作流、AI API 配置、自动化生产线和开发者工具体验。AI API Doctor 的目标不是给中转站做「真假审判」，而是帮助用户在真实使用场景中诊断 API Key、Base URL、模型权限、Token 用量和客户端配置问题。项目会尽量保持诊断逻辑透明、边界清晰，并优先避免误伤正常服务商。"
         }
+      },
+      {
+        "@type": "Question",
+        "name": "网页版为什么有时不能直接检测 Base URL？",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "浏览器的跨域（CORS）安全策略会阻止网页直接请求第三方 API 的响应。当 Base URL 与网页的域名不同时，浏览器会拒绝读取响应内容。这不代表 API 不可用。解决方法：使用 Chrome 插件读取 raw quota、切换到手动报告模式、或联系站长允许跨域调试接口。"
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "缓存命中检测会消耗额度吗？",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "会。缓存命中检测会发送两次较长的测试请求（1200-1500 tokens 的固定文本），用于观察第二次请求是否命中缓存。建议只在需要核对缓存计费时开启，并使用测试专用 API Key。"
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "cached_tokens 是什么？",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "cached_tokens（或 cache_read_input_tokens）表示本次请求中有多少输入 token 命中了缓存。命中缓存通常意味着更低延迟和更低输入成本。不同服务商对缓存字段的支持和折扣规则不同，具体计费以服务商公示为准。"
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "usage 完整性为什么重要？",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "如果响应不返回 prompt_tokens、completion_tokens、total_tokens 或缓存字段，用户很难核对理论成本和实际扣费是否匹配。usage 完整性检查验证响应是否包含这些字段，如果缺失或不全会标记为不完整，建议联系站长核对。"
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "这个报告能证明服务商故意多扣费吗？",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "不能。报告只展示可复现的技术信号，适合用于和站长或客服沟通排查。最终余额、扣费和账单由服务商后台控制，AI API Doctor 无法直接访问所有服务商的真实账单系统。报告的结论应理解为用量信号核对，不是法律意义上的财务审计。"
+        }
       }
     ]
   }
@@ -863,6 +903,103 @@
           <p><strong>429：</strong>请求过快、并发超限、额度耗尽，或者服务商限流。</p>
           <p><strong>HTML 响应：</strong>服务端返回了网页，而不是 API JSON。可能是填成了网站首页、登录页、Cloudflare 页面，或者服务商不兼容该接口。</p>
           <p><strong>No usage：</strong>响应中没有返回 usage 字段，因此无法从本次响应核对 Token 消耗。</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Section 4b: 网页版与工具使用 -->
+    <div class="faq-group-title">网页版与工具使用</div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>网页版为什么有时不能直接检测 Base URL？</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>浏览器的跨域（CORS）安全策略会阻止网页直接请求第三方 API 的响应。当你的 Base URL 与网页的域名不同时，浏览器会拒绝读取响应内容。</p>
+          <p>这不代表 API 不可用。常见解决方法：</p>
+          <ul>
+            <li>使用 Chrome 插件读取 New API / One API raw quota</li>
+            <li>切换到手动报告模式，填写 raw quota 数据生成报告</li>
+            <li>联系站长允许跨域调试接口</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>缓存命中检测会消耗额度吗？</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>会。缓存命中检测会发送两次较长的测试请求（1200-1500 tokens 的固定文本），用于观察第二次请求是否命中缓存。</p>
+          <p>建议只在需要核对缓存计费时开启。开启前请确认：</p>
+          <ul>
+            <li>使用测试专用 API Key</li>
+            <li>设置了较低额度限制</li>
+            <li>已了解该服务商的缓存计费规则</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>cached_tokens 是什么？</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p><code>cached_tokens</code>（或 <code>cache_read_input_tokens</code>）表示本次请求中有多少输入 token 命中了缓存。</p>
+          <p>命中缓存通常意味着：</p>
+          <ul>
+            <li>更低的延迟（从缓存读取而非重新计算）</li>
+            <li>更低的输入成本（部分服务商对缓存读取收取折扣价格）</li>
+          </ul>
+          <p>不同服务商对缓存字段的支持和折扣规则不同，具体计费以服务商公示为准。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>usage 完整性为什么重要？</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>如果响应不返回 <code>prompt_tokens</code>、<code>completion_tokens</code>、<code>total_tokens</code> 或缓存字段，用户很难核对理论成本和实际扣费是否匹配。</p>
+          <p>usage 完整性检查会验证响应中是否包含：</p>
+          <ul>
+            <li><code>prompt_tokens</code>（输入 token 数）</li>
+            <li><code>completion_tokens</code> / <code>output_tokens</code>（输出 token 数）</li>
+            <li><code>total_tokens</code>（总 token 数）</li>
+            <li><code>prompt_tokens_details.cached_tokens</code>（缓存命中数）</li>
+          </ul>
+          <p>如果这些字段缺失或不全，AI API Doctor 会标记为"usage 不完整"，建议联系站长核对。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>这个报告能证明服务商故意多扣费吗？</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p><strong>不能。</strong>报告只展示可复现的技术信号，适合用于和站长或客服沟通排查。</p>
+          <p>AI API Doctor 可以帮助排查：</p>
+          <ul>
+            <li>响应是否返回完整的 usage 信息</li>
+            <li>失败请求是否最终扣费</li>
+            <li>空回复是否扣费</li>
+            <li>缓存是否正常计费</li>
+          </ul>
+          <p>但最终余额、扣费和账单由服务商后台控制，AI API Doctor 无法直接访问所有服务商的真实账单系统。报告的结论应理解为"用量信号核对"，不是法律意义上的财务审计。</p>
         </div>
       </div>
     </div>

@@ -11,6 +11,16 @@
     <priority>0.9</priority>
   </url>
   <url>
+    <loc>https://aiapidoctor.com/test/</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <url>
+    <loc>https://aiapidoctor.com/en/test/</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <url>
     <loc>https://aiapidoctor.com/privacy/</loc>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
@@ -31,7 +41,7 @@
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://aiapidoctor.com/faq</loc>
+    <loc>https://aiapidoctor.com/faq/</loc>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>

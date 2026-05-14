@@ -120,6 +120,46 @@
           "@type": "Answer",
           "text": "AI API Doctor detects and reports on common API error codes: 401 (invalid or expired API Key, possible extra spaces when copying), 403 (insufficient permissions — possibly no model access, group access, IP whitelist restriction, or model not added to group), 404 (incorrect endpoint address — possibly missing /v1, extra /v1, or filled with the official website address), 429 (too many requests, concurrent limit exceeded, quota exhausted, or provider rate limiting), HTML response (server returned a webpage instead of API JSON — possibly filled with the site homepage, login page, Cloudflare page, or provider does not support this endpoint), and No usage (response did not return a usage field, so token consumption cannot be verified from this response)."
         }
+      },
+      {
+        "@type": "Question",
+        "name": "Why can't the web version directly test some Base URLs?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Browser CORS (Cross-Origin Resource Sharing) security policies block web pages from directly reading responses from third-party APIs. When your Base URL is on a different domain, the browser will refuse to read the response. This does not mean the API is unavailable. Solutions: use the Chrome extension, switch to manual report mode, or contact the provider to allow cross-origin debugging."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Does cache hit detection consume credits?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes. Cache hit detection sends two long test requests (1200-1500 tokens of fixed text) to observe whether the second request hits the cache. Enable only when needed, using a test-only API Key."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "What is cached_tokens?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "cached_tokens (or cache_read_input_tokens) indicates how many input tokens in the current request hit the cache. Cache hits typically mean lower latency and lower input cost. Different providers have different cache support and discount rules. Actual billing follows the provider's published rates."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Why is usage integrity important?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "If a response does not return prompt_tokens, completion_tokens, total_tokens, or cache fields, users cannot easily verify whether the theoretical cost matches the actual deduction. Usage integrity checks verify these fields are present. Missing or incomplete fields are flagged for provider verification."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Does this report prove intentional overbilling?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "No. Reports only show reproducible technical signals suitable for communication with the provider or support team. Final balances, deductions, and billing are controlled by the provider's backend. AI API Doctor cannot directly access all providers' billing systems. Conclusions should be understood as usage signal verification, not a financial audit."
+        }
       }
     ]
   }
@@ -806,6 +846,103 @@
           <p><strong>429:</strong> Too many requests, concurrent limit exceeded, quota exhausted, or provider rate limiting.</p>
           <p><strong>HTML response:</strong> Server returned a webpage instead of API JSON — possibly filled with the site homepage, login page, Cloudflare page, or provider does not support this endpoint.</p>
           <p><strong>No usage:</strong> Response did not return a usage field, so token consumption cannot be verified from this response.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Section 3b: Web Tool Usage -->
+    <div class="faq-group-title">Web Tool &amp; Usage</div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>Why can't the web version directly test some Base URLs?</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>Browser CORS (Cross-Origin Resource Sharing) security policies block web pages from directly reading responses from third-party APIs. When your Base URL is on a different domain from the web page, the browser will refuse to read the response.</p>
+          <p>This does not mean the API is unavailable. Common solutions:</p>
+          <ul>
+            <li>Use the Chrome extension to read New API / One API raw quota</li>
+            <li>Switch to manual report mode and fill in raw quota data</li>
+            <li>Contact the provider to allow cross-origin debugging</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>Does cache hit detection consume credits?</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>Yes. Cache hit detection sends two long test requests (1200-1500 tokens of fixed text) to observe whether the second request hits the cache.</p>
+          <p>Enable cache detection only when needed. Before enabling, make sure:</p>
+          <ul>
+            <li>You are using a test-only API Key</li>
+            <li>A low credit limit is set</li>
+            <li>You understand the provider's cache billing rules</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>What is cached_tokens?</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p><code>cached_tokens</code> (or <code>cache_read_input_tokens</code>) indicates how many input tokens in the current request hit the cache.</p>
+          <p>Cache hits typically mean:</p>
+          <ul>
+            <li>Lower latency (reading from cache instead of recomputing)</li>
+            <li>Lower input cost (some providers charge discounted rates for cache reads)</li>
+          </ul>
+          <p>Different providers have different support for cache fields and discount rules. Actual billing follows the provider's published rates.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>Why is usage integrity important?</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>If a response does not return <code>prompt_tokens</code>, <code>completion_tokens</code>, <code>total_tokens</code>, or cache fields, users cannot easily verify whether the theoretical cost matches the actual deduction.</p>
+          <p>Usage integrity checks verify whether the response includes:</p>
+          <ul>
+            <li><code>prompt_tokens</code> (input token count)</li>
+            <li><code>completion_tokens</code> / <code>output_tokens</code> (output token count)</li>
+            <li><code>total_tokens</code> (total token count)</li>
+            <li><code>prompt_tokens_details.cached_tokens</code> (cache hit count)</li>
+          </ul>
+          <p>If these fields are missing or incomplete, AI API Doctor flags it as "usage incomplete" — contact the provider for verification.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>Does this report prove intentional overbilling?</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p><strong>No.</strong> Reports only show reproducible technical signals and are suitable for communication with the provider or support team for troubleshooting.</p>
+          <p>AI API Doctor can help verify:</p>
+          <ul>
+            <li>Whether the response returns complete usage information</li>
+            <li>Whether failed requests ultimately deduct quota</li>
+            <li>Whether empty replies are charged</li>
+            <li>Whether cache is billed correctly</li>
+          </ul>
+          <p>Final balances, deductions, and billing are controlled by the provider's backend. AI API Doctor cannot directly access all providers' billing systems. Conclusions should be understood as "usage signal verification," not a financial audit.</p>
         </div>
       </div>
     </div>
