@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI API Doctor｜AI API 扣费异常检测工具</title>
+  <meta name="description" content="检测 New API / One API 中转站失败请求、空回复、预扣未返还有没有扣 raw quota，并生成可发给站长的扣费检测报告。" />
+  <meta name="robots" content="index, follow" />
+  <link rel="canonical" href="https://aiapidoctor.com/" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="stylesheet" href="/assets/site.css" />
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="AI API Doctor｜AI API 扣费异常检测工具" />
+  <meta property="og:description" content="检测 New API / One API 中转站失败请求、空回复、预扣未返还有没有扣 raw quota，并生成可发给站长的扣费检测报告。" />
+  <meta property="og:url" content="https://aiapidoctor.com/" />
+  <meta property="og:locale" content="zh_CN" />
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="AI API Doctor｜AI API 扣费异常检测工具" />
+  <meta name="twitter:description" content="检测 New API / One API 中转站失败请求、空回复、预扣未返还有没有扣 raw quota。" />
+
+  <!-- JSON-LD -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "AI API Doctor",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Web, Chrome",
+    "description": "AI API billing anomaly detection tool. Detects failed-request charges and empty-reply billing anomalies in New API / One API relay stations.",
+    "url": "https://aiapidoctor.com",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+  }
+  </script>
+</head>
+<body>
+
+<!-- Header -->
+<header class="site-header">
+  <div class="container site-header__inner">
+    <a href="/" class="site-logo">
+      <div class="site-logo__icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+        </svg>
+      </div>
+      AI API Doctor
+    </a>
+    <button class="nav-toggle" aria-label="菜单" onclick="document.querySelector('.site-nav').classList.toggle('open')">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+      </svg>
+    </button>
+    <nav class="site-nav">
+      <a href="/">首页</a>
+      <a href="/report/">手动生成报告</a>
+      <a href="/guides/billing-anomaly/">检测原理</a>
+      <a href="/faq/">FAQ</a>
+      <a href="/privacy/">隐私</a>
+      <a href="/support/">支持</a>
+      <a href="https://chrome.google.com/webstore" target="_blank" rel="noopener">下载插件</a>
+    </nav>
+  </div>
+</header>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="container">
+    <div class="hero__badge">扣费异常检测</div>
+    <h1 class="hero__title">AI API 扣费异常检测工具</h1>
+    <p class="hero__sub">检测 New API / One API 中转站失败请求、空回复、预扣未返还有没有扣 raw quota，并生成可发给站长的扣费检测报告。</p>
+    <div class="hero__actions">
+      <a href="/report/" class="btn btn--primary btn--lg">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 10"/></svg>
+        手动生成报告
+      </a>
+      <a href="https://chrome.google.com/webstore" target="_blank" rel="noopener" class="btn btn--secondary btn--lg">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        下载 Chrome 插件
+      </a>
+      <a href="/guides/billing-anomaly/" class="btn btn--secondary btn--lg">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        查看检测原理
+      </a>
+    </div>
+  </div>
+</section>
+
+<main>
+
+  <!-- Sample Report Card -->
+  <section class="section">
+    <div class="container">
+      <div class="card" style="text-align:center; margin-bottom:12px">
+        <div style="font-size:13px; color:var(--muted); margin-bottom:16px">
+          示例报告 — 正常：失败请求未扣费
+        </div>
+        <div id="hero-report" class="billing-report-card" style="text-align:left; display:inline-block; width:100%; max-width:600px">
+          <div class="report-header">
+            <div>
+              <div class="report-header__brand">AI API Doctor</div>
+              <div class="report-header__sub">扣费异常检测报告</div>
+            </div>
+            <div class="report-header__meta">
+              <div>API Key 未包含</div>
+              <div>手动报告示例</div>
+            </div>
+          </div>
+          <div class="verdict-hero verdict--ok">
+            <div class="verdict-hero__status" style="color:var(--success)">✓ 正常</div>
+            <div class="verdict-hero__title">失败请求未扣费</div>
+            <div class="verdict-hero__detail">请求失败，但 10 秒后原始额度未减少。</div>
+          </div>
+          <div class="delta-section">
+            <div class="delta-section__label">最终变化</div>
+            <div class="delta-section__value" style="color:var(--success)">+0 <span class="delta-section__unit">quota</span></div>
+            <div class="delta-section__usd">约合金额：$0.000000</div>
+          </div>
+          <div class="evidence-chain">
+            <div class="evidence-node">
+              <div class="evidence-node__label">检测前</div>
+              <div class="evidence-node__value">99,817,234</div>
+            </div>
+            <div class="evidence-arrow">→</div>
+            <div class="evidence-node">
+              <div class="evidence-node__label">HTTP</div>
+              <div class="evidence-node__value" style="color:var(--danger)">503</div>
+            </div>
+            <div class="evidence-arrow">→</div>
+            <div class="evidence-node">
+              <div class="evidence-node__label">10 秒后</div>
+              <div class="evidence-node__value">99,817,234</div>
+            </div>
+          </div>
+          <div class="safety-note">本报告不包含 API Key，只展示本次测试中的可复现信号，不证明服务商故意多扣费。</div>
+          <div class="report-footer">
+            <span>由 AI API Doctor 生成</span>
+            <span>aiapidoctor.com</span>
+          </div>
+        </div>
+        <p style="font-size:12px; color:var(--muted); margin-top:16px">
+          这是一个示例报告。真实检测建议使用 Chrome 插件读取 raw quota，或在网页手动填写 raw quota 数据生成报告。
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 1: Why -->
+  <section class="section section--alt">
+    <div class="container">
+      <h2 class="section__title section__title--center">为什么需要这个工具？</h2>
+      <p class="section__desc section__title--center">很多 AI API 中转站采用预扣费机制。问题是：失败请求、空回复、上游 503、超时或无有效产物请求，有时也可能留下最终扣费。AI API Doctor 用 raw quota 证据链帮助你判断：这次请求到底有没有最终扣余额。</p>
+    </div>
+  </section>
+
+  <!-- Section 2: Core features -->
+  <section class="section">
+    <div class="container">
+      <h2 class="section__title section__title--center">三个核心卖点</h2>
+      <div class="feature-grid">
+        <div class="card feature-card">
+          <div class="feature-card__icon feature-card__icon--blue">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          </div>
+          <div class="feature-card__title">读取 raw quota，不看前台余额</div>
+          <div class="feature-card__desc">前台余额常常只显示两位小数，一次 $0.0001 级别的变化看不出来。raw quota 可以看到更细粒度的额度变化。</div>
+        </div>
+        <div class="card feature-card">
+          <div class="feature-card__icon feature-card__icon--green">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          </div>
+          <div class="feature-card__title">等待 10 秒确认最终结算</div>
+          <div class="feature-card__desc">部分站点会先预扣再返还。必须等待结算完成后，才能区分"临时预扣"和"最终扣费"。</div>
+        </div>
+        <div class="card feature-card">
+          <div class="feature-card__icon feature-card__icon--orange">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          </div>
+          <div class="feature-card__title">生成可发给站长的报告</div>
+          <div class="feature-card__desc">报告包含 HTTP 状态、模型名、raw quota 变化、时间、脱敏说明和站长修复建议，便于客服沟通。</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 3: Plugin vs Web comparison -->
+  <section class="section section--alt">
+    <div class="container container--narrow">
+      <h2 class="section__title section__title--center">插件版和网页版有什么区别？</h2>
+      <div class="card">
+        <div style="overflow-x:auto">
+          <table class="compare-table">
+            <thead>
+              <tr>
+                <th>功能</th>
+                <th>插件版</th>
+                <th>网页版</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>自动读取 New API raw quota</td>
+                <td><span class="badge badge--success">支持</span></td>
+                <td><span class="badge badge--neutral">不支持</span></td>
+              </tr>
+              <tr>
+                <td>不需要输入 API Key</td>
+                <td><span class="badge badge--neutral">需要（本地）</span></td>
+                <td><span class="badge badge--success">不需要</span></td>
+              </tr>
+              <tr>
+                <td>适合桌面端精确取证</td>
+                <td><span class="badge badge--success">是</span></td>
+                <td><span class="badge badge--neutral">否</span></td>
+              </tr>
+              <tr>
+                <td>适合手机访问和分享</td>
+                <td><span class="badge badge--neutral">否</span></td>
+                <td><span class="badge badge--success">是</span></td>
+              </tr>
+              <tr>
+                <td>自动跑失败请求扣费检测</td>
+                <td><span class="badge badge--success">是</span></td>
+                <td><span class="badge badge--neutral">否</span></td>
+              </tr>
+              <tr>
+                <td>生成可分享的报告图</td>
+                <td><span class="badge badge--success">是</span></td>
+                <td><span class="badge badge--success">是</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 4: Use cases -->
+  <section class="section">
+    <div class="container">
+      <h2 class="section__title section__title--center">适用对象</h2>
+      <div class="feature-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr))">
+        <div class="card" style="text-align:center">
+          <div style="font-size:24px; margin-bottom:8px">👤</div>
+          <div class="card__title">New API / One API 用户</div>
+        </div>
+        <div class="card" style="text-align:center">
+          <div style="font-size:24px; margin-bottom:8px">🔄</div>
+          <div class="card__title">中转站用户</div>
+        </div>
+        <div class="card" style="text-align:center">
+          <div style="font-size:24px; margin-bottom:8px">🛠️</div>
+          <div class="card__title">站长和客服</div>
+        </div>
+        <div class="card" style="text-align:center">
+          <div style="font-size:24px; margin-bottom:8px">🤖</div>
+          <div class="card__title">Claude Code / Cline / Cursor 用户</div>
+        </div>
+        <div class="card" style="text-align:center">
+          <div style="font-size:24px; margin-bottom:8px">🔍</div>
+          <div class="card__title">想核对扣费异常的人</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 5: Result examples -->
+  <section class="section section--alt">
+    <div class="container">
+      <h2 class="section__title section__title--center">五种检测结果</h2>
+      <div class="result-cards">
+        <div class="result-card result-card--ok">
+          <div class="result-card__status">✓ 正常</div>
+          <div class="result-card__title">失败请求未扣费</div>
+          <div class="result-card__desc">请求失败，但 10 秒后 raw quota 未减少。</div>
+        </div>
+        <div class="result-card result-card--ok">
+          <div class="result-card__status">✓ 正常</div>
+          <div class="result-card__title">预扣已返还</div>
+          <div class="result-card__desc">请求后曾预扣额度，但 10 秒内已返还。</div>
+        </div>
+        <div class="result-card result-card--warning">
+          <div class="result-card__status">⚠ 风险</div>
+          <div class="result-card__title">无法读取原始余额</div>
+          <div class="result-card__desc">raw quota 不可用，只能作为风险参考。</div>
+        </div>
+        <div class="result-card result-card--danger">
+          <div class="result-card__status">✕ 异常</div>
+          <div class="result-card__title">失败请求扣费</div>
+          <div class="result-card__desc">请求失败且无有效输出，但 10 秒后 raw quota 减少。</div>
+        </div>
+        <div class="result-card result-card--danger">
+          <div class="result-card__status">✕ 异常</div>
+          <div class="result-card__title">空回复扣费</div>
+          <div class="result-card__desc">请求无有效输出，但 10 秒后 raw quota 减少。</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 6: CTA -->
+  <section class="section">
+    <div class="container" style="text-align:center">
+      <h2 class="section__title">现在生成一份扣费检测报告</h2>
+      <p class="section__desc" style="max-width:480px; margin:0 auto 24px">
+        不需要安装插件，手动填写 raw quota 数据即可生成可分享的检测报告。
+      </p>
+      <div class="action-row action-row--center">
+        <a href="/report/" class="btn btn--primary btn--lg">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          手动生成报告
+        </a>
+        <a href="https://chrome.google.com/webstore" target="_blank" rel="noopener" class="btn btn--secondary btn--lg">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          下载 Chrome 插件
+        </a>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- Footer -->
+<footer class="site-footer">
+  <div class="container site-footer__inner">
+    <div class="site-logo" style="font-size:15px; margin-bottom:8px">
+      <div class="site-logo__icon" style="width:28px;height:28px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px">
+          <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+        </svg>
+      </div>
+      AI API Doctor
+    </div>
+    <div class="site-footer__links">
+      <a href="/">首页</a>
+      <a href="/report/">生成报告</a>
+      <a href="/guides/billing-anomaly/">检测原理</a>
+      <a href="/faq/">FAQ</a>
+      <a href="/privacy/">隐私</a>
+      <a href="/support/">支持</a>
+    </div>
+    <p class="site-footer__note">
+      本工具只展示可复现信号，不证明服务商故意多扣费。如有疑问请联系站长或客服核对。
+    </p>
+    <p style="color:#9ca3af; font-size:12px; margin-top:4px">© 2026 AI API Doctor · aiapidoctor.com</p>
+  </div>
+</footer>
+
+</body>
+</html>

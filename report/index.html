@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>手动生成 AI API 扣费检测报告｜AI API Doctor</title>
+  <meta name="description" content="无需输入 API Key，手动填写 raw quota、HTTP 状态和模型信息，生成可分享的 AI API 扣费检测报告。" />
+  <meta name="robots" content="index, follow" />
+  <link rel="canonical" href="https://aiapidoctor.com/report/" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="stylesheet" href="/assets/site.css" />
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="手动生成 AI API 扣费检测报告｜AI API Doctor" />
+  <meta property="og:description" content="无需输入 API Key，手动填写 raw quota、HTTP 状态和模型信息，生成可分享的 AI API 扣费检测报告。" />
+  <meta property="og:url" content="https://aiapidoctor.com/report/" />
+
+  <!-- JSON-LD -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "AI API Doctor Report Generator",
+    "applicationCategory": "DeveloperApplication",
+    "description": "Manually generate AI API billing anomaly reports without entering API keys."
+  }
+  </script>
+
+  <script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.min.js"></script>
+</head>
+<body>
+
+<!-- Header -->
+<header class="site-header">
+  <div class="container site-header__inner">
+    <a href="/" class="site-logo">
+      <div class="site-logo__icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+        </svg>
+      </div>
+      AI API Doctor
+    </a>
+    <button class="nav-toggle" aria-label="菜单" onclick="document.querySelector('.site-nav').classList.toggle('open')">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+    <nav class="site-nav">
+      <a href="/">首页</a>
+      <a href="/report/" class="active">生成报告</a>
+      <a href="/guides/billing-anomaly/">检测原理</a>
+      <a href="/faq/">FAQ</a>
+      <a href="/privacy/">隐私</a>
+      <a href="/support/">支持</a>
+      <a href="https://chrome.google.com/webstore" target="_blank" rel="noopener">下载插件</a>
+    </nav>
+  </div>
+</header>
+
+<!-- Hero -->
+<section class="hero" style="padding:48px 0 40px">
+  <div class="container">
+    <h1 class="hero__title" style="font-size:clamp(22px,4vw,32px)">手动生成扣费检测报告</h1>
+    <p class="hero__sub">
+      不需要输入 API Key。填写 raw quota、HTTP 状态和模型信息，即可生成可截图、可分享、可发给站长的扣费检测报告。
+    </p>
+  </div>
+</section>
+
+<!-- Main: Form + Preview -->
+<main class="section">
+  <div class="container">
+    <div class="report-layout">
+
+      <!-- Form -->
+      <div class="report-form">
+        <div class="card">
+          <div class="form-group">
+            <label class="form-label" for="resultType">检测结果类型</label>
+            <select id="resultType" class="form-select" onchange="renderReport()">
+              <option value="failed_request_not_charged">正常：失败请求未扣费</option>
+              <option value="precharge_refunded">正常：预扣已返还</option>
+              <option value="raw_quota_unavailable">风险：无法读取原始余额</option>
+              <option value="failed_request_charged">异常：失败请求扣费</option>
+              <option value="empty_response_charged">异常：空回复扣费</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="baseUrl">Base URL</label>
+            <input id="baseUrl" class="form-input" placeholder="https://api.example.com/v1" value="https://api.example.com/v1" oninput="renderReport()" />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="modelName">模型名</label>
+            <input id="modelName" class="form-input" placeholder="gpt-4o, claude-opus-4.7, deepseek-chat" value="gpt-4o" oninput="renderReport()" />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="interfaceType">接口类型</label>
+            <select id="interfaceType" class="form-select" onchange="renderReport()">
+              <option value="OpenAI Chat">OpenAI Chat</option>
+              <option value="Claude Messages">Claude Messages</option>
+              <option value="OpenAI Responses">OpenAI Responses</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="httpStatus">HTTP 状态</label>
+            <input id="httpStatus" type="number" class="form-input" placeholder="503" value="503" oninput="renderReport()" />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="beforeRaw">检测前 raw quota</label>
+            <input id="beforeRaw" type="number" class="form-input" placeholder="99817234" value="99817234" oninput="renderReport()" />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="after3Raw">请求后 3 秒 raw quota <span class="form-label--optional">（可选）</span></label>
+            <input id="after3Raw" type="number" class="form-input" placeholder="99817234" value="" oninput="renderReport()" />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="after10Raw">10 秒后 raw quota</label>
+            <input id="after10Raw" type="number" class="form-input" placeholder="99817234" value="99817234" oninput="renderReport()" />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="quotaPerUnit">quota_per_unit <span class="form-label--optional">（可选，默认 500000）</span></label>
+            <input id="quotaPerUnit" type="number" class="form-input" placeholder="500000" value="500000" oninput="renderReport()" />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="completionTokens">completion_tokens <span class="form-label--optional">（可选）</span></label>
+            <input id="completionTokens" type="number" class="form-input" placeholder="0" value="0" oninput="renderReport()" />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="totalTokens">total_tokens <span class="form-label--optional">（可选）</span></label>
+            <input id="totalTokens" type="number" class="form-input" placeholder="0" value="0" oninput="renderReport()" />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="requestId">request_id <span class="form-label--optional">（可选）</span></label>
+            <input id="requestId" type="text" class="form-input" placeholder="opt-xxx" value="" oninput="renderReport()" />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="note">备注 <span class="form-label--optional">（可选）</span></label>
+            <textarea id="note" class="form-textarea" placeholder="例如：上游返回 503，页面显示失败，但想确认是否最终扣费。" oninput="renderReport()"></textarea>
+          </div>
+
+          <div class="action-row" style="margin-top:8px">
+            <button class="btn btn--secondary btn--sm" onclick="resetForm()">重置</button>
+            <button class="btn btn--secondary btn--sm" onclick="clearLocalForm()">清空本地表单</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Preview -->
+      <div class="report-preview">
+        <div class="card" style="margin-bottom:16px">
+          <div style="font-size:13px; font-weight:600; color:var(--muted); margin-bottom:12px">报告预览</div>
+
+          <!-- Billing report card -->
+          <div id="report-card" class="billing-report-card">
+            <!-- Filled by JS -->
+          </div>
+
+          <!-- Actions -->
+          <div class="action-row" style="margin-top:16px">
+            <button id="btn-save" class="btn btn--primary" onclick="saveReportImage()" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              保存图片
+            </button>
+            <button class="btn btn--secondary" onclick="copyProviderText()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              复制给站长
+            </button>
+            <button class="btn btn--secondary" onclick="shareReport()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+              分享
+            </button>
+          </div>
+        </div>
+
+        <div class="callout callout--warn">
+          <svg class="callout__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <span>本工具不要求输入 API Key，不会上传任何数据。所有计算在浏览器本地完成。</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<style>
+.report-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
+@media (max-width: 768px) { .report-layout { grid-template-columns: 1fr; } }
+</style>
+
+<!-- Footer -->
+<footer class="site-footer">
+  <div class="container site-footer__inner">
+    <div class="site-footer__links">
+      <a href="/">首页</a>
+      <a href="/report/">生成报告</a>
+      <a href="/guides/billing-anomaly/">检测原理</a>
+      <a href="/faq/">FAQ</a>
+      <a href="/privacy/">隐私</a>
+      <a href="/support/">支持</a>
+    </div>
+    <p class="site-footer__note">本工具只展示可复现信号，不证明服务商故意多扣费。如有疑问请联系站长或客服核对。</p>
+    <p style="color:#9ca3af; font-size:12px; margin-top:4px">© 2026 AI API Doctor · aiapidoctor.com</p>
+  </div>
+</footer>
+
+<div id="toast" class="toast" style="display:none"></div>
+
+<script src="/assets/report.js"></script>
+<script>
+// Restore form from localStorage on load
+document.addEventListener('DOMContentLoaded', () => {
+  restoreFormFromLocalStorage();
+  renderReport();
+});
+</script>
+
+</body>
+</html>

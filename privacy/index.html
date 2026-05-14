@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>隐私说明｜AI API Doctor</title>
+  <meta name="description" content="AI API Doctor 网页版不要求输入 API Key，插件 API Key 只保存在当前浏览器本地，报告会自动脱敏。" />
+  <meta name="robots" content="index, follow" />
+  <link rel="canonical" href="https://aiapidoctor.com/privacy/" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="stylesheet" href="/assets/site.css" />
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="隐私说明｜AI API Doctor" />
+  <meta property="og:description" content="AI API Doctor 网页版不要求输入 API Key，插件 API Key 只保存在当前浏览器本地，报告会自动脱敏。" />
+  <meta property="og:url" content="https://aiapidoctor.com/privacy/" />
+
+  <!-- JSON-LD -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebPage",
+    "name": "AI API Doctor 隐私说明",
+    "description": "AI API Doctor 网页版不要求输入 API Key，插件 API Key 只保存在当前浏览器本地，报告会自动脱敏。",
+    "url": "https://aiapidoctor.com/privacy/"
+  }
+  </script>
+</head>
+<body>
+
+<!-- Header -->
+<header class="site-header">
+  <div class="container site-header__inner">
+    <a href="/" class="site-logo">
+      <div class="site-logo__icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+        </svg>
+      </div>
+      AI API Doctor
+    </a>
+    <button class="nav-toggle" aria-label="菜单" onclick="document.querySelector('.site-nav').classList.toggle('open')">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+    <nav class="site-nav">
+      <a href="/">首页</a>
+      <a href="/report/">手动生成报告</a>
+      <a href="/guides/billing-anomaly/">检测原理</a>
+      <a href="/faq/">FAQ</a>
+      <a href="/privacy/" class="active">隐私</a>
+      <a href="/support/">支持</a>
+      <a href="https://chrome.google.com/webstore" target="_blank" rel="noopener">下载插件</a>
+    </nav>
+  </div>
+</header>
+
+<!-- Hero -->
+<section class="hero" style="padding:56px 0 48px">
+  <div class="container">
+    <h1 class="hero__title" style="font-size:clamp(22px,4vw,32px)">隐私说明</h1>
+    <p class="hero__sub">了解 AI API Doctor 如何处理你的数据。</p>
+  </div>
+</section>
+
+<!-- Content -->
+<main>
+  <section class="section">
+    <div class="container container--narrow">
+      <article class="article">
+
+        <h2>一、AI API Doctor 处理哪些数据？</h2>
+        <p>AI API Doctor 处理以下数据：</p>
+        <ul>
+          <li>用户填写的 Base URL</li>
+          <li>用户填写的 API Key</li>
+          <li>用户填写的模型 ID</li>
+          <li>New API / One API 原始额度（raw quota）</li>
+          <li>余额变化记录</li>
+          <li>HTTP 状态码</li>
+          <li>诊断报告内容</li>
+        </ul>
+
+        <h2>二、API Key 的存储方式</h2>
+        <p>Chrome 插件中的 API Key 只保存在当前浏览器本地（<code>chrome.storage.local</code>），用于向你填写的 Base URL 发起诊断请求。</p>
+        <p>网页版手动报告生成器不要求输入 API Key，只接收 raw quota、HTTP 状态和模型名等公开信息。</p>
+
+        <h2>三、API Key 的使用范围</h2>
+        <p>API Key 仅用于向用户填写的 Base URL 发起诊断请求。</p>
+        <p>AI API Doctor 不会将 API Key 上传到 AI API Doctor 服务器。</p>
+
+        <h2>四、报告自动脱敏</h2>
+        <p>插件生成报告时只显示 API Key 前缀和尾号，不显示完整 Key。例如：<code>sk-****abcd</code>。</p>
+
+        <h2>五、数据使用限制</h2>
+        <p>AI API Doctor 承诺：</p>
+        <ul>
+          <li>不会把 API Key 上传到 AI API Doctor 服务器</li>
+          <li>不会出售用户数据</li>
+          <li>不会将用户数据用于广告画像</li>
+          <li>不会将用户数据用于信用评估或贷款用途</li>
+        </ul>
+
+        <h2>六、Chrome Web Store Limited Use 声明</h2>
+        <p>The use of information received from Chrome APIs will adhere to the Chrome Web Store User Data Policy, including the Limited Use requirements.</p>
+
+        <h2>七、安全边界</h2>
+        <p>AI API Doctor 只展示本次测试中的可复现信号，不证明服务商故意多扣费。报告更适合用于排查、客服沟通和站长修复，不构成财务证明或法律依据。</p>
+
+        <h2>八、联系方式</h2>
+        <p>如需反馈隐私相关问题，请通过以下方式联系：</p>
+        <ul>
+          <li>GitHub Issues：<a href="https://github.com/JustinXai/ai-api-doctor/issues" target="_blank" rel="noopener">github.com/JustinXai/ai-api-doctor/issues</a></li>
+          <li>X / Twitter：<a href="https://x.com/norike0718" target="_blank" rel="noopener">@norike0718</a></li>
+          <li>Email：p2pwrite@gmail.com</li>
+        </ul>
+
+        <div class="callout callout--info" style="margin-top:24px">
+          <svg class="callout__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <span>本隐私说明最后更新于 2026 年 5 月 14 日。如有重大变更，将在官网首页通知。</span>
+        </div>
+
+        <div class="action-row" style="margin-top:24px">
+          <a href="/report/" class="btn btn--primary">手动生成报告</a>
+          <a href="/support/" class="btn btn--secondary">支持与反馈</a>
+          <a href="/faq/" class="btn btn--secondary">查看 FAQ</a>
+        </div>
+
+      </article>
+    </div>
+  </section>
+</main>
+
+<!-- Footer -->
+<footer class="site-footer">
+  <div class="container site-footer__inner">
+    <div class="site-logo" style="font-size:15px; margin-bottom:8px">
+      <div class="site-logo__icon" style="width:28px;height:28px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px">
+          <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+        </svg>
+      </div>
+      AI API Doctor
+    </div>
+    <div class="site-footer__links">
+      <a href="/">首页</a>
+      <a href="/report/">生成报告</a>
+      <a href="/guides/billing-anomaly/">检测原理</a>
+      <a href="/faq/">FAQ</a>
+      <a href="/privacy/">隐私</a>
+      <a href="/support/">支持</a>
+    </div>
+    <p class="site-footer__note">
+      本工具只展示可复现信号，不证明服务商故意多扣费。如有疑问请联系站长或客服核对。
+    </p>
+    <p style="color:#9ca3af; font-size:12px; margin-top:4px">© 2026 AI API Doctor · aiapidoctor.com</p>
+  </div>
+</footer>
+
+</body>
+</html>

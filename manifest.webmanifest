@@ -1,0 +1,22 @@
+{
+  "name": "AI API Doctor",
+  "short_name": "API Doctor",
+  "description": "AI API billing anomaly report generator. Detect failed-request charges and empty-reply billing anomalies in New API / One API relay stations.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#0f172a",
+  "lang": "zh-CN",
+  "icons": [
+    {
+      "src": "/assets/icons/icon-192.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "/assets/icons/icon-512.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
