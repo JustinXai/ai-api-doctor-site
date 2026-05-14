@@ -644,12 +644,9 @@
       </button>
       <nav class="site-nav">
         <a href="/">首页</a>
-        <a href="/report/">生成报告</a>
-        <a href="/guides/billing-anomaly/">检测原理</a>
         <a href="/faq/" class="active">FAQ</a>
         <a href="/privacy/">隐私</a>
         <a href="/support/">支持</a>
-        <span style="color:var(--muted);font-size:13px">Chrome 插件审核中</span>
         <span class="lang-switcher">
           <span class="lang-switcher__current">中文</span>
           <span class="lang-switcher__sep">|</span>
@@ -688,6 +685,202 @@
 
   <!-- Main Content -->
   <main class="content-wrap">
+
+    <!-- Section: 迁移内容 -->
+    <div class="faq-group-title">为什么需要这个工具</div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>为什么需要 AI API Doctor？</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>很多 AI API 中转站采用预扣费机制。请求失败、空回复、上游 503、超时、缓存命中等情况，都可能让用户难以判断实际扣费是否合理。</p>
+          <p>AI API Doctor 通过可复现信号帮助用户和站长沟通：</p>
+          <ul>
+            <li>检测失败请求是否最终扣费</li>
+            <li>检测空回复是否扣费</li>
+            <li>检测 usage 完整性</li>
+            <li>检测缓存是否正常计费</li>
+            <li>检测模型表现是否正常</li>
+          </ul>
+          <p>目标不是给任何站点定罪，而是把扣费、usage、缓存和模型表现变成一张可复现的体检报告。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>什么是预扣费？</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>部分 AI API 中转站会在请求开始时先按模型、上下文、max_tokens 或本地估算 token 预扣额度。请求结束后，再根据真实 usage 结算并返还差额。</p>
+          <p>这套机制本身没问题，但如果失败请求、空回复、上游 503、无效模型、缓存命中等场景处理不好，用户可能会遇到"没有拿到有效回答，但额度发生变化"的情况。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>什么是失败请求扣费？</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>满足以下条件，则属于失败请求扣费异常信号：</p>
+          <ul>
+            <li>HTTP 状态码 ≥ 400，或上游返回 503 / 502 / 504 / timeout</li>
+            <li>没有有效输出（completion_tokens = 0 或缺失）</li>
+            <li>10 秒后 raw quota 仍然减少</li>
+          </ul>
+          <p>这种情况属于失败请求扣费异常信号。</p>
+          <p><strong>说明：</strong>10 秒等待是为了区分"临时预扣"和"最终扣费"。如果 10 秒后额度恢复，则更可能是预扣已返还。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>什么是空回复扣费？</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>满足以下条件，则属于空回复扣费异常信号：</p>
+          <ul>
+            <li>HTTP 状态码为 200</li>
+            <li>可见输出为空（visible output 为空）</li>
+            <li>completion_tokens = 0 或缺失</li>
+            <li>没有 tool call / image / audio / search 等有效产物</li>
+            <li>10 秒后 raw quota 仍然减少</li>
+          </ul>
+          <p>这种情况属于空回复扣费异常信号。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>为什么 usage 完整性重要？</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>如果响应不返回 <code>prompt_tokens</code>、<code>completion_tokens</code>、<code>total_tokens</code> 或缓存字段，用户很难核对理论成本和实际扣费是否匹配。</p>
+          <p>usage 完整性检查会验证响应中是否包含：</p>
+          <ul>
+            <li><code>prompt_tokens</code>（输入 token 数）</li>
+            <li><code>completion_tokens</code> / <code>output_tokens</code>（输出 token 数）</li>
+            <li><code>total_tokens</code>（总 token 数）</li>
+            <li><code>prompt_tokens_details.cached_tokens</code>（缓存命中数）</li>
+          </ul>
+          <p>如果这些字段缺失或不全，AI API Doctor 会标记为"usage 不完整"，建议联系站长核对。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>cached_tokens 是什么？</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p><code>cached_tokens</code>（或 <code>cache_read_input_tokens</code>）表示本次请求中有多少输入 token 命中了缓存。</p>
+          <p>命中缓存通常意味着：</p>
+          <ul>
+            <li>更低的延迟（从缓存读取而非重新计算）</li>
+            <li>更低的输入成本（部分服务商对缓存读取收取折扣价格）</li>
+          </ul>
+          <p>不同服务商对缓存字段的支持和折扣规则不同，具体计费以服务商公示为准。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>模型表现检测是什么？</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>模型表现检测是一个轻量的模型能力测试，包含 5 个维度：</p>
+          <ul>
+            <li>指令遵守</li>
+            <li>基础推理</li>
+            <li>数字陷阱（如 9.11 和 9.9 哪个大）</li>
+            <li>代码理解</li>
+            <li>上下文保持</li>
+          </ul>
+          <p>它不是官方 IQ 测试，也不能证明模型真假，只用于发现明显降智或能力异常。</p>
+          <p>结果仅作为模型表现分的一部分，不作为唯一判断标准。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>网页版和 Chrome 插件有什么区别？</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p><strong>网页版：</strong></p>
+          <ul>
+            <li>适合快速检测</li>
+            <li>不需要输入 API Key 在网站上</li>
+            <li>支持手动报告模式，可填写 raw quota 数据生成报告</li>
+            <li>适合手机分享和客服沟通</li>
+          </ul>
+          <p><strong>Chrome 插件（审核中）：</strong></p>
+          <ul>
+            <li>可自动读取 New API / One API raw quota，无需手动填写</li>
+            <li>适合桌面端精确检测</li>
+            <li>API Key 保存在浏览器本地，不上传到第三方</li>
+            <li>审核通过后会放出下载链接</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>AI API Doctor 会推荐中转站吗？</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>不会。</p>
+          <p>AI API Doctor 不推荐、不排名任何中转站。</p>
+          <p>报告只展示本次测试中的可复现信号，不证明服务商主观故意。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>报告是否证明服务商故意多扣费？</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p><strong>不能。</strong></p>
+          <p>AI API Doctor 可以帮助排查：</p>
+          <ul>
+            <li>响应是否返回完整的 usage 信息</li>
+            <li>失败请求是否最终扣费</li>
+            <li>空回复是否扣费</li>
+            <li>缓存是否正常计费</li>
+          </ul>
+          <p>但最终余额、扣费和账单由服务商后台控制，AI API Doctor 无法直接访问所有服务商的真实账单系统。</p>
+          <p>报告的结论应理解为"用量信号核对"，不是法律意义上的财务审计。</p>
+          <p>AI API Doctor 不推荐、不排名任何中转站。报告只展示本次测试中的可复现信号，不证明服务商主观故意，也不证明模型真假。</p>
+        </div>
+      </div>
+    </div>
 
     <!-- Section 1: 基础介绍 -->
     <div class="faq-group-title">基础介绍</div>
@@ -1278,17 +1471,14 @@
 
   <!-- Footer -->
   <footer class="site-footer">
-    <p>
-      &copy; 2026 AI API Doctor &middot;
-      <a href="https://aiapidoctor.com">首页</a> &middot;
-      <a href="https://aiapidoctor.com/report/">生成报告</a> &middot;
-      <a href="https://aiapidoctor.com/guides/billing-anomaly/">检测原理</a> &middot;
-      <a href="https://aiapidoctor.com/faq">常见问题</a> &middot;
-      <a href="https://aiapidoctor.com/privacy">隐私政策</a> &middot;
-      <a href="https://aiapidoctor.com/support">支持</a>
-    </p>
-    <p style="margin-top:4px">最后更新：2026 年 5 月 14 日</p>
-    <p style="margin-top:4px; color:#9ca3af">AI API Doctor &middot; 不推荐、不排名任何中转站</p>
+    <div class="site-footer__links">
+      <a href="/">首页</a>
+      <a href="/faq/">FAQ</a>
+      <a href="/privacy/">隐私</a>
+      <a href="/support/">支持</a>
+      <a href="/guides/billing-anomaly/">检测原理</a>
+    </div>
+    <p style="color:#9ca3af; font-size:12px; margin-top:8px">© 2026 AI API Doctor &middot; aiapidoctor.com</p>
   </footer>
 
   <script>

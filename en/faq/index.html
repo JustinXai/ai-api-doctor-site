@@ -616,8 +616,6 @@
     </a>
     <nav class="header-nav">
       <a href="/en/">Home</a>
-      <a href="/en/report/">Generate Report</a>
-      <a href="/en/guides/billing-anomaly/">How It Works</a>
       <a href="/en/faq/" class="active">FAQ</a>
       <a href="/en/privacy/">Privacy</a>
       <a href="/en/support/">Support</a>
@@ -658,6 +656,200 @@
 
   <!-- Main Content -->
   <main class="content-wrap">
+
+    <!-- Section: Migrated content -->
+    <div class="faq-group-title">Why Do You Need This Tool</div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>Why do you need AI API Doctor?</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>Many AI API relay providers use a pre-charge mechanism. When a request fails, returns empty, encounters a 503 from upstream, times out, or hits cache, it becomes hard for users to tell if the charge was fair.</p>
+          <p>AI API Doctor helps by producing reproducible signals that users and providers can discuss based on evidence:</p>
+          <ul>
+            <li>Detect whether failed requests ultimately deduct quota</li>
+            <li>Detect whether empty replies are charged</li>
+            <li>Detect usage integrity issues</li>
+            <li>Detect cache billing anomalies</li>
+            <li>Detect model performance anomalies</li>
+          </ul>
+          <p>The goal is not to convict any site — it's to turn billing, usage, cache, and model performance into a reproducible diagnostic report.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>What is pre-deduction billing?</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>Some AI API relay stations pre-charge quota at the start of a request, then settle and refund the difference after the request completes.</p>
+          <p>This mechanism itself is fine. But if failed requests, empty replies, upstream 503 errors, invalid models, or cache hits are not handled well, users may find that "they got no valid response but their quota changed".</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>What is failed request charging?</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>A failed request charging anomaly signal is indicated when:</p>
+          <ul>
+            <li>HTTP status code &ge; 400, or upstream returns 503 / 502 / 504 / timeout</li>
+            <li>No valid output (completion_tokens = 0 or missing)</li>
+            <li>Raw quota still decreased after 10 seconds</li>
+          </ul>
+          <p><strong>Note:</strong> The 10-second wait distinguishes between a "temporary pre-charge" and a "final deduction". If the quota is restored after 10 seconds, the pre-charge was likely refunded.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>What is empty reply charging?</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>An empty reply charging anomaly signal is indicated when:</p>
+          <ul>
+            <li>HTTP status code is 200</li>
+            <li>Visible output is empty</li>
+            <li>completion_tokens = 0 or missing</li>
+            <li>No tool call / image / audio / search or other valid output</li>
+            <li>Raw quota still decreased after 10 seconds</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>Why is usage integrity important?</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>If a response does not return <code>prompt_tokens</code>, <code>completion_tokens</code>, <code>total_tokens</code>, or cache fields, users cannot easily verify whether the theoretical cost matches the actual deduction.</p>
+          <p>Usage integrity checks verify the response includes:</p>
+          <ul>
+            <li><code>prompt_tokens</code> (input token count)</li>
+            <li><code>completion_tokens</code> / <code>output_tokens</code> (output token count)</li>
+            <li><code>total_tokens</code> (total token count)</li>
+            <li><code>prompt_tokens_details.cached_tokens</code> (cache hit count)</li>
+          </ul>
+          <p>Missing or incomplete fields are flagged as "usage incomplete" — contact the provider for verification.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>What is cached_tokens?</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p><code>cached_tokens</code> (or <code>cache_read_input_tokens</code>) indicates how many input tokens in the current request hit the cache.</p>
+          <p>Cache hits typically mean:</p>
+          <ul>
+            <li>Lower latency (reading from cache instead of recomputing)</li>
+            <li>Lower input cost (some providers charge discounted rates for cache reads)</li>
+          </ul>
+          <p>Different providers have different support for cache fields and discount rules. Actual billing follows the provider's published rates.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>What is model performance detection?</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>Model performance detection is a lightweight capability test covering 5 dimensions:</p>
+          <ul>
+            <li>Instruction following</li>
+            <li>Basic reasoning</li>
+            <li>Number traps (e.g. which is larger: 9.11 or 9.9)</li>
+            <li>Code understanding</li>
+            <li>Context retention</li>
+          </ul>
+          <p>It is not an official IQ test and cannot prove model authenticity. It is only used to detect obvious degradation or performance anomalies.</p>
+          <p>Results are part of the Model Performance Score, not the sole judgment criterion.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>What is the difference between the web version and the Chrome extension?</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p><strong>Web version:</strong></p>
+          <ul>
+            <li>Good for quick checks</li>
+            <li>No API Key entry required on the website</li>
+            <li>Supports manual report mode — fill in raw quota data to generate a report</li>
+            <li>Good for mobile sharing and customer support communication</li>
+          </ul>
+          <p><strong>Chrome extension (under review):</strong></p>
+          <ul>
+            <li>Can automatically read New API / One API raw quota — no manual entry needed</li>
+            <li>Good for precise desktop forensics</li>
+            <li>API Key stored locally in your browser, never uploaded to third parties</li>
+            <li>A download link will be shared once the review passes</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>Does AI API Doctor recommend relay stations?</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p>No.</p>
+          <p>AI API Doctor does not recommend or rank any relay providers.</p>
+          <p>Reports show reproducible signals from this test and do not prove intent.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq-card">
+      <button class="faq-question" onclick="toggle(this)">
+        <span>Does the report prove intentional overbilling?</span>
+        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      </button>
+      <div class="faq-answer">
+        <div class="faq-answer-inner">
+          <p><strong>No.</strong></p>
+          <p>AI API Doctor can help verify:</p>
+          <ul>
+            <li>Whether the response returns complete usage information</li>
+            <li>Whether failed requests ultimately deduct quota</li>
+            <li>Whether empty replies are charged</li>
+            <li>Whether cache is billed correctly</li>
+          </ul>
+          <p>Final balances, deductions, and billing are controlled by the provider's backend. AI API Doctor cannot directly access all providers' billing systems.</p>
+          <p>Conclusions should be understood as "usage signal verification", not a financial audit.</p>
+          <p>AI API Doctor does not recommend or rank any relay providers. The report only shows reproducible signals from this test, and does not prove intentional overcharging by the provider.</p>
+        </div>
+      </div>
+    </div>
 
     <!-- Section 1: Basic Introduction -->
     <div class="faq-group-title">Basic Introduction</div>
@@ -1169,11 +1361,10 @@
     <p>
       &copy; 2026 AI API Doctor &middot;
       <a href="/en/">Home</a> &middot;
-      <a href="/en/report/">Generate Report</a> &middot;
-      <a href="/en/guides/billing-anomaly/">How It Works</a> &middot;
       <a href="/en/faq/">FAQ</a> &middot;
       <a href="/en/privacy/">Privacy</a> &middot;
-      <a href="/en/support/">Support</a>
+      <a href="/en/support/">Support</a> &middot;
+      <a href="/en/guides/billing-anomaly/">Detection Principles</a>
     </p>
     <p style="margin-top:4px">Last updated: May 14, 2026</p>
   </footer>
