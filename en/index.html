@@ -66,8 +66,9 @@
 
   <!-- Hero -->
   <section class="tool-hero">
-    <h1>AI API Billing Anomaly Checker</h1>
-    <p>Check API connectivity, usage integrity, cache behavior, and model performance. Generate a shareable AI API diagnostic report.</p>
+    <h1>API Doctor</h1>
+    <p class="tool-hero__tagline">Black-box check for your AI API</p>
+    <p>HTTP 200 does not always mean useful. Detect empty runs, missing usage, cache waste, and possible model degradation. Generate a shareable API scorecard.</p>
     <div class="hero-badges">
       <span class="hero-badge hero-badge--green">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
@@ -88,45 +89,14 @@
   <section id="doctor" class="center-tool-shell">
     <div class="doctor-card">
 
-      <!-- Tabs -->
-      <div class="tool-tabs">
-        <button class="tool-tab active" id="tab-local" onclick="switchTab('local')">Local Browser Test Beta</button>
-        <button class="tool-tab" id="tab-manual" onclick="switchTab('manual')">Manual Report</button>
+      <!-- Card Header -->
+      <div class="doctor-card__header">
+        <span class="doctor-card__title">Start Diagnosis</span>
+        <button class="btn btn--link btn--sm" type="button" id="btn-show-manual" onclick="switchTab('manual')">Manual Report</button>
       </div>
 
       <!-- ── LOCAL TEST ── -->
       <div id="panel-local">
-
-        <!-- Mode selector -->
-        <div class="mode-selector">
-          <button class="mode-btn active" data-mode="quick" onclick="Doctor.setMode('quick')">
-            Quick Check
-            <span class="mode-btn__desc">1 request</span>
-          </button>
-          <button class="mode-btn" data-mode="full" onclick="Doctor.setMode('full')">
-            Full Doctor Check
-            <span class="mode-btn__desc">More thorough</span>
-          </button>
-        </div>
-
-        <!-- Connection info -->
-        <div class="form-field">
-          <label class="form-label">Paste Connection Info</label>
-          <textarea
-            id="doctor-conn-info"
-            class="form-textarea"
-            placeholder='Paste New API connection info, Base URL, API Key or cURL'
-            rows="2"
-            oninput="Doctor.onConnectionInfoInput(this)"
-          ></textarea>
-          <div class="form-hint">Auto-parses JSON, cURL, and ENV formats. Verify the fields below after parsing.</div>
-        </div>
-
-        <!-- Provider -->
-        <div class="form-field">
-          <label class="form-label">Provider Name <span class="form-label-opt">(optional)</span></label>
-          <input id="doctor-provider" class="form-input" placeholder="Provider name" />
-        </div>
 
         <!-- Base URL -->
         <div class="form-field">
@@ -175,81 +145,117 @@
           <input type="hidden" id="doctor-interface" value="OpenAI Chat" />
         </div>
 
-        <!-- Advanced (collapsed) -->
-        <button class="advanced-toggle" id="advanced-toggle" type="button" onclick="Doctor.toggleAdvanced()">
-          <svg class="advanced-toggle__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-          Show Advanced Options
-        </button>
-        <div class="advanced-panel" id="advanced-panel">
-
-          <div class="form-field">
-            <label class="form-label">Model Expected Tier <span class="form-label-opt">(optional)</span></label>
-            <div class="tier-toggle">
-              <button class="tier-btn active" data-tier="uncertain" onclick="Doctor.setTier('uncertain')">Uncertain</button>
-              <button class="tier-btn" data-tier="light" onclick="Doctor.setTier('light')">Light</button>
-              <button class="tier-btn" data-tier="standard" onclick="Doctor.setTier('standard')">Standard</button>
-              <button class="tier-btn" data-tier="advanced" onclick="Doctor.setTier('advanced')">Advanced</button>
-            </div>
-            <input type="hidden" id="doctor-tier" value="uncertain" />
+        <!-- Mode + Cost line -->
+        <div class="mode-cost-row">
+          <div class="mode-selector">
+            <button class="mode-btn active" data-mode="quick" onclick="Doctor.setMode('quick')">Quick Check</button>
+            <button class="mode-btn" data-mode="full" onclick="Doctor.setMode('full')">Full Doctor Check</button>
           </div>
-
-          <div class="advanced-check-row">
-            <label class="advanced-check">
-              <input type="checkbox" id="cache-test-toggle" onchange="Doctor.toggleCache(this)" />
-              <span>Cache Hit Detection</span>
-              <span class="form-hint" style="margin:0">Sends two longer test requests, may consume a small amount of credits.</span>
-            </label>
+          <div class="cost-hint" id="cost-hint">
+            Quick Check: about 1 request, very low cost
           </div>
+        </div>
 
-          <div class="advanced-check-row">
-            <label class="advanced-check">
-              <input type="checkbox" id="sanity-test-toggle" onchange="Doctor.toggleSanity(this)" />
-              <span>Model Sanity Test</span>
-              <span class="form-hint" style="margin:0">5 extra lightweight tests for possible degradation detection.</span>
-            </label>
-          </div>
-
-          <div class="advanced-check-row">
-            <label class="advanced-check">
-              <input type="checkbox" id="price-test-toggle" onchange="Doctor.togglePrice(this)" />
-              <span>Price Audit</span>
-            </label>
-            <div class="price-row-4" style="margin-top:8px">
-              <div>
-                <div class="form-label" style="font-size:11px">input / 1M</div>
-                <input id="price-input" class="form-input" placeholder="0.5" type="number" step="0.001" />
-              </div>
-              <div>
-                <div class="form-label" style="font-size:11px">output / 1M</div>
-                <input id="price-output" class="form-input" placeholder="1.5" type="number" step="0.001" />
-              </div>
-              <div>
-                <div class="form-label" style="font-size:11px">cached read / 1M</div>
-                <input id="price-cached-read" class="form-input" placeholder="default" type="number" step="0.001" />
-              </div>
-              <div>
-                <div class="form-label" style="font-size:11px">actual cost</div>
-                <input id="price-actual" class="form-input" placeholder="USD" type="number" step="0.000001" />
-              </div>
+        <!-- Collapsible: Paste connection info -->
+        <div class="collapse-section">
+          <button class="collapse-toggle" type="button" onclick="toggleCollapse('collapse-conn', this)">
+            <svg class="collapse-toggle__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+            Paste connection info / cURL / ENV
+          </button>
+          <div class="collapse-panel" id="collapse-conn">
+            <div class="form-field form-field--compact">
+              <textarea
+                id="doctor-conn-info"
+                class="form-textarea"
+                placeholder='Paste New API connection info, Base URL, API Key or cURL'
+                rows="2"
+                oninput="Doctor.onConnectionInfoInput(this)"
+              ></textarea>
+              <div class="form-hint">Auto-parses JSON, cURL, and ENV formats. Verify the fields below after parsing.</div>
             </div>
           </div>
+        </div>
 
-        </div><!-- /advanced-panel -->
-
-        <!-- Cost estimate -->
-        <div id="cost-estimate-card" class="cost-estimate-card" style="display:none">
-          <div class="cost-estimate-card__header">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-            Estimated Request Count
+        <!-- Collapsible: Report display options -->
+        <div class="collapse-section">
+          <button class="collapse-toggle" type="button" onclick="toggleCollapse('collapse-report', this)">
+            <svg class="collapse-toggle__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+            Report display options
+          </button>
+          <div class="collapse-panel" id="collapse-report">
+            <div class="form-field form-field--compact">
+              <label class="form-label">Provider Name <span class="form-label-opt">(optional)</span></label>
+              <input id="doctor-provider" class="form-input" placeholder="Provider name" />
+            </div>
           </div>
-          <div id="cost-estimate-lines"></div>
+        </div>
+
+        <!-- Collapsible: Advanced options -->
+        <div class="collapse-section">
+          <button class="collapse-toggle" type="button" onclick="toggleCollapse('collapse-adv', this)">
+            <svg class="collapse-toggle__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+            Full Check &amp; Advanced Options
+          </button>
+          <div class="collapse-panel" id="collapse-adv">
+            <div class="form-field form-field--compact">
+              <label class="form-label">Model Expected Tier <span class="form-label-opt">(optional)</span></label>
+              <div class="tier-toggle">
+                <button class="tier-btn active" data-tier="uncertain" onclick="Doctor.setTier('uncertain')">Uncertain</button>
+                <button class="tier-btn" data-tier="light" onclick="Doctor.setTier('light')">Light</button>
+                <button class="tier-btn" data-tier="standard" onclick="Doctor.setTier('standard')">Standard</button>
+                <button class="tier-btn" data-tier="advanced" onclick="Doctor.setTier('advanced')">Advanced</button>
+              </div>
+              <input type="hidden" id="doctor-tier" value="uncertain" />
+            </div>
+
+            <div class="advanced-check-row">
+              <label class="advanced-check">
+                <input type="checkbox" id="cache-test-toggle" onchange="Doctor.toggleCache(this)" />
+                <span>Cache Hit Detection</span>
+                <span class="form-hint" style="margin:0">Sends two longer test requests, may consume a small amount of credits.</span>
+              </label>
+            </div>
+
+            <div class="advanced-check-row">
+              <label class="advanced-check">
+                <input type="checkbox" id="sanity-test-toggle" onchange="Doctor.toggleSanity(this)" />
+                <span>Model Sanity Test</span>
+                <span class="form-hint" style="margin:0">5 extra lightweight tests for possible degradation detection.</span>
+              </label>
+            </div>
+
+            <div class="advanced-check-row">
+              <label class="advanced-check">
+                <input type="checkbox" id="price-test-toggle" onchange="Doctor.togglePrice(this)" />
+                <span>Price Audit</span>
+              </label>
+              <div class="price-row-4" style="margin-top:8px">
+                <div>
+                  <div class="form-label" style="font-size:11px">input / 1M</div>
+                  <input id="price-input" class="form-input" placeholder="0.5" type="number" step="0.001" />
+                </div>
+                <div>
+                  <div class="form-label" style="font-size:11px">output / 1M</div>
+                  <input id="price-output" class="form-input" placeholder="1.5" type="number" step="0.001" />
+                </div>
+                <div>
+                  <div class="form-label" style="font-size:11px">cached read / 1M</div>
+                  <input id="price-cached-read" class="form-input" placeholder="default" type="number" step="0.001" />
+                </div>
+                <div>
+                  <div class="form-label" style="font-size:11px">actual cost</div>
+                  <input id="price-actual" class="form-input" placeholder="USD" type="number" step="0.000001" />
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Actions -->
         <div class="tool-actions">
           <button id="doctor-run-btn" class="btn btn--primary btn--run" onclick="Doctor.run()">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-            Start Quick Check
+            Start Check
           </button>
           <button id="doctor-clear-btn" class="btn btn--secondary" onclick="Doctor.clear()">Clear</button>
         </div>
@@ -320,6 +326,10 @@
           <button class="btn btn--secondary" onclick="ManualReport.clear()">Clear</button>
         </div>
 
+        <div style="margin-top:12px">
+          <button class="btn btn--link btn--sm" type="button" onclick="switchTab('local')">Back to Auto Test</button>
+        </div>
+
       </div><!-- /panel-manual -->
 
       <!-- Progress -->
@@ -362,38 +372,42 @@
 <script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.min.js"></script>
 <script src="/assets/test.js"></script>
 <script>
+/* ── Collapse toggle ── */
+function toggleCollapse(id, btn) {
+  const panel = document.getElementById(id);
+  if (!panel) return;
+  const open = panel.classList.toggle('open');
+  if (btn) btn.classList.toggle('open', open);
+}
+
 /* ── Tab switcher ── */
 function switchTab(tab) {
-  document.getElementById('tab-local').classList.toggle('active', tab === 'local');
-  document.getElementById('tab-manual').classList.toggle('active', tab === 'manual');
+  document.getElementById('tab-local') && document.getElementById('tab-local').classList.toggle('active', tab === 'local');
+  document.getElementById('tab-manual') && document.getElementById('tab-manual').classList.toggle('active', tab === 'manual');
   document.getElementById('panel-local').style.display = tab === 'local' ? 'block' : 'none';
   document.getElementById('panel-manual').style.display = tab === 'manual' ? 'block' : 'none';
 }
 
-/* ── Cost estimation ── */
-function updateCostEstimate() {
+/* ── Cost hint (inline) ── */
+function updateCostHint() {
+  const hint = document.getElementById('cost-hint');
+  if (!hint) return;
   const mode = window.Doctor ? window.Doctor._mode : 'quick';
   const cacheEnabled = document.getElementById('cache-test-toggle')?.checked || false;
-  const priceEnabled = document.getElementById('price-test-toggle')?.checked || false;
   const sanityEnabled = document.getElementById('sanity-test-toggle')?.checked || false;
 
-  const card = document.getElementById('cost-estimate-card');
-  const lines = document.getElementById('cost-estimate-lines');
-  if (!card || !lines) return;
-
-  const cfg = window.DETECTION_MODES ? window.DETECTION_MODES[mode] : null;
-  const items = [];
-  if (cfg) { items.push({ text: cfg.descEn, type: 'base' }); }
-  else { items.push({ text: 'Basic connectivity: 1 request, minimal cost', type: 'base' }); }
-  if (cacheEnabled) { items.push({ text: 'Cache detection: 2 extra requests, may consume a small amount of credits', type: 'warn' }); }
-  if (sanityEnabled) { items.push({ text: 'Sanity test: 5 extra requests, may consume a small amount of credits', type: 'warn' }); }
-
-  lines.innerHTML = items.map(item => `
-    <div class="cost-line">
-      <span class="cost-dot cost-dot--${item.type}"></span>
-      <span>${item.text}</span>
-    </div>`).join('');
-  card.style.display = 'block';
+  if (mode === 'quick') {
+    if (cacheEnabled) {
+      hint.textContent = 'Quick Check: about 3 requests, cache detection may consume a small amount of credits';
+    } else {
+      hint.textContent = 'Quick Check: about 1 request, very low cost';
+    }
+  } else {
+    let text = 'Full Check: about 3–6 requests, may consume a small amount of credits';
+    if (cacheEnabled) text += ' · includes cache detection';
+    if (sanityEnabled) text += ' · includes model test';
+    hint.textContent = text;
+  }
 }
 
 /* ── Manual Report ── */
@@ -437,7 +451,7 @@ window.ManualReport = {
           <div class="report-cell"><div class="report-cell__label">completion</div><div class="report-cell__value mono">${ct||'—'}</div></div>
           <div class="report-cell"><div class="report-cell__label">total</div><div class="report-cell__value mono">${tt||'—'}</div></div>
         </div>
-        <div class="report-card__footer">This report does not contain your API Key and only shows reproducible signals from this test. It does not prove that the provider intentionally overcharged.</div>
+        <div class="report-card__footer">This report only shows reproducible signals from this test. It does not prove provider intent and is not a legal conclusion.</div>
       </div>`;
   },
   clear() {
@@ -460,7 +474,8 @@ function esc(str) {
 /* ── Init ── */
 document.addEventListener('DOMContentLoaded', () => {
   if (window.Doctor) { window.Doctor.init(); window.Doctor.setMode('quick'); }
-  updateCostEstimate();
+  updateCostHint();
+  if (typeof updateCostEstimate === 'function') updateCostEstimate();
 });
 </script>
 

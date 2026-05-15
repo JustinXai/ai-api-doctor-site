@@ -66,8 +66,9 @@
 
   <!-- Hero -->
   <section class="tool-hero">
-    <h1>AI API 扣费异常检测工具</h1>
-    <p>检测 API 联通、usage 完整性、缓存异常和模型表现，生成可分享的 AI API 体检报告。</p>
+    <h1>API Doctor</h1>
+    <p class="tool-hero__tagline">AI API 黑盒验货</p>
+    <p>HTTP 200 不等于能用。测空跑、usage 消失、缓存吃亏和模型缩水，生成一张可晒的 API 验货分。</p>
     <div class="hero-badges">
       <span class="hero-badge hero-badge--green">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
@@ -88,45 +89,14 @@
   <section id="doctor" class="center-tool-shell">
     <div class="doctor-card">
 
-      <!-- Tabs -->
-      <div class="tool-tabs">
-        <button class="tool-tab active" id="tab-local" onclick="switchTab('local')">本地检测 Beta</button>
-        <button class="tool-tab" id="tab-manual" onclick="switchTab('manual')">手动报告</button>
+      <!-- Card Header -->
+      <div class="doctor-card__header">
+        <span class="doctor-card__title">开始体检</span>
+        <button class="btn btn--link btn--sm" type="button" id="btn-show-manual" onclick="switchTab('manual')">手动生成报告</button>
       </div>
 
       <!-- ── LOCAL TEST ── -->
       <div id="panel-local">
-
-        <!-- Mode selector -->
-        <div class="mode-selector">
-          <button class="mode-btn active" data-mode="quick" onclick="Doctor.setMode('quick')">
-            快速检测
-            <span class="mode-btn__desc">1 次请求</span>
-          </button>
-          <button class="mode-btn" data-mode="full" onclick="Doctor.setMode('full')">
-            完整体检
-            <span class="mode-btn__desc">更全面</span>
-          </button>
-        </div>
-
-        <!-- Connection info -->
-        <div class="form-field">
-          <label class="form-label">粘贴连接信息</label>
-          <textarea
-            id="doctor-conn-info"
-            class="form-textarea"
-            placeholder="支持 New API 连接信息、Base URL、API Key 或 cURL"
-            rows="2"
-            oninput="Doctor.onConnectionInfoInput(this)"
-          ></textarea>
-          <div class="form-hint">自动解析 JSON、cURL、ENV 格式，解析后请检查下方字段。</div>
-        </div>
-
-        <!-- Provider -->
-        <div class="form-field">
-          <label class="form-label">服务商名称 <span class="form-label-opt">（可选）</span></label>
-          <input id="doctor-provider" class="form-input" placeholder="服务商名称" />
-        </div>
 
         <!-- Base URL -->
         <div class="form-field">
@@ -175,81 +145,117 @@
           <input type="hidden" id="doctor-interface" value="OpenAI Chat" />
         </div>
 
-        <!-- Advanced (collapsed) -->
-        <button class="advanced-toggle" id="advanced-toggle" type="button" onclick="Doctor.toggleAdvanced()">
-          <svg class="advanced-toggle__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-          展开高级检测项
-        </button>
-        <div class="advanced-panel" id="advanced-panel">
-
-          <div class="form-field">
-            <label class="form-label">模型预期档位 <span class="form-label-opt">（可选）</span></label>
-            <div class="tier-toggle">
-              <button class="tier-btn active" data-tier="uncertain" onclick="Doctor.setTier('uncertain')">不确定</button>
-              <button class="tier-btn" data-tier="light" onclick="Doctor.setTier('light')">轻量</button>
-              <button class="tier-btn" data-tier="standard" onclick="Doctor.setTier('standard')">标准</button>
-              <button class="tier-btn" data-tier="advanced" onclick="Doctor.setTier('advanced')">高级</button>
-            </div>
-            <input type="hidden" id="doctor-tier" value="uncertain" />
+        <!-- Mode + Cost line -->
+        <div class="mode-cost-row">
+          <div class="mode-selector">
+            <button class="mode-btn active" data-mode="quick" onclick="Doctor.setMode('quick')">快速检测</button>
+            <button class="mode-btn" data-mode="full" onclick="Doctor.setMode('full')">完整体检</button>
           </div>
-
-          <div class="advanced-check-row">
-            <label class="advanced-check">
-              <input type="checkbox" id="cache-test-toggle" onchange="Doctor.toggleCache(this)" />
-              <span>缓存命中检测</span>
-              <span class="form-hint" style="margin:0">发送两次较长请求，可能消耗少量额度。</span>
-            </label>
+          <div class="cost-hint" id="cost-hint">
+            快速验货：预计 1 次请求，消耗极低
           </div>
+        </div>
 
-          <div class="advanced-check-row">
-            <label class="advanced-check">
-              <input type="checkbox" id="sanity-test-toggle" onchange="Doctor.toggleSanity(this)" />
-              <span>模型表现检测</span>
-              <span class="form-hint" style="margin:0">额外 5 个轻量测试，检查降智或能力异常。</span>
-            </label>
-          </div>
-
-          <div class="advanced-check-row">
-            <label class="advanced-check">
-              <input type="checkbox" id="price-test-toggle" onchange="Doctor.togglePrice(this)" />
-              <span>价格核对</span>
-            </label>
-            <div class="price-row-4" style="margin-top:8px">
-              <div>
-                <div class="form-label" style="font-size:11px">input / 1M</div>
-                <input id="price-input" class="form-input" placeholder="0.5" type="number" step="0.001" />
-              </div>
-              <div>
-                <div class="form-label" style="font-size:11px">output / 1M</div>
-                <input id="price-output" class="form-input" placeholder="1.5" type="number" step="0.001" />
-              </div>
-              <div>
-                <div class="form-label" style="font-size:11px">cached read / 1M</div>
-                <input id="price-cached-read" class="form-input" placeholder="默认" type="number" step="0.001" />
-              </div>
-              <div>
-                <div class="form-label" style="font-size:11px">actual cost</div>
-                <input id="price-actual" class="form-input" placeholder="USD" type="number" step="0.000001" />
-              </div>
+        <!-- Collapsible: Paste connection info -->
+        <div class="collapse-section">
+          <button class="collapse-toggle" type="button" onclick="toggleCollapse('collapse-conn', this)">
+            <svg class="collapse-toggle__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+            粘贴连接信息 / cURL / ENV
+          </button>
+          <div class="collapse-panel" id="collapse-conn">
+            <div class="form-field form-field--compact">
+              <textarea
+                id="doctor-conn-info"
+                class="form-textarea"
+                placeholder="支持 New API 连接信息、Base URL、API Key 或 cURL"
+                rows="2"
+                oninput="Doctor.onConnectionInfoInput(this)"
+              ></textarea>
+              <div class="form-hint">自动解析 JSON、cURL、ENV 格式，解析后请检查下方字段。</div>
             </div>
           </div>
+        </div>
 
-        </div><!-- /advanced-panel -->
-
-        <!-- Cost estimate -->
-        <div id="cost-estimate-card" class="cost-estimate-card" style="display:none">
-          <div class="cost-estimate-card__header">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-            预计请求次数
+        <!-- Collapsible: Report display options -->
+        <div class="collapse-section">
+          <button class="collapse-toggle" type="button" onclick="toggleCollapse('collapse-report', this)">
+            <svg class="collapse-toggle__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+            报告显示选项
+          </button>
+          <div class="collapse-panel" id="collapse-report">
+            <div class="form-field form-field--compact">
+              <label class="form-label">服务商名称 <span class="form-label-opt">（可选）</span></label>
+              <input id="doctor-provider" class="form-input" placeholder="服务商名称" />
+            </div>
           </div>
-          <div id="cost-estimate-lines"></div>
+        </div>
+
+        <!-- Collapsible: Advanced options -->
+        <div class="collapse-section">
+          <button class="collapse-toggle" type="button" onclick="toggleCollapse('collapse-adv', this)">
+            <svg class="collapse-toggle__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+            完整体检与高级选项
+          </button>
+          <div class="collapse-panel" id="collapse-adv">
+            <div class="form-field form-field--compact">
+              <label class="form-label">模型预期档位 <span class="form-label-opt">（可选）</span></label>
+              <div class="tier-toggle">
+                <button class="tier-btn active" data-tier="uncertain" onclick="Doctor.setTier('uncertain')">不确定</button>
+                <button class="tier-btn" data-tier="light" onclick="Doctor.setTier('light')">轻量</button>
+                <button class="tier-btn" data-tier="standard" onclick="Doctor.setTier('standard')">标准</button>
+                <button class="tier-btn" data-tier="advanced" onclick="Doctor.setTier('advanced')">高级</button>
+              </div>
+              <input type="hidden" id="doctor-tier" value="uncertain" />
+            </div>
+
+            <div class="advanced-check-row">
+              <label class="advanced-check">
+                <input type="checkbox" id="cache-test-toggle" onchange="Doctor.toggleCache(this)" />
+                <span>缓存命中检测</span>
+                <span class="form-hint" style="margin:0">发送两次较长请求，可能消耗少量额度。</span>
+              </label>
+            </div>
+
+            <div class="advanced-check-row">
+              <label class="advanced-check">
+                <input type="checkbox" id="sanity-test-toggle" onchange="Doctor.toggleSanity(this)" />
+                <span>模型表现检测</span>
+                <span class="form-hint" style="margin:0">额外 5 个轻量测试，检查降智或能力异常。</span>
+              </label>
+            </div>
+
+            <div class="advanced-check-row">
+              <label class="advanced-check">
+                <input type="checkbox" id="price-test-toggle" onchange="Doctor.togglePrice(this)" />
+                <span>价格核对</span>
+              </label>
+              <div class="price-row-4" style="margin-top:8px">
+                <div>
+                  <div class="form-label" style="font-size:11px">input / 1M</div>
+                  <input id="price-input" class="form-input" placeholder="0.5" type="number" step="0.001" />
+                </div>
+                <div>
+                  <div class="form-label" style="font-size:11px">output / 1M</div>
+                  <input id="price-output" class="form-input" placeholder="1.5" type="number" step="0.001" />
+                </div>
+                <div>
+                  <div class="form-label" style="font-size:11px">cached read / 1M</div>
+                  <input id="price-cached-read" class="form-input" placeholder="默认" type="number" step="0.001" />
+                </div>
+                <div>
+                  <div class="form-label" style="font-size:11px">actual cost</div>
+                  <input id="price-actual" class="form-input" placeholder="USD" type="number" step="0.000001" />
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Actions -->
         <div class="tool-actions">
           <button id="doctor-run-btn" class="btn btn--primary btn--run" onclick="Doctor.run()">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-            开始快速检测
+            开始验货
           </button>
           <button id="doctor-clear-btn" class="btn btn--secondary" onclick="Doctor.clear()">清空</button>
         </div>
@@ -320,6 +326,10 @@
           <button class="btn btn--secondary" onclick="ManualReport.clear()">清空</button>
         </div>
 
+        <div style="margin-top:12px">
+          <button class="btn btn--link btn--sm" type="button" onclick="switchTab('local')">返回自动检测</button>
+        </div>
+
       </div><!-- /panel-manual -->
 
       <!-- Progress -->
@@ -362,38 +372,42 @@
 <script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.min.js"></script>
 <script src="/assets/test.js"></script>
 <script>
+/* ── Collapse toggle ── */
+function toggleCollapse(id, btn) {
+  const panel = document.getElementById(id);
+  if (!panel) return;
+  const open = panel.classList.toggle('open');
+  if (btn) btn.classList.toggle('open', open);
+}
+
 /* ── Tab switcher ── */
 function switchTab(tab) {
-  document.getElementById('tab-local').classList.toggle('active', tab === 'local');
-  document.getElementById('tab-manual').classList.toggle('active', tab === 'manual');
+  document.getElementById('tab-local') && document.getElementById('tab-local').classList.toggle('active', tab === 'local');
+  document.getElementById('tab-manual') && document.getElementById('tab-manual').classList.toggle('active', tab === 'manual');
   document.getElementById('panel-local').style.display = tab === 'local' ? 'block' : 'none';
   document.getElementById('panel-manual').style.display = tab === 'manual' ? 'block' : 'none';
 }
 
-/* ── Cost estimation ── */
-function updateCostEstimate() {
+/* ── Cost hint (inline) ── */
+function updateCostHint() {
+  const hint = document.getElementById('cost-hint');
+  if (!hint) return;
   const mode = window.Doctor ? window.Doctor._mode : 'quick';
   const cacheEnabled = document.getElementById('cache-test-toggle')?.checked || false;
-  const priceEnabled = document.getElementById('price-test-toggle')?.checked || false;
   const sanityEnabled = document.getElementById('sanity-test-toggle')?.checked || false;
 
-  const card = document.getElementById('cost-estimate-card');
-  const lines = document.getElementById('cost-estimate-lines');
-  if (!card || !lines) return;
-
-  const cfg = window.DETECTION_MODES ? window.DETECTION_MODES[mode] : null;
-  const items = [];
-  if (cfg) { items.push({ text: cfg.desc, type: 'base' }); }
-  else { items.push({ text: '基础模型联通：预计请求 1 次，消耗极低', type: 'base' }); }
-  if (cacheEnabled) { items.push({ text: '缓存命中检测：额外 2 次请求，可能消耗少量额度', type: 'warn' }); }
-  if (sanityEnabled) { items.push({ text: '模型表现检测：额外 5 次请求，可能消耗少量额度', type: 'warn' }); }
-
-  lines.innerHTML = items.map(item => `
-    <div class="cost-line">
-      <span class="cost-dot cost-dot--${item.type}"></span>
-      <span>${item.text}</span>
-    </div>`).join('');
-  card.style.display = 'block';
+  if (mode === 'quick') {
+    if (cacheEnabled) {
+      hint.textContent = '快速验货：预计 3 次请求，缓存命中检测可能消耗少量额度';
+    } else {
+      hint.textContent = '快速验货：预计 1 次请求，消耗极低';
+    }
+  } else {
+    let text = '完整验货：预计 3–6 次请求，可能产生少量成本';
+    if (cacheEnabled) text += ' · 含缓存检测';
+    if (sanityEnabled) text += ' · 含模型检测';
+    hint.textContent = text;
+  }
 }
 
 /* ── Manual Report ── */
@@ -437,7 +451,7 @@ window.ManualReport = {
           <div class="report-cell"><div class="report-cell__label">completion</div><div class="report-cell__value mono">${ct||'—'}</div></div>
           <div class="report-cell"><div class="report-cell__label">total</div><div class="report-cell__value mono">${tt||'—'}</div></div>
         </div>
-        <div class="report-card__footer">本报告不包含 API Key，只展示本次可复现信号，不证明服务商故意多扣费。</div>
+        <div class="report-card__footer">本报告只展示本次测试中的可复现信号，不证明服务商主观故意，也不构成法律结论。</div>
       </div>`;
   },
   clear() {
@@ -460,7 +474,9 @@ function esc(str) {
 /* ── Init ── */
 document.addEventListener('DOMContentLoaded', () => {
   if (window.Doctor) { window.Doctor.init(); window.Doctor.setMode('quick'); }
-  updateCostEstimate();
+  updateCostHint();
+  /* updateCostEstimate kept for test.js compatibility */
+  if (typeof updateCostEstimate === 'function') updateCostEstimate();
 });
 </script>
 
