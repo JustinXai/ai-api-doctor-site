@@ -2393,6 +2393,7 @@ window.Doctor = {
     const zh = lang !== 'en';
 
     if (!baseUrl) { showToast(zh ? '请填写 Base URL' : 'Please fill in Base URL'); return; }
+    if (!apiKey) { showToast(zh ? '请填写 API Key' : 'Please fill in API Key'); return; }
     if (!model) { showToast(zh ? '请填写 Model ID' : 'Please fill in Model ID'); return; }
 
     saveConfigToStorage({ baseUrl, providerName, model, interfaceType });
@@ -2425,6 +2426,10 @@ window.Doctor = {
 
     this._formData = { baseUrl, apiKey, model, interfaceType, providerName };
 
+    const btnLabelReset = isQuick
+      ? (zh ? '开始验货' : 'Start Check')
+      : (zh ? '开始完整验货' : 'Start Full Check');
+
     try {
       const timeout = setTimeout(() => {
         this._controller.abort();
@@ -2449,17 +2454,18 @@ window.Doctor = {
     } catch (err) {
       if (err.name === 'AbortError') {
         showToast(zh ? '检测超时（90秒），请重试或使用 Chrome 插件' : 'Diagnosis timed out (90s). Please retry or use Chrome extension.');
+      } else {
+        console.error('[API Doctor run error]', err?.message || err);
+        showToast(zh ? `验货失败：${err?.message || '未知错误'}` : `Check failed: ${err?.message || 'Unknown error'}`);
       }
+    } finally {
+      // Always re-enable buttons regardless of outcome
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> ${btnLabelReset}`;
+      }
+      if (clearBtn) clearBtn.disabled = false;
     }
-
-    const btnLabelReset = isQuick
-      ? (zh ? '开始验货' : 'Start Check')
-      : (zh ? '开始完整验货' : 'Start Full Check');
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> ${btnLabelReset}`;
-    }
-    if (clearBtn) clearBtn.disabled = false;
 
     if (this._result) {
       this.showProgress('done');
@@ -2601,3 +2607,183 @@ window.Doctor = {
     }
   }
 };
+
+/* ═══════════════════════════════════════════════════════
+   Helpers — debounce, parse feedback
+   ═══════════════════════════════════════════════════════ */
+function debounce(fn, delay) {
+  let timer;
+  return function (...args) {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn.apply(this, args), delay);
+  };
+}
+
+function showParseResult(result, textarea) {
+  if (!textarea) textarea = document.getElementById('doctor-conn-info');
+  if (!textarea) return;
+  // Remove old feedback
+  const old = textarea.parentElement.querySelector('.parse-feedback');
+  if (old) old.remove();
+  const lang = getDocLang();
+  const zh = lang !== 'en';
+
+  const div = document.createElement('div');
+  div.className = 'parse-feedback';
+  if (result.success) {
+    div.style.cssText = 'margin-top:6px;font-size:12px;color:#16a34a;font-weight:500;';
+    div.textContent = zh
+      ? '已解析：Base URL 和 API Key 已填入，请确认模型 ID。'
+      : 'Parsed: Base URL and API Key filled. Please verify Model ID.';
+  } else {
+    div.style.cssText = 'margin-top:6px;font-size:12px;color:#b45309;font-weight:400;';
+    div.textContent = zh
+      ? '未识别连接信息，请手动填写 Base URL 和 API Key。'
+      : 'Unrecognized. Please fill in Base URL and API Key manually.';
+  }
+  textarea.parentElement.appendChild(div);
+  // Auto-hide success after 5s
+  if (result.success) {
+    setTimeout(() => { if (div.parentElement) div.remove(); }, 5000);
+  }
+}
+
+function tryParseConnectionInfo() {
+  const textarea = document.getElementById('doctor-conn-info');
+  if (!textarea) return;
+  const raw = textarea.value;
+  if (!raw.trim()) return;
+
+  const result = parseConnectionInfo(raw);
+  const success = !!(result.baseUrl || result.apiKey);
+
+  if (result.baseUrl) {
+    const urlEl = document.getElementById('doctor-base-url');
+    if (urlEl) {
+      // Auto-add /v1 if missing
+      let url = result.baseUrl;
+      if (!url.endsWith('/v1')) url = url + '/v1';
+      urlEl.value = url;
+    }
+  }
+  if (result.apiKey) {
+    const keyEl = document.getElementById('doctor-api-key');
+    if (keyEl) keyEl.value = result.apiKey;
+  }
+  if (result.model) {
+    const modelEl = document.getElementById('doctor-model');
+    if (modelEl) modelEl.value = result.model;
+  }
+
+  showParseResult({ success }, textarea);
+}
+
+function bindConnectionParser() {
+  const input = document.getElementById('doctor-conn-info');
+  if (!input) return;
+  const parse = debounce(() => {
+    const result = parseConnectionInfo(input.value);
+    const success = !!(result.baseUrl || result.apiKey);
+    if (result.baseUrl) {
+      const urlEl = document.getElementById('doctor-base-url');
+      if (urlEl && !urlEl.value) {
+        let url = result.baseUrl;
+        if (!url.endsWith('/v1')) url = url + '/v1';
+        urlEl.value = url;
+      }
+    }
+    if (result.apiKey) {
+      const keyEl = document.getElementById('doctor-api-key');
+      if (keyEl && !keyEl.value) keyEl.value = result.apiKey;
+    }
+    if (result.model) {
+      const modelEl = document.getElementById('doctor-model');
+      if (modelEl && !modelEl.value) modelEl.value = result.model;
+    }
+  }, 300);
+  input.addEventListener('input', parse);
+  input.addEventListener('change', parse);
+  input.addEventListener('paste', () => setTimeout(parse, 0));
+}
+
+/* ═══════════════════════════════════════════════════════
+   data-action delegation — stable click binding
+   ═══════════════════════════════════════════════════════ */
+function bindDoctorEvents() {
+  document.addEventListener('click', (event) => {
+    const target = event.target.closest('[data-action]');
+    if (!target) return;
+    const action = target.dataset.action;
+    const lang = getDocLang();
+    const zh = lang !== 'en';
+
+    try {
+      switch (action) {
+        case 'run-check':
+          event.preventDefault();
+          Doctor.run();
+          break;
+        case 'clear-form':
+          event.preventDefault();
+          Doctor.clear();
+          break;
+        case 'set-full-check':
+          event.preventDefault();
+          Doctor.setMode('full');
+          break;
+        case 'set-quick-check':
+          event.preventDefault();
+          Doctor.setMode('quick');
+          break;
+        case 'fetch-models':
+          event.preventDefault();
+          Doctor.readModelList();
+          break;
+        case 'parse-connection':
+          event.preventDefault();
+          tryParseConnectionInfo();
+          break;
+        case 'show-manual-report':
+          event.preventDefault();
+          if (typeof switchTab === 'function') switchTab('manual');
+          break;
+        case 'show-auto-check':
+          event.preventDefault();
+          if (typeof switchTab === 'function') switchTab('local');
+          break;
+      }
+    } catch (err) {
+      console.error('[API Doctor action failed]', action, err?.message || err);
+      if (typeof showToast === 'function') {
+        showToast(zh ? `操作失败：${err?.message || '未知错误'}` : `Action failed: ${err?.message || 'Unknown error'}`);
+      }
+    }
+  });
+}
+
+/* ═══════════════════════════════════════════════════════
+   Safe init — handles script timing edge cases
+   ═══════════════════════════════════════════════════════ */
+function showSafeInitError(err) {
+  // Graceful degradation — don't throw, just log
+  console.warn('[API Doctor init degraded]', err?.message || err);
+}
+
+function initDoctor() {
+  try {
+    bindDoctorEvents();
+    bindConnectionParser();
+    if (typeof updateCostHint === 'function') updateCostHint();
+  } catch (err) {
+    console.error('[API Doctor init failed]', err?.message || err);
+    showSafeInitError(err);
+  }
+}
+
+// Call initDoctor when DOM is ready, with document.readyState guard
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initDoctor);
+} else {
+  // DOM already loaded (e.g. defer script or cached page)
+  initDoctor();
+}

@@ -11,6 +11,7 @@
   <link rel="alternate" hreflang="en" href="https://aiapidoctor.com/en/" />
   <link rel="alternate" hreflang="x-default" href="https://aiapidoctor.com/" />
   <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" href="/assets/icons/icon-128.png">
   <link rel="stylesheet" href="/assets/site.css" />
   <meta property="og:type" content="website" />
   <meta property="og:title" content="AI API Doctor: Relay API Black-box Check Tool" />
@@ -92,7 +93,7 @@
       <!-- Card Header -->
       <div class="doctor-card__header">
         <span class="doctor-card__title">Start Diagnosis</span>
-        <button class="btn btn--link btn--sm" type="button" id="btn-show-manual" onclick="switchTab('manual')">Manual Report</button>
+        <button class="btn btn--link btn--sm" type="button" id="btn-show-manual" data-action="show-manual-report" onclick="switchTab('manual')">Manual Report</button>
       </div>
 
       <!-- ── LOCAL TEST ── -->
@@ -128,7 +129,7 @@
           <label class="form-label">Model ID</label>
           <div class="input-with-btn">
             <input id="doctor-model" class="form-input" placeholder="gpt-4o" />
-            <button class="btn btn--sm btn--secondary" type="button" id="read-models-btn" onclick="Doctor.readModelList()">Fetch Models</button>
+            <button class="btn btn--sm btn--secondary" type="button" id="read-models-btn" data-action="fetch-models" onclick="Doctor.readModelList()">Fetch Models</button>
           </div>
           <div class="form-hint">Don't know the model ID? Try "Fetch Models" first.</div>
           <div id="model-fetch-results" style="display:none"></div>
@@ -148,8 +149,8 @@
         <!-- Mode + Cost line -->
         <div class="mode-cost-row">
           <div class="mode-selector">
-            <button class="mode-btn active" data-mode="quick" onclick="Doctor.setMode('quick')">Quick Check</button>
-            <button class="mode-btn" data-mode="full" onclick="Doctor.setMode('full')">Full Check</button>
+            <button class="mode-btn active" data-mode="quick" data-action="set-quick-check" onclick="Doctor.setMode('quick')">Quick Check</button>
+            <button class="mode-btn" data-mode="full" data-action="set-full-check" onclick="Doctor.setMode('full')">Full Check</button>
           </div>
           <div class="cost-hint" id="cost-hint">
             Quick Check: about 1 request, very low cost
@@ -171,7 +172,10 @@
                 rows="2"
                 oninput="Doctor.onConnectionInfoInput(this)"
               ></textarea>
-              <div class="form-hint">Auto-parses JSON, cURL, and ENV formats. Verify the fields below after parsing.</div>
+              <button type="button" class="btn btn--secondary btn--sm" data-action="parse-connection" style="margin-top:6px;width:100%;box-sizing:border-box">
+                Parse &amp; Fill
+              </button>
+              <div class="form-hint">Auto-parses on paste. Click above button to re-parse manually.</div>
             </div>
           </div>
         </div>
@@ -253,11 +257,11 @@
 
         <!-- Actions -->
         <div class="tool-actions">
-          <button id="doctor-run-btn" class="btn btn--primary btn--run" onclick="Doctor.run()">
+          <button id="doctor-run-btn" class="btn btn--primary btn--run" data-action="run-check" onclick="Doctor.run()">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
             Start Check
           </button>
-          <button id="doctor-clear-btn" class="btn btn--secondary" onclick="Doctor.clear()">Clear</button>
+          <button id="doctor-clear-btn" class="btn btn--secondary" data-action="clear-form" onclick="Doctor.clear()">Clear</button>
         </div>
 
       </div><!-- /panel-local -->
@@ -327,7 +331,7 @@
         </div>
 
         <div style="margin-top:12px">
-          <button class="btn btn--link btn--sm" type="button" onclick="switchTab('local')">Back to Auto Test</button>
+          <button class="btn btn--link btn--sm" type="button" data-action="show-auto-check" onclick="switchTab('local')">Back to Auto Test</button>
         </div>
 
       </div><!-- /panel-manual -->
@@ -471,12 +475,20 @@ function esc(str) {
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-/* ── Init ── */
-document.addEventListener('DOMContentLoaded', () => {
-  if (window.Doctor) { window.Doctor.init(); window.Doctor.setMode('quick'); }
-  updateCostHint();
-  if (typeof updateCostEstimate === 'function') updateCostEstimate();
-});
+/* ── Init (safe) ── */
+function safeInit() {
+  if (window.Doctor) {
+    window.Doctor.init();
+    window.Doctor.setMode('quick');
+  }
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', safeInit);
+} else {
+  safeInit();
+}
+if (typeof updateCostHint === 'function') updateCostHint();
+if (typeof updateCostEstimate === 'function') updateCostEstimate();
 </script>
 
 </body>
