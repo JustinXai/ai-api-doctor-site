@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AI API 空回复扣费和失败请求扣费怎么检测？｜AI API Doctor</title>
-  <meta name="description" content="解释 New API / One API 中转站中的预扣费、raw quota、失败请求扣费、空回复扣费，以及如何用 AI API Doctor 生成检测报告。" />
+  <title>AI API 空回复扣费和失败请求扣费怎么验货？｜AI API Doctor</title>
+  <meta name="description" content="解释 New API / One API 中转站中的预扣费、raw quota、失败请求扣费、空回复扣费，以及如何用 AI API Doctor 生成中转站黑盒验货报告。" />
   <meta name="robots" content="index, follow" />
   <link rel="canonical" href="https://aiapidoctor.com/guides/billing-anomaly/" />
   <link rel="alternate" hreflang="zh-CN" href="https://aiapidoctor.com/guides/billing-anomaly/" />
@@ -15,8 +15,8 @@
 
   <!-- Open Graph -->
   <meta property="og:type" content="article" />
-  <meta property="og:title" content="AI API 空回复扣费和失败请求扣费怎么检测？｜AI API Doctor" />
-  <meta property="og:description" content="解释 New API / One API 中转站中的预扣费、raw quota、失败请求扣费、空回复扣费，以及如何用 AI API Doctor 生成检测报告。" />
+    <meta property="og:title" content="AI API 空回复扣费和失败请求扣费怎么验货？｜AI API Doctor" />
+    <meta property="og:description" content="解释 New API / One API 中转站中的预扣费、raw quota、失败请求扣费、空回复扣费，以及如何用 AI API Doctor 生成中转站黑盒验货报告。" />
   <meta property="og:url" content="https://aiapidoctor.com/guides/billing-anomaly/" />
 
   <!-- JSON-LD: Article + HowTo + FAQPage -->
@@ -24,8 +24,8 @@
   {
     "@context": "https://schema.org",
     "@type": ["Article", "HowTo"],
-    "headline": "AI API 空回复扣费和失败请求扣费怎么检测？",
-    "description": "解释 New API / One API 中转站中的预扣费、raw quota、失败请求扣费、空回复扣费，以及如何用 AI API Doctor 生成检测报告。",
+    "headline": "AI API 空回复扣费和失败请求扣费怎么验货？",
+    "description": "解释 New API / One API 中转站中的预扣费、raw quota、失败请求扣费、空回复扣费，以及如何用 AI API Doctor 生成中转站黑盒验货报告。",
     "author": { "@type": "Organization", "name": "AI API Doctor" },
     "datePublished": "2026-05-13",
     "dateModified": "2026-05-13",
@@ -77,7 +77,7 @@
 <!-- Hero -->
 <section class="hero" style="padding:56px 0 48px">
   <div class="container">
-    <h1 class="hero__title" style="font-size:clamp(22px,4vw,34px)">AI API 空回复扣费和失败请求扣费怎么检测？</h1>
+    <h1 class="hero__title" style="font-size:clamp(22px,4vw,34px)">AI API 空回复扣费和失败请求扣费怎么验货？</h1>
     <p class="hero__sub" style="font-size:15px">
       可以通过读取 New API / One API 的 raw quota，在请求前、请求后 3 秒、请求后 10 秒分别记录原始额度，再对比失败请求或空回复是否导致最终额度减少。
     </p>

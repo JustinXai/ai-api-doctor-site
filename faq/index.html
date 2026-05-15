@@ -29,7 +29,7 @@
         "name": "AI API Doctor 是什么？",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "AI API Doctor 是一个面向 OpenAI-compatible API 用户的本地优先诊断工具。它可以帮助你检查 API Key、Base URL、模型权限、分组配置、模型列表接口、对话接口、Token 用量返回和客户端配置是否正常。适合 API Key 明明填了但客户端无法使用、Base URL 不确定是否正确、报错 401/403/404/429 等场景。AI API Doctor 不是模型真假鉴定工具，也不是法律意义上的审计工具。"
+          "text": "AI API Doctor 是一个面向 OpenAI-compatible API 用户的本地优先中转站黑盒验货工具。别信面板，先验货。帮助检查 API Key、Base URL、模型权限、分组配置、模型列表接口、对话接口、Token 用量返回和客户端配置是否正常。生成 A/B/C/D/F/U 档验货分，适合 API Key 明明填了但客户端无法使用、Base URL 不确定是否正确、报错 401/403/404/429、空跑和 usage 消失等场景。AI API Doctor 不是模型真假鉴定工具，也不是法律意义上的审计工具。"
         }
       },
       {
@@ -45,7 +45,7 @@
         "name": "诊断会消耗 API 额度吗？",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "会。AI API Doctor 会发送少量真实 API 请求来确认 Base URL、API Key、模型权限和 chat/completions 是否正常。基础诊断通常只需要 1 到 3 次请求，消耗较少。为了安全，建议使用测试专用 Key、设置较低额度、不要使用生产主 Key，诊断后对比服务商后台账单。"
+          "text": "会。AI API Doctor 会发送少量真实 API 请求来确认 Base URL、API Key、模型权限和 chat/completions 是否正常。基础快速验货通常只需要 1 次请求，完整验货约 3–6 次，消耗较少。为了安全，建议使用测试专用 Key、设置较低额度、不要使用生产主 Key，验货后对比服务商后台账单。"
         }
       },
       {
@@ -69,7 +69,7 @@
         "name": "AI API Doctor 能判断服务商是否多扣费吗？",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "AI API Doctor 可以帮助你核对本次请求的 usage 信息，但不能证明某个服务商故意多扣费。它能检查响应里是否返回 usage 字段、prompt_tokens/completion_tokens/total_tokens 是否存在、total_tokens 是否异常偏高、短期请求是否出现明显异常的 token 消耗。但最终余额、扣费和账单由服务商后台控制。如果你怀疑消耗异常，建议使用短 prompt 测试、记录诊断报告、对比服务商后台余额变化、联系站长或客服核对。"
+          "text": "AI API Doctor 可以帮助你核对本次请求的 usage 信息，但不能证明某个服务商故意多扣费。它能检查响应里是否返回 usage 字段、prompt_tokens/completion_tokens/total_tokens 是否存在、total_tokens 是否异常偏高、短期请求是否出现明显异常的 token 消耗。但最终余额、扣费和账单由服务商后台控制。如果你怀疑消耗异常，建议使用短 prompt 测试、记录验货报告、对比服务商后台余额变化、联系站长或客服核对。"
         }
       },
       {
@@ -77,7 +77,7 @@
         "name": "为什么 /v1/models 失败，但 API 仍然可能可用？",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "部分中转站并不开放 /v1/models，或者模型列表接口不完全兼容 OpenAI 标准格式。所以 /v1/models 失败不一定代表 API 不可用。你可以手动输入模型 ID（如 gpt-4o、deepseek-chat、claude-3-5-sonnet）然后运行 chat/completions 诊断。真正有参考价值的是：指定模型能否完成真实请求。"
+          "text": "部分中转站并不开放 /v1/models，或者模型列表接口不完全兼容 OpenAI 标准格式。所以 /v1/models 失败不一定代表 API 不可用。你可以手动输入模型 ID（如 gpt-4o、deepseek-chat、claude-3-5-sonnet）然后运行快速验货。真正有参考价值的是：指定模型能否完成真实请求，并返回有效输出和 usage。"
         }
       },
       {
@@ -705,7 +705,7 @@
             <li>检测缓存是否正常计费</li>
             <li>检测模型表现是否正常</li>
           </ul>
-          <p>目标不是给任何站点定罪，而是把扣费、usage、缓存和模型表现变成一张可复现的体检报告。</p>
+          <p>目标不是给任何站点定罪，而是把扣费、usage、缓存和模型表现变成一张可复现的验货单。</p>
         </div>
       </div>
     </div>
@@ -830,7 +830,7 @@
         <div class="faq-answer-inner">
           <p><strong>网页版：</strong></p>
           <ul>
-            <li>适合快速检测</li>
+            <li>适合快速验货</li>
             <li>不需要输入 API Key 在网站上</li>
             <li>支持手动报告模式，可填写 raw quota 数据生成报告</li>
             <li>适合手机分享和客服沟通</li>
@@ -1400,7 +1400,7 @@
         <div class="faq-answer-inner">
           <p>它是一个轻量的模型表现测试，包含指令遵守、基础推理、数字陷阱、代码理解和上下文保持。</p>
           <p>它不是官方 IQ，也不能证明模型真假，只用于发现明显降智或能力异常。</p>
-          <p>开启方式：在体检台高级设置中勾选"加测模型智商 / 降智检测"。</p>
+          <p>开启方式：在验货台高级设置中勾选"加测模型智商 / 降智检测"。</p>
         </div>
       </div>
     </div>
@@ -1428,7 +1428,7 @@
         <div class="faq-answer-inner">
           <p>不需要。</p>
           <p>AI API Doctor 是中立工具，不要求你公开服务商名称，也不推荐或排名任何中转站。</p>
-          <p>晒分时只需要报告体检分、模型表现分和一句话发现，不需要透露任何关于服务商的信息。</p>
+          <p>晒分时只需要报告验货分、模型表现分和一句话发现，不需要透露任何关于服务商的信息。</p>
         </div>
       </div>
     </div>
@@ -1442,7 +1442,7 @@
         <div class="faq-answer-inner">
           <p>不是。</p>
           <p>你可以只使用网页版，不需要安装插件，不需要给 Chrome 商店好评，也不需要强制在社交媒体分享。</p>
-          <p>只需要在需要时生成体检报告，有需要时贴出一行晒分即可。</p>
+          <p>只需要在需要时生成中转站验货单，有需要时贴出一行晒分即可。</p>
         </div>
       </div>
     </div>

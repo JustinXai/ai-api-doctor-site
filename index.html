@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AI API Doctor：AI API 扣费异常检测工具</title>
-  <meta name="description" content="检测 AI API 联通、usage 完整性、缓存异常和模型表现，生成可分享的 AI API 体检报告。API Key 本地使用，不推荐任何中转站。" />
+  <title>AI API Doctorï¼AI API æ£è´¹å¼å¸¸æ£æµå·¥å?/title>
+  <meta name="description" content="æ£æµ?AI API èéãusage å®æ´æ§ãç¼å­å¼å¸¸åæ¨¡åè¡¨ç°ï¼çæå¯åäº«ç?AI API ä½æ£æ¥åãAPI Key æ¬å°ä½¿ç¨ï¼ä¸æ¨èä»»ä½ä¸­è½¬ç«ã? />
   <meta name="robots" content="index, follow" />
   <link rel="canonical" href="https://aiapidoctor.com/" />
   <link rel="alternate" hreflang="zh-CN" href="https://aiapidoctor.com/" />
@@ -13,8 +13,8 @@
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="stylesheet" href="/assets/site.css" />
   <meta property="og:type" content="website" />
-  <meta property="og:title" content="AI API Doctor：AI API 扣费异常检测工具" />
-  <meta property="og:description" content="检测 AI API 联通、usage 完整性、缓存异常和模型表现，生成可分享的 AI API 体检报告。" />
+  <meta property="og:title" content="AI API Doctorï¼AI API æ£è´¹å¼å¸¸æ£æµå·¥å? />
+  <meta property="og:description" content="æ£æµ?AI API èéãusage å®æ´æ§ãç¼å­å¼å¸¸åæ¨¡åè¡¨ç°ï¼çæå¯åäº«ç?AI API ä½æ£æ¥åã? />
   <meta property="og:url" content="https://aiapidoctor.com/" />
   <meta property="og:locale" content="zh_CN" />
   <script type="application/ld+json">
@@ -43,17 +43,17 @@
       </div>
       AI API Doctor
     </a>
-    <button class="nav-toggle" aria-label="菜单" onclick="document.querySelector('.site-nav').classList.toggle('open')">
+    <button class="nav-toggle" aria-label="èå" onclick="document.querySelector('.site-nav').classList.toggle('open')">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
     </button>
     <nav class="site-nav">
-      <a href="/#doctor">体检台</a>
+      <a href="/#doctor">ä½æ£å?/a>
       <a href="/faq/">FAQ</a>
-      <a href="/guides/billing-anomaly/">检测原理</a>
-      <a href="/privacy/">隐私</a>
-      <a href="/support/">支持</a>
+      <a href="/guides/billing-anomaly/">æ£æµåç?/a>
+      <a href="/privacy/">éç§</a>
+      <a href="/support/">æ¯æ</a>
       <span class="lang-switcher">
-        <span class="lang-switcher__current">中文</span>
+        <span class="lang-switcher__current">ä¸­æ</span>
         <span class="lang-switcher__sep">|</span>
         <a href="/en/" class="lang-switcher__link">English</a>
       </span>
@@ -67,20 +67,20 @@
   <!-- Hero -->
   <section class="tool-hero">
     <h1>API Doctor</h1>
-    <p class="tool-hero__tagline">AI API 黑盒验货</p>
-    <p>HTTP 200 不等于能用。测空跑、usage 消失、缓存吃亏和模型缩水，生成一张可晒的 API 验货分。</p>
+    <p class="tool-hero__tagline">ä¸­è½¬ç«é»çéªè´?/p>
+    <p>å«ä¿¡é¢æ¿ï¼åéªè´§ãæµç©ºè·ãusage æ¶å¤±ãç¼å­åäºåæ¨¡åç¼©æ°´ï¼çæä¸å¼ å¯æçä¸­è½¬ç«éªè´§åã?/p>
     <div class="hero-badges">
       <span class="hero-badge hero-badge--green">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-        API Key 本地使用
+        API Key æ¬å°ä½¿ç¨
       </span>
       <span class="hero-badge hero-badge--neutral">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
-        不推荐任何中转站
+        ä¸æ¨èä»»ä½ä¸­è½¬ç«
       </span>
       <span class="hero-badge">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
-        报告自动脱敏
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        ç»æå¯æå?
       </span>
     </div>
   </section>
@@ -91,11 +91,11 @@
 
       <!-- Card Header -->
       <div class="doctor-card__header">
-        <span class="doctor-card__title">开始体检</span>
-        <button class="btn btn--link btn--sm" type="button" id="btn-show-manual" onclick="switchTab('manual')">手动生成报告</button>
+        <span class="doctor-card__title">å¼å§ä½æ£</span>
+        <button class="btn btn--link btn--sm" type="button" id="btn-show-manual" onclick="switchTab('manual')">æå¨çææ¥å</button>
       </div>
 
-      <!-- ── LOCAL TEST ── -->
+      <!-- ââ LOCAL TEST ââ -->
       <div id="panel-local">
 
         <!-- Base URL -->
@@ -107,7 +107,7 @@
             placeholder="https://api.example.com/v1"
             oninput="Doctor.normalizeBaseUrl(this)"
           />
-          <div class="form-hint" id="base-url-hint" style="display:none;color:var(--warning)">Base URL 末尾缺少 <code>/v1</code>，已自动修正。</div>
+          <div class="form-hint" id="base-url-hint" style="display:none;color:var(--warning)">Base URL æ«å°¾ç¼ºå° <code>/v1</code>ï¼å·²èªå¨ä¿®æ­£ã?/div>
         </div>
 
         <!-- API Key -->
@@ -120,7 +120,7 @@
             placeholder="sk-..."
             autocomplete="off"
           />
-          <div class="form-hint">API Key 仅在当前浏览器内使用，不会上传到 AI API Doctor。</div>
+          <div class="form-hint">API Key ä»å¨å½åæµè§å¨åä½¿ç¨ï¼ä¸ä¼ä¸ä¼ å° AI API Doctorã?/div>
         </div>
 
         <!-- Model ID -->
@@ -128,15 +128,15 @@
           <label class="form-label">Model ID</label>
           <div class="input-with-btn">
             <input id="doctor-model" class="form-input" placeholder="gpt-4o" />
-            <button class="btn btn--sm btn--secondary" type="button" id="read-models-btn" onclick="Doctor.readModelList()">自动读取模型</button>
+            <button class="btn btn--sm btn--secondary" type="button" id="read-models-btn" onclick="Doctor.readModelList()">èªå¨è¯»åæ¨¡å</button>
           </div>
-          <div class="form-hint">不知道模型 ID？可以先点「自动读取模型」。</div>
+          <div class="form-hint">ä¸ç¥éæ¨¡å?IDï¼å¯ä»¥åç¹ãèªå¨è¯»åæ¨¡åãã?/div>
           <div id="model-fetch-results" style="display:none"></div>
         </div>
 
         <!-- Interface -->
         <div class="form-field">
-          <label class="form-label">接口类型</label>
+          <label class="form-label">æ¥å£ç±»å</label>
           <div class="interface-toggle">
             <button class="interface-btn active" data-type="OpenAI Chat" onclick="Doctor.setInterface('OpenAI Chat')">OpenAI Chat</button>
             <button class="interface-btn" data-type="OpenAI Responses" onclick="Doctor.setInterface('OpenAI Responses')">OpenAI Responses</button>
@@ -148,11 +148,11 @@
         <!-- Mode + Cost line -->
         <div class="mode-cost-row">
           <div class="mode-selector">
-            <button class="mode-btn active" data-mode="quick" onclick="Doctor.setMode('quick')">快速检测</button>
-            <button class="mode-btn" data-mode="full" onclick="Doctor.setMode('full')">完整体检</button>
+            <button class="mode-btn active" data-mode="quick" onclick="Doctor.setMode('quick')">å¿«ééªè´?/button>
+            <button class="mode-btn" data-mode="full" onclick="Doctor.setMode('full')">å®æ´éªè´§</button>
           </div>
           <div class="cost-hint" id="cost-hint">
-            快速验货：预计 1 次请求，消耗极低
+            å¿«ééªè´§ï¼é¢è®¡ 1 æ¬¡è¯·æ±ï¼æ¶èæä½?
           </div>
         </div>
 
@@ -160,18 +160,18 @@
         <div class="collapse-section">
           <button class="collapse-toggle" type="button" onclick="toggleCollapse('collapse-conn', this)">
             <svg class="collapse-toggle__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-            粘贴连接信息 / cURL / ENV
+            ç²è´´è¿æ¥ä¿¡æ¯ / cURL / ENV
           </button>
           <div class="collapse-panel" id="collapse-conn">
             <div class="form-field form-field--compact">
               <textarea
                 id="doctor-conn-info"
                 class="form-textarea"
-                placeholder="支持 New API 连接信息、Base URL、API Key 或 cURL"
+                placeholder="æ¯æ New API è¿æ¥ä¿¡æ¯ãBase URLãAPI Key æ?cURL"
                 rows="2"
                 oninput="Doctor.onConnectionInfoInput(this)"
               ></textarea>
-              <div class="form-hint">自动解析 JSON、cURL、ENV 格式，解析后请检查下方字段。</div>
+              <div class="form-hint">èªå¨è§£æ JSONãcURLãENV æ ¼å¼ï¼è§£æåè¯·æ£æ¥ä¸æ¹å­æ®µã?/div>
             </div>
           </div>
         </div>
@@ -180,12 +180,12 @@
         <div class="collapse-section">
           <button class="collapse-toggle" type="button" onclick="toggleCollapse('collapse-report', this)">
             <svg class="collapse-toggle__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-            报告显示选项
+            æ¥åæ¾ç¤ºéé¡¹
           </button>
           <div class="collapse-panel" id="collapse-report">
             <div class="form-field form-field--compact">
-              <label class="form-label">服务商名称 <span class="form-label-opt">（可选）</span></label>
-              <input id="doctor-provider" class="form-input" placeholder="服务商名称" />
+              <label class="form-label">æå¡ååç§?<span class="form-label-opt">ï¼å¯éï¼</span></label>
+              <input id="doctor-provider" class="form-input" placeholder="æå¡ååç§? />
             </div>
           </div>
         </div>
@@ -194,16 +194,16 @@
         <div class="collapse-section">
           <button class="collapse-toggle" type="button" onclick="toggleCollapse('collapse-adv', this)">
             <svg class="collapse-toggle__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-            完整体检与高级选项
+            å®æ´ä½æ£ä¸é«çº§éé¡¹
           </button>
           <div class="collapse-panel" id="collapse-adv">
             <div class="form-field form-field--compact">
-              <label class="form-label">模型预期档位 <span class="form-label-opt">（可选）</span></label>
+              <label class="form-label">æ¨¡åé¢ææ¡£ä½ <span class="form-label-opt">ï¼å¯éï¼</span></label>
               <div class="tier-toggle">
-                <button class="tier-btn active" data-tier="uncertain" onclick="Doctor.setTier('uncertain')">不确定</button>
-                <button class="tier-btn" data-tier="light" onclick="Doctor.setTier('light')">轻量</button>
-                <button class="tier-btn" data-tier="standard" onclick="Doctor.setTier('standard')">标准</button>
-                <button class="tier-btn" data-tier="advanced" onclick="Doctor.setTier('advanced')">高级</button>
+                <button class="tier-btn active" data-tier="uncertain" onclick="Doctor.setTier('uncertain')">ä¸ç¡®å®?/button>
+                <button class="tier-btn" data-tier="light" onclick="Doctor.setTier('light')">è½»é</button>
+                <button class="tier-btn" data-tier="standard" onclick="Doctor.setTier('standard')">æ å</button>
+                <button class="tier-btn" data-tier="advanced" onclick="Doctor.setTier('advanced')">é«çº§</button>
               </div>
               <input type="hidden" id="doctor-tier" value="uncertain" />
             </div>
@@ -211,23 +211,23 @@
             <div class="advanced-check-row">
               <label class="advanced-check">
                 <input type="checkbox" id="cache-test-toggle" onchange="Doctor.toggleCache(this)" />
-                <span>缓存命中检测</span>
-                <span class="form-hint" style="margin:0">发送两次较长请求，可能消耗少量额度。</span>
+                <span>ç¼å­å½ä¸­æ£æµ?/span>
+                <span class="form-hint" style="margin:0">åéä¸¤æ¬¡è¾é¿è¯·æ±ï¼å¯è½æ¶èå°éé¢åº¦ã?/span>
               </label>
             </div>
 
             <div class="advanced-check-row">
               <label class="advanced-check">
                 <input type="checkbox" id="sanity-test-toggle" onchange="Doctor.toggleSanity(this)" />
-                <span>模型表现检测</span>
-                <span class="form-hint" style="margin:0">额外 5 个轻量测试，检查降智或能力异常。</span>
+                <span>æ¨¡åè¡¨ç°æ£æµ?/span>
+                <span class="form-hint" style="margin:0">é¢å¤ 5 ä¸ªè½»éæµè¯ï¼æ£æ¥éæºæè½åå¼å¸¸ã?/span>
               </label>
             </div>
 
             <div class="advanced-check-row">
               <label class="advanced-check">
                 <input type="checkbox" id="price-test-toggle" onchange="Doctor.togglePrice(this)" />
-                <span>价格核对</span>
+                <span>ä»·æ ¼æ ¸å¯¹</span>
               </label>
               <div class="price-row-4" style="margin-top:8px">
                 <div>
@@ -240,7 +240,7 @@
                 </div>
                 <div>
                   <div class="form-label" style="font-size:11px">cached read / 1M</div>
-                  <input id="price-cached-read" class="form-input" placeholder="默认" type="number" step="0.001" />
+                  <input id="price-cached-read" class="form-input" placeholder="é»è®¤" type="number" step="0.001" />
                 </div>
                 <div>
                   <div class="form-label" style="font-size:11px">actual cost</div>
@@ -255,20 +255,20 @@
         <div class="tool-actions">
           <button id="doctor-run-btn" class="btn btn--primary btn--run" onclick="Doctor.run()">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-            开始验货
+            å¼å§éªè´?
           </button>
-          <button id="doctor-clear-btn" class="btn btn--secondary" onclick="Doctor.clear()">清空</button>
+          <button id="doctor-clear-btn" class="btn btn--secondary" onclick="Doctor.clear()">æ¸ç©º</button>
         </div>
 
       </div><!-- /panel-local -->
 
-      <!-- ── MANUAL REPORT ── -->
+      <!-- ââ MANUAL REPORT ââ -->
       <div id="panel-manual" style="display:none">
 
         <div class="form-row">
           <div class="form-field">
-            <label class="form-label">服务商名称 <span class="form-label-opt">（可选）</span></label>
-            <input id="manual-provider" class="form-input" placeholder="服务商名称" />
+            <label class="form-label">æå¡ååç§?<span class="form-label-opt">ï¼å¯éï¼</span></label>
+            <input id="manual-provider" class="form-input" placeholder="æå¡ååç§? />
           </div>
           <div class="form-field">
             <label class="form-label">Base URL</label>
@@ -321,13 +321,13 @@
         <div class="tool-actions">
           <button class="btn btn--primary btn--run" onclick="ManualReport.generate()">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-            生成报告
+            çææ¥å
           </button>
-          <button class="btn btn--secondary" onclick="ManualReport.clear()">清空</button>
+          <button class="btn btn--secondary" onclick="ManualReport.clear()">æ¸ç©º</button>
         </div>
 
         <div style="margin-top:12px">
-          <button class="btn btn--link btn--sm" type="button" onclick="switchTab('local')">返回自动检测</button>
+          <button class="btn btn--link btn--sm" type="button" onclick="switchTab('local')">è¿åèªå¨æ£æµ?/button>
         </div>
 
       </div><!-- /panel-manual -->
@@ -337,7 +337,7 @@
 
       <!-- Result -->
       <div id="result-card" class="result-empty-state">
-        填写 Base URL、API Key 和 Model ID 后开始检测。
+        å¡«å Base URLãAPI Key å?Model ID åå¼å§æ£æµã?
       </div>
 
     </div><!-- /doctor-card -->
@@ -345,11 +345,11 @@
 
   <!-- Bottom links -->
   <section class="tool-bottom-links">
-    <a href="/faq/">查看 FAQ</a>
-    <span>·</span>
-    <a href="/guides/billing-anomaly/">检测原理</a>
-    <span>·</span>
-    <span class="bottom-note">Chrome 插件审核中</span>
+    <a href="/faq/">æ¥ç FAQ</a>
+    <span>Â·</span>
+    <a href="/guides/billing-anomaly/">æ£æµåç?/a>
+    <span>Â·</span>
+    <span class="bottom-note">Chrome æä»¶å®¡æ ¸ä¸?/span>
   </section>
 
 </main>
@@ -359,9 +359,9 @@
   <div class="container site-footer__inner">
     <div class="site-footer__links">
       <a href="/faq/">FAQ</a>
-      <a href="/privacy/">隐私</a>
-      <a href="/support/">支持</a>
-      <a href="/guides/billing-anomaly/">检测原理</a>
+      <a href="/privacy/">éç§</a>
+      <a href="/support/">æ¯æ</a>
+      <a href="/guides/billing-anomaly/">æ£æµåç?/a>
     </div>
     <p>&copy; 2026 AI API Doctor &middot; aiapidoctor.com</p>
   </div>
@@ -372,7 +372,7 @@
 <script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.min.js"></script>
 <script src="/assets/test.js"></script>
 <script>
-/* ── Collapse toggle ── */
+/* ââ Collapse toggle ââ */
 function toggleCollapse(id, btn) {
   const panel = document.getElementById(id);
   if (!panel) return;
@@ -380,7 +380,7 @@ function toggleCollapse(id, btn) {
   if (btn) btn.classList.toggle('open', open);
 }
 
-/* ── Tab switcher ── */
+/* ââ Tab switcher ââ */
 function switchTab(tab) {
   document.getElementById('tab-local') && document.getElementById('tab-local').classList.toggle('active', tab === 'local');
   document.getElementById('tab-manual') && document.getElementById('tab-manual').classList.toggle('active', tab === 'manual');
@@ -388,7 +388,7 @@ function switchTab(tab) {
   document.getElementById('panel-manual').style.display = tab === 'manual' ? 'block' : 'none';
 }
 
-/* ── Cost hint (inline) ── */
+/* ââ Cost hint (inline) ââ */
 function updateCostHint() {
   const hint = document.getElementById('cost-hint');
   if (!hint) return;
@@ -398,19 +398,19 @@ function updateCostHint() {
 
   if (mode === 'quick') {
     if (cacheEnabled) {
-      hint.textContent = '快速验货：预计 3 次请求，缓存命中检测可能消耗少量额度';
+      hint.textContent = 'å¿«ééªè´§ï¼é¢è®¡ 3 æ¬¡è¯·æ±ï¼ç¼å­å½ä¸­æ£æµå¯è½æ¶èå°éé¢åº?;
     } else {
-      hint.textContent = '快速验货：预计 1 次请求，消耗极低';
+      hint.textContent = 'å¿«ééªè´§ï¼é¢è®¡ 1 æ¬¡è¯·æ±ï¼æ¶èæä½?;
     }
   } else {
-    let text = '完整验货：预计 3–6 次请求，可能产生少量成本';
-    if (cacheEnabled) text += ' · 含缓存检测';
-    if (sanityEnabled) text += ' · 含模型检测';
+    let text = 'å®æ´éªè´§ï¼é¢è®?3â? æ¬¡è¯·æ±ï¼å¯è½äº§çå°éææ¬';
+    if (cacheEnabled) text += ' Â· å«ç¼å­æ£æµ?;
+    if (sanityEnabled) text += ' Â· å«æ¨¡åæ£æµ?;
     hint.textContent = text;
   }
 }
 
-/* ── Manual Report ── */
+/* ââ Manual Report ââ */
 window.ManualReport = {
   generate() {
     const f = id => document.getElementById(id);
@@ -418,8 +418,8 @@ window.ManualReport = {
     const num = id => parseFloat(f(id)?.value) || 0;
     const baseUrl = get('manual-base-url');
     const model = get('manual-model');
-    if (!baseUrl) { window.showToast && window.showToast('请填写 Base URL'); return; }
-    if (!model) { window.showToast && window.showToast('请填写 Model ID'); return; }
+    if (!baseUrl) { window.showToast && window.showToast('è¯·å¡«å?Base URL'); return; }
+    if (!model) { window.showToast && window.showToast('è¯·å¡«å?Model ID'); return; }
     const httpStatus = num('manual-http-status');
     const pt = num('manual-prompt-tokens');
     const ct = num('manual-completion-tokens');
@@ -430,14 +430,14 @@ window.ManualReport = {
     const ok = httpStatus >= 200 && httpStatus < 400 && hasOutput;
     const bg = ok ? '#dcfce7' : httpStatus >= 400 ? '#fee2e2' : '#fef3c7';
     const color = ok ? '#16a34a' : httpStatus >= 400 ? '#dc2626' : '#d97706';
-    const label = ok ? '正常' : httpStatus >= 400 ? '异常' : '需复查';
-    const sub = ok ? '联通正常' : httpStatus >= 400 ? '联通失败' : '请核实扣费';
+    const label = ok ? 'æ­£å¸¸' : httpStatus >= 400 ? 'å¼å¸¸' : 'éå¤æ¥';
+    const sub = ok ? 'èéæ­£å¸? : httpStatus >= 400 ? 'èéå¤±è´? : 'è¯·æ ¸å®æ£è´?;
 
     f('result-card').innerHTML = `
       <div class="report-card">
         <div class="report-card__header">
           <div class="report-card__title">AI API Doctor</div>
-          <div class="report-card__meta">API Key 未包含 &middot; ${timestamp}</div>
+          <div class="report-card__meta">API Key æªåå?&middot; ${timestamp}</div>
         </div>
         <div class="report-card__status" style="background:${bg}">
           <div class="report-card__status-label" style="color:${color}">${label}</div>
@@ -445,13 +445,13 @@ window.ManualReport = {
         </div>
         <div class="report-card__grid">
           <div class="report-cell"><div class="report-cell__label">Base URL</div><div class="report-cell__value mono">${esc(baseUrl)}</div></div>
-          <div class="report-cell"><div class="report-cell__label">模型</div><div class="report-cell__value mono">${esc(model)}</div></div>
-          <div class="report-cell"><div class="report-cell__label">HTTP</div><div class="report-cell__value mono" style="color:${httpStatus>=400?'#dc2626':'#16a34a'}">${httpStatus||'—'}</div></div>
-          <div class="report-cell"><div class="report-cell__label">usage</div><div class="report-cell__value">${usageOk?'完整':'不完整'}</div></div>
-          <div class="report-cell"><div class="report-cell__label">completion</div><div class="report-cell__value mono">${ct||'—'}</div></div>
-          <div class="report-cell"><div class="report-cell__label">total</div><div class="report-cell__value mono">${tt||'—'}</div></div>
+          <div class="report-cell"><div class="report-cell__label">æ¨¡å</div><div class="report-cell__value mono">${esc(model)}</div></div>
+          <div class="report-cell"><div class="report-cell__label">HTTP</div><div class="report-cell__value mono" style="color:${httpStatus>=400?'#dc2626':'#16a34a'}">${httpStatus||'â?}</div></div>
+          <div class="report-cell"><div class="report-cell__label">usage</div><div class="report-cell__value">${usageOk?'å®æ´':'ä¸å®æ?}</div></div>
+          <div class="report-cell"><div class="report-cell__label">completion</div><div class="report-cell__value mono">${ct||'â?}</div></div>
+          <div class="report-cell"><div class="report-cell__label">total</div><div class="report-cell__value mono">${tt||'â?}</div></div>
         </div>
-        <div class="report-card__footer">本报告只展示本次测试中的可复现信号，不证明服务商主观故意，也不构成法律结论。</div>
+        <div class="report-card__footer">æ¬æ¥ååªå±ç¤ºæ¬æ¬¡æµè¯ä¸­çå¯å¤ç°ä¿¡å·ï¼ä¸è¯ææå¡åä¸»è§ææï¼ä¹ä¸æææ³å¾ç»è®ºã?/div>
       </div>`;
   },
   clear() {
@@ -460,18 +460,18 @@ window.ManualReport = {
       if (el) el.value = '';
     });
     const card = document.getElementById('result-card');
-    if (card) card.outerHTML = '<div id="result-card" class="result-empty-state">填写 Base URL、API Key 和 Model ID 后开始检测。</div>';
-    window.showToast && window.showToast('已清空');
+    if (card) card.outerHTML = '<div id="result-card" class="result-empty-state">å¡«å Base URLãAPI Key å?Model ID åå¼å§æ£æµã?/div>';
+    window.showToast && window.showToast('å·²æ¸ç©?);
   }
 };
 
-/* ── Esc ── */
+/* ââ Esc ââ */
 function esc(str) {
   if (!str && str !== 0) return '';
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-/* ── Init ── */
+/* ââ Init ââ */
 document.addEventListener('DOMContentLoaded', () => {
   if (window.Doctor) { window.Doctor.init(); window.Doctor.setMode('quick'); }
   updateCostHint();
@@ -482,3 +482,4 @@ document.addEventListener('DOMContentLoaded', () => {
 
 </body>
 </html>
+

@@ -27,8 +27,8 @@ const DETECTION_MODES = {
   quick: {
     label: '快速验货',
     labelEn: 'Quick Check',
-    desc: '1 次请求，测空跑、usage 消失和基础联通，生成验货分。',
-    descEn: '1 request — detects empty runs, missing usage, and basic connectivity. Generates a score.',
+    desc: '1 次请求，测空跑、usage 消失和基础联通，生成中转站验货分。',
+    descEn: '1 request — detects empty runs, missing usage, and basic connectivity. Generates a relay API scorecard.',
     requests: '1 次请求，消耗极低',
     requestsEn: '1 request, minimal cost',
     connectivity: true,
@@ -40,9 +40,9 @@ const DETECTION_MODES = {
   },
   full: {
     label: '完整验货',
-    labelEn: 'Full Doctor Check',
-    desc: '额外检测扣费、缓存、usage 完整性和模型表现，可能消耗少量额度。',
-    descEn: 'Also checks billing, cache, usage integrity, and model performance. May consume a small amount of quota.',
+    labelEn: 'Full Check',
+    desc: '额外测扣费、缓存、usage 完整性和模型缩水风险，生成完整中转站验货分。',
+    descEn: 'Also checks billing, cache, usage integrity, and model shrinkage risk. Generates a complete relay API scorecard.',
     requests: '约 3–6 次请求，可能产生少量成本',
     requestsEn: '~3-6 requests, may consume a small amount of credits',
     connectivity: true,
@@ -908,11 +908,26 @@ function getMainFindingEn(result, dims) {
 function getQuickFinding(result, lang) {
   const zh = lang !== 'en';
   const conn = result.connectivity;
-  if (!conn) return { status: 'U', grade: 'U', score: 0, label: zh ? 'U档' : 'U', mainFinding: zh ? '验不出真身：无法获取响应。' : 'Unverified: no response received.', riskChips: ['验不出真身', '浏览器拦截'] };
 
-  if (conn.error === 'cors_or_network') {
+  // U: no response at all
+  if (!conn) {
     return {
-      status: 'U', grade: 'U', score: 0,
+      score: 0, grade: 'U', status: 'U',
+      label: zh ? 'U档：验不出真身' : 'U: Unverified',
+      mainFinding: zh ? '验不出真身：无法获取响应。' : 'Unverified: no response received.',
+      riskChips: zh ? ['浏览器拦截', '验不出真身'] : ['Browser Blocked', 'Unverified']
+    };
+  }
+
+  const s = conn.status;
+  const hasOutput = conn.visibleLength > 0;
+  const hasUsage = conn.totalTokens != null;
+  const latency = conn.latency || 0;
+
+  // ── U: CORS / timeout ──────────────────────────────────────
+  if (conn.error === 'cors_or_network' || conn.error === 'timeout') {
+    return {
+      score: 0, grade: 'U', status: 'U',
       label: zh ? 'U档：验不出真身' : 'U: Unverified',
       mainFinding: zh
         ? 'U档：验不出真身。浏览器环境限制了检测，建议换 Chrome 插件或服务端环境复查。'
@@ -920,37 +935,23 @@ function getQuickFinding(result, lang) {
       riskChips: zh ? ['浏览器拦截', '验不出真身'] : ['Browser Blocked', 'Unverified']
     };
   }
-  if (conn.error === 'timeout') {
-    return {
-      status: 'U', grade: 'U', score: 0,
-      label: zh ? 'U档：超时' : 'U: Timeout',
-      mainFinding: zh
-        ? 'U档：请求超时，验不出真身。建议检查 Base URL 或换 Chrome 插件。'
-        : 'U: Request timed out. Please check Base URL or use Chrome extension.',
-      riskChips: zh ? ['超时', '验不出真身'] : ['Timeout', 'Unverified']
-    };
-  }
 
-  const s = conn.status;
-  const hasOutput = conn.visibleLength > 0;
-  const hasUsage = conn.totalTokens != null;
-
-  // HTTP 401 / 403 — max F / 35
+  // ── F: 401 / 403 — cap 35 ───────────────────────────────
   if (s === 401 || s === 403) {
     return {
-      status: 'F', grade: 'F', score: 35,
+      score: 35, grade: 'F', status: 'F',
       label: zh ? 'F档：高危' : 'F: High Risk',
       mainFinding: zh
-        ? 'F档：Key 无效或权限不足。API Key 未通过身份验证。'
+        ? 'F档：Key 无效或权限不足。'
         : 'F: API Key invalid or insufficient permissions.',
       riskChips: zh ? ['Key 无效', '权限不足'] : ['Invalid Key', 'Access Denied']
     };
   }
 
-  // HTTP 404 — max F / 40
+  // ── F: 404 — cap 40 ────────────────────────────────────
   if (s === 404) {
     return {
-      status: 'F', grade: 'F', score: 40,
+      score: 40, grade: 'F', status: 'F',
       label: zh ? 'F档：模型不可用' : 'F: Model Unavailable',
       mainFinding: zh
         ? 'F档：模型名错误、模型不可用或接口不兼容。'
@@ -959,10 +960,10 @@ function getQuickFinding(result, lang) {
     };
   }
 
-  // HTTP 5xx — max D / 45
+  // ── D: 5xx — cap 45 ───────────────────────────────────
   if (s >= 500 && s < 600) {
     return {
-      status: 'D', grade: 'D', score: 45,
+      score: 45, grade: 'D', status: 'D',
       label: zh ? 'D档：上游爆错' : 'D: Upstream Error',
       mainFinding: zh
         ? 'D档：服务商或上游爆错，本次请求不可用。'
@@ -971,10 +972,10 @@ function getQuickFinding(result, lang) {
     };
   }
 
-  // HTTP not 2xx
+  // ── F: other non-2xx — cap 20 ─────────────────────────
   if (s < 200 || s >= 300) {
     return {
-      status: 'F', grade: 'F', score: 20,
+      score: 20, grade: 'F', status: 'F',
       label: zh ? 'F档：HTTP 异常' : 'F: HTTP Error',
       mainFinding: zh
         ? `F档：HTTP ${s}，无法完成验货。`
@@ -983,57 +984,120 @@ function getQuickFinding(result, lang) {
     };
   }
 
-  // HTTP 200 — now apply score rules
-  if (s >= 200 && s < 300) {
-    // Rule 1: 200 + no output + no usage → max D / 55
-    if (!hasOutput && !hasUsage) {
-      return {
-        status: 'D', grade: 'D', score: 55,
-        label: zh ? 'D档：疑似空跑' : 'D: Suspected Empty Run',
-        mainFinding: zh
-          ? '疑似空跑：HTTP 200 但无有效输出，usage 也没返回。'
-          : 'Suspected Empty Run: HTTP 200 but no visible output and no usage returned.',
-        riskChips: zh ? ['疑似空跑', 'usage 消失', '接口假健康'] : ['Suspected Empty Run', 'Usage Missing', 'Fake-Healthy API']
-      };
-    }
-    // Rule 2: 200 + no output + has usage → max C / 65
-    if (!hasOutput && hasUsage) {
-      return {
-        status: 'C', grade: 'C', score: 65,
-        label: zh ? 'C档：返回废包' : 'C: Dead Output',
-        mainFinding: zh
-          ? '返回废包：usage 有记录，但本次没有有效输出。'
-          : 'Dead Output: usage recorded, but no visible output this run.',
-        riskChips: zh ? ['返回废包', 'usage 消失'] : ['Dead Output', 'Usage Missing']
-      };
-    }
-    // Rule 3: 200 + has output + no usage → max C / 69
-    if (hasOutput && !hasUsage) {
-      return {
-        status: 'C', grade: 'C', score: 69,
-        label: zh ? 'C档：能用但不透明' : 'C: Usable but Opaque',
-        mainFinding: zh
-          ? '能用但不透明：模型有输出，但 usage 明细消失。'
-          : 'Usable but Opaque: model produced output, but usage details are missing.',
-        riskChips: zh ? ['usage 消失', '扣费黑洞风险'] : ['Usage Missing', 'Billing Blackhole Risk']
-      };
-    }
-    // Rule 4: 200 + has output + has usage → PASS
-    return {
-      status: 'A', grade: 'A', score: 100,
-      label: zh ? 'A档：硬货' : 'A: Solid',
-      mainFinding: zh
-        ? '通过验货：模型有输出，usage 明细完整。'
-        : 'Passed: model produced output with complete usage details.',
-      riskChips: zh ? ['通过验货'] : ['Passed']
-    };
+  // ── HTTP 200: points-based scoring ───────────────────────
+  let httpScore = 35;
+  let outputScore = 0;
+  let usageScore = 0;
+  let latencyScore = 0;
+  let errorScore = 10;
+
+  // HTTP: 35 (already default)
+  if (s >= 200 && s < 300) { httpScore = 35; }
+
+  // Effective output: 25
+  // Valid if: text content, tool_call, image, audio, search in the response
+  // We check visibleLength for now; in a full impl we'd also check data.choices[0].tool_calls etc.
+  if (hasOutput) {
+    outputScore = 25;
   }
 
+  // Usage: 20
+  if (hasUsage) { usageScore = 20; }
+
+  // Latency: 10
+  if (latency <= 1500) { latencyScore = 10; }
+  else if (latency <= 5000) { latencyScore = 6; }
+  else if (latency <= 10000) { latencyScore = 3; }
+  else { latencyScore = 0; }
+
+  // Error explainability: 10
+  // If normal with output: full 10
+  if (hasOutput && hasUsage) { errorScore = 10; }
+  // HTTP 200 but no output and no usage: +5
+  else if (!hasOutput && !hasUsage) { errorScore = 5; }
+  // Has output but no usage (opaque): +6
+  else if (hasOutput && !hasUsage) { errorScore = 6; }
+  // Has usage but no output (dead output): +4
+  else if (!hasOutput && hasUsage) { errorScore = 4; }
+
+  let rawScore = httpScore + outputScore + usageScore + latencyScore + errorScore;
+
+  // ── Apply capping rules ───────────────────────────────────
+  // Rule 1: 200 + no output + no usage → max D / 55
+  if (hasOutput === false && hasUsage === false) {
+    rawScore = Math.min(rawScore, 55);
+  }
+  // Rule 2: 200 + no output + has usage → max C / 65
+  else if (hasOutput === false && hasUsage === true) {
+    rawScore = Math.min(rawScore, 65);
+  }
+  // Rule 3: 200 + has output + no usage → max C / 69
+  else if (hasOutput === true && hasUsage === false) {
+    rawScore = Math.min(rawScore, 69);
+  }
+
+  const score = Math.min(rawScore, 100);
+
+  // ── Assign grade ─────────────────────────────────────────
+  let grade;
+  if (score >= 90) { grade = 'A'; }
+  else if (score >= 75) { grade = 'B'; }
+  else if (score >= 60) { grade = 'C'; }
+  else if (score >= 40) { grade = 'D'; }
+  else { grade = 'F'; }
+
+  // ── Generate mainFinding ─────────────────────────────────
+  let mainFinding, riskChips;
+
+  if (grade === 'A') {
+    mainFinding = zh
+      ? '通过验货：模型有输出，usage 明细完整。'
+      : 'Passed: output and usage details are both present.';
+    riskChips = zh ? ['通过验货'] : ['Passed'];
+  } else if (grade === 'B') {
+    mainFinding = zh
+      ? '能用：基本通过，有少量可改进项。'
+      : 'Usable: mostly passed, minor issues to address.';
+    riskChips = zh ? ['延迟偏高'].filter(Boolean) : ['High Latency'].filter(Boolean);
+  } else if (grade === 'C') {
+    if (!hasOutput && hasUsage) {
+      mainFinding = zh
+        ? '返回废包：usage 有记录，但本次没有有效输出。'
+        : 'Dead output: usage exists, but no effective response was produced.';
+      riskChips = zh ? ['返回废包', 'usage 消失'] : ['Dead Output', 'Usage Missing'];
+    } else {
+      mainFinding = zh
+        ? '能用但不透明：模型有输出，但 usage 明细消失。'
+        : 'Usable but opaque: output exists, but usage details are missing.';
+      riskChips = zh ? ['usage 消失', '扣费黑洞风险'] : ['Usage Missing', 'Billing Blackhole Risk'];
+    }
+  } else if (grade === 'D') {
+    mainFinding = zh
+      ? '疑似空跑：HTTP 200 但无有效输出，usage 也没返回。'
+      : 'Suspected empty run: HTTP 200, but no effective output and no usage details.';
+    riskChips = zh ? ['疑似空跑', 'usage 消失', '接口假健康'] : ['Suspected Empty Run', 'Usage Missing', 'Fake-Healthy API'];
+  } else {
+    mainFinding = zh
+      ? '高危：多项指标异常，结果不可信。'
+      : 'High risk: multiple anomalies detected. Results may not be reliable.';
+    riskChips = zh ? ['疑似空跑', '高危'] : ['Suspected Empty Run', 'High Risk'];
+  }
+
+  const labelMap = {
+    A: zh ? 'A档：硬货' : 'A: Solid',
+    B: zh ? 'B档：能用' : 'B: Usable',
+    C: zh ? 'C档：掺水' : 'C: Diluted',
+    D: zh ? 'D档：疑似空跑' : 'D: Suspected Empty Run',
+    F: zh ? 'F档：高危' : 'F: High Risk',
+  };
+
   return {
-    status: 'U', grade: 'U', score: 0,
-    label: zh ? 'U档：未知' : 'U: Unknown',
-    mainFinding: zh ? '无法判定本次结果。' : 'Unable to determine result.',
-    riskChips: []
+    score,
+    grade,
+    status: grade,
+    label: labelMap[grade] || (zh ? 'U档' : 'U'),
+    mainFinding,
+    riskChips
   };
 }
 
@@ -1351,11 +1415,11 @@ function renderFullReport(result, formData) {
   const confidence = scored.confidence;
 
   const L = {
-    reportTitle:        zh ? 'API Doctor 完整验货分' : 'API Doctor Scorecard',
+    reportTitle:        zh ? 'API Doctor 完整验货分' : 'API Doctor Full Scorecard',
     apiKeyAnonymized:  zh ? 'API Key 已脱敏' : 'API Key Anonymized',
     localBrowser:       zh ? '本地浏览器检测' : 'Local Browser Test',
     overallScore:       zh ? '综合分' : 'Overall Score',
-    apiScoreLabel:      zh ? 'API 体检分' : 'API Health Score',
+    apiScoreLabel:      zh ? 'API 验货分' : 'API Check Score',
     coverage:           zh ? '覆盖度' : 'Coverage',
     confidence:         zh ? '置信度' : 'Confidence',
     modelScoreLabel:   zh ? '模型表现分' : 'Model Score',

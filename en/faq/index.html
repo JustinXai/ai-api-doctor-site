@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AI API Doctor FAQ | API Key, Raw Quota, Billing Anomaly &amp; Diagnostic Report</title>
-  <meta name="description" content="Learn how AI API Doctor diagnoses API Key, Base URL, model permissions, failed request billing, raw quota evidence, and how to send diagnostic reports to your provider." />
+  <title>AI API Doctor FAQ | Relay API Black-box Check, API Key, Raw Quota &amp; Scorecard</title>
+  <meta name="description" content="Learn how AI API Doctor checks API Key, Base URL, model permissions, empty runs, missing usage, failed request billing, and generates a shareable relay API scorecard with A/B/C/D/F/U grades." />
   <meta name="robots" content="index, follow" />
   <link rel="canonical" href="https://aiapidoctor.com/en/faq/" />
   <link rel="alternate" hreflang="zh-CN" href="https://aiapidoctor.com/faq" />
@@ -16,7 +16,7 @@
   <!-- Open Graph -->
   <meta property="og:type" content="website" />
   <meta property="og:title" content="AI API Doctor FAQ" />
-  <meta property="og:description" content="Learn how AI API Doctor diagnoses API Key, Base URL, model permissions, failed request billing, and raw quota evidence." />
+  <meta property="og:description" content="Learn how AI API Doctor performs relay API black-box checks, detects empty runs and missing usage, and generates shareable scorecards with A/B/C/D/F/U grades." />
   <meta property="og:url" content="https://aiapidoctor.com/en/faq/" />
 
   <!-- JSON-LD: FAQPage -->
@@ -30,7 +30,7 @@
         "name": "What is AI API Doctor?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "AI API Doctor is a local-first diagnostic tool for OpenAI-compatible API users. It helps you check whether API Keys, Base URLs, model permissions, group configurations, chat/completions interfaces, raw quota changes, and client configurations are working correctly. It is suitable for scenarios where an API Key is filled in but the client cannot use it, the Base URL is uncertain, or errors like 401/403/404/429 appear. AI API Doctor is not a model authenticity verification tool, nor is it a legal audit tool."
+          "text": "AI API Doctor is a local-first relay API black-box check tool for OpenAI-compatible API users. Don't trust the dashboard. Check it. It helps verify whether API Keys, Base URLs, model permissions, chat/completions interfaces, usage data, and client configurations are working correctly — generating an A/B/C/D/F/U grade scorecard. Suitable for scenarios where an API Key is filled in but the client cannot use it, the Base URL is uncertain, or errors like 401/403/404/429, empty runs, or missing usage appear. AI API Doctor is not a model authenticity verification tool, nor is it a legal audit tool."
         }
       },
       {
@@ -62,7 +62,7 @@
         "name": "Does the diagnosis consume credits?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "Yes. AI API Doctor sends a small number of real API requests to confirm whether your Base URL, API Key, model permissions, and chat/completions are working. Basic diagnostics typically require only 1 to 3 requests, consuming a minimal amount. For safety, it is recommended to use a test-only API Key, set a low credit limit, and compare the results against the provider's backend billing after diagnosis."
+          "text": "Yes. AI API Doctor sends a small number of real API requests to confirm whether your Base URL, API Key, model permissions, and chat/completions are working. Quick Check requires just 1 request; Full Check uses about 3–6 requests, consuming a minimal amount. For safety, it is recommended to use a test-only API Key, set a low credit limit, and compare the results against the provider's backend billing after the check."
         }
       },
       {
@@ -631,7 +631,7 @@
   <section class="page-hero">
     <div class="page-hero-badge">FAQ</div>
     <h1>AI API Doctor FAQ</h1>
-    <p>Understand the tool's capabilities, privacy policy, diagnostic logic, and how raw quota evidence works.</p>
+    <p>Understand the tool's capabilities, privacy policy, how relay API scorecards work, and how raw quota evidence is used.</p>
 
     <!-- Trust Badges -->
     <div class="trust-badges">
@@ -670,10 +670,10 @@
           <p>Many AI API relay providers use a pre-charge mechanism. When a request fails, returns empty, encounters a 503 from upstream, times out, or hits cache, it becomes hard for users to tell if the charge was fair.</p>
           <p>AI API Doctor helps by producing reproducible signals that users and providers can discuss based on evidence:</p>
           <ul>
-            <li>Detect whether failed requests ultimately deduct quota</li>
-            <li>Detect whether empty replies are charged</li>
-            <li>Detect usage integrity issues</li>
-            <li>Detect cache billing anomalies</li>
+            <li>Check whether failed requests ultimately deduct quota</li>
+            <li>Check whether empty replies are charged</li>
+            <li>Check usage integrity issues</li>
+            <li>Check cache billing anomalies</li>
             <li>Detect model performance anomalies</li>
           </ul>
           <p>The goal is not to convict any site — it's to turn billing, usage, cache, and model performance into a reproducible diagnostic report.</p>
@@ -861,7 +861,7 @@
       </button>
       <div class="faq-answer">
         <div class="faq-answer-inner">
-          <p>AI API Doctor is a local-first diagnostic tool for OpenAI-compatible API users.</p>
+          <p>AI API Doctor is a local-first relay API black-box check tool for OpenAI-compatible API users.</p>
           <p>It helps you check whether API Keys, Base URLs, model permissions, group configurations, chat/completions interfaces, raw quota changes, and client configurations are working correctly.</p>
           <p>It is suitable for the following scenarios:</p>
           <ul>
