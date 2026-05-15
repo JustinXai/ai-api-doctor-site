@@ -2359,8 +2359,8 @@ window.Doctor = {
     hideInlineModelResults();
     if (typeof updateCostEstimate === 'function') updateCostEstimate();
     document.getElementById('result-card').innerHTML = `
-      <div style="text-align:center;padding:40px 20px;color:#94a3b8;font-size:14px;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-lg)">
-        ${zh ? '填写信息后点击检测按钮，即可查看诊断结果。' : 'Fill in the information and click the diagnosis button to view results.'}
+      <div class="result-empty-state">
+        ${zh ? '填写 Base URL、API Key 和 Model ID 后开始检测。' : 'Enter Base URL, API Key, and Model ID to start.'}
       </div>`;
     this._result = null;
     this._formData = null;

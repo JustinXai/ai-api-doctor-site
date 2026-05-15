@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>How AI API Billing Detection Works | AI API Doctor</title>
+  <meta name="description" content="Explains pre-deduction billing, raw quota, failed-request charges, empty-reply charges, usage integrity, cached_tokens, and how to read AI API Doctor reports." />
+  <meta name="robots" content="index, follow" />
+  <link rel="canonical" href="https://aiapidoctor.com/en/guides/billing-anomaly/" />
+  <link rel="alternate" hreflang="zh-CN" href="https://aiapidoctor.com/guides/billing-anomaly/" />
+  <link rel="alternate" hreflang="en" href="https://aiapidoctor.com/en/guides/billing-anomaly/" />
+  <link rel="alternate" hreflang="x-default" href="https://aiapidoctor.com/guides/billing-anomaly/" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="stylesheet" href="/assets/site.css" />
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="article" />
+  <meta property="og:title" content="How AI API Billing Detection Works | AI API Doctor" />
+  <meta property="og:description" content="Explains pre-deduction billing, raw quota, failed-request charges, and how to read diagnostic reports." />
+  <meta property="og:url" content="https://aiapidoctor.com/en/guides/billing-anomaly/" />
+
+  <!-- JSON-LD -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": ["Article", "HowTo"],
+    "headline": "How AI API Billing Anomaly Detection Works",
+    "description": "Explains pre-deduction billing, raw quota, failed-request charges, empty-reply charges, usage integrity, cached_tokens, and how to read AI API Doctor diagnostic reports.",
+    "author": { "@type": "Organization", "name": "AI API Doctor" },
+    "datePublished": "2026-05-14",
+    "dateModified": "2026-05-14",
+    "publisher": { "@type": "Organization", "name": "AI API Doctor", "url": "https://aiapidoctor.com" },
+    "url": "https://aiapidoctor.com/en/guides/billing-anomaly/",
+    "step": [
+      { "@type": "HowToStep", "name": "Record pre-test raw quota", "text": "Before sending any API request, record the raw quota value." },
+      { "@type": "HowToStep", "name": "Send a test request", "text": "Send a request expected to fail or return empty." },
+      { "@type": "HowToStep", "name": "Wait 10 seconds", "text": "Wait at least 10 seconds for the station to settle pre-charges." },
+      { "@type": "HowToStep", "name": "Record post-test raw quota", "text": "Record the raw quota value again." },
+      { "@type": "HowToStep", "name": "Compare quota changes", "text": "If quota decreased after 10 seconds despite no valid output, this is a billing anomaly signal." }
+    ]
+  }
+  </script>
+
+  <style>
+    /* ── Guide page layout ─── */
+    .guide-hero {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 56px 24px 48px;
+      text-align: center;
+    }
+    .guide-hero__title {
+      font-size: clamp(22px, 4vw, 34px);
+      font-weight: 800;
+      letter-spacing: -0.4px;
+      margin-bottom: 12px;
+      line-height: 1.2;
+      color: var(--text);
+    }
+    .guide-hero__sub {
+      font-size: 15px;
+      color: var(--muted);
+      max-width: 600px;
+      margin: 0 auto;
+      line-height: 1.7;
+    }
+    .guide-content {
+      max-width: 700px;
+      margin: 0 auto;
+      padding: 40px 24px 80px;
+    }
+    .guide-content h2 {
+      font-size: 20px;
+      font-weight: 700;
+      margin: 40px 0 14px;
+      color: var(--text);
+    }
+    .guide-content h2:first-child { margin-top: 0; }
+    .guide-content h3 {
+      font-size: 16px;
+      font-weight: 700;
+      margin: 24px 0 10px;
+      color: var(--text);
+    }
+    .guide-content p {
+      margin-bottom: 14px;
+      color: #374151;
+      line-height: 1.8;
+      font-size: 15px;
+    }
+    .guide-content ul, .guide-content ol {
+      margin: 0 0 14px 20px;
+      color: #374151;
+      line-height: 1.8;
+      font-size: 15px;
+    }
+    .guide-content li { margin-bottom: 6px; }
+    .guide-content code {
+      background: var(--soft);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: var(--mono);
+      font-size: 13px;
+    }
+    .guide-callout {
+      background: var(--soft);
+      border-radius: var(--radius-sm);
+      padding: 14px 16px;
+      font-size: 14px;
+      color: var(--muted);
+      line-height: 1.6;
+      margin: 16px 0;
+      display: flex;
+      gap: 10px;
+    }
+    .guide-callout__icon { flex-shrink: 0; width: 18px; height: 18px; margin-top: 1px; }
+    .guide-callout--info { background: var(--info-bg); color: #1e40af; }
+    .guide-callout--warn { background: var(--warning-bg); color: #92400e; }
+    .guide-callout--danger { background: var(--danger-bg); color: #991b1b; }
+    .guide-code {
+      background: #0f172a;
+      color: #e2e8f0;
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.7;
+      overflow-x: auto;
+      margin-bottom: 16px;
+      white-space: pre;
+    }
+    .guide-result-cards {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin: 16px 0;
+    }
+    .guide-result-card {
+      border-radius: var(--radius);
+      padding: 16px;
+      border: 1px solid;
+    }
+    .guide-result-card--ok { background: var(--success-bg); border-color: #bbf7d0; }
+    .guide-result-card--warn { background: var(--warning-bg); border-color: #fde68a; }
+    .guide-result-card--danger { background: var(--danger-bg); border-color: #fecaca; }
+    .guide-result-card__status {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+    .guide-result-card--ok .guide-result-card__status { color: var(--success); }
+    .guide-result-card--warn .guide-result-card__status { color: var(--warning); }
+    .guide-result-card--danger .guide-result-card__status { color: var(--danger); }
+    .guide-result-card__title { font-size: 14px; font-weight: 700; margin-bottom: 4px; color: var(--text); }
+    .guide-result-card__desc { font-size: 13px; color: var(--muted); line-height: 1.5; }
+    .guide-divider { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
+    .guide-cta {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 20px;
+    }
+    @media (max-width: 500px) {
+      .guide-result-cards { grid-template-columns: 1fr; }
+      .guide-content { padding: 28px 16px 60px; }
+      .guide-hero { padding: 40px 20px 32px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<header class="site-header">
+  <div class="container site-header__inner">
+    <a href="/en/" class="site-logo">
+      <div class="site-logo__icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+        </svg>
+      </div>
+      AI API Doctor
+    </a>
+    <button class="nav-toggle" aria-label="Menu" onclick="document.querySelector('.site-nav').classList.toggle('open')">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+    <nav class="site-nav">
+      <a href="/en/">Home</a>
+      <a href="/en/faq/">FAQ</a>
+      <a href="/en/guides/billing-anomaly/" class="active">How It Works</a>
+      <a href="/en/privacy/">Privacy</a>
+      <a href="/en/support/">Support</a>
+      <span class="lang-switcher">
+        <a href="/guides/billing-anomaly/" class="lang-switcher__link">中文</a>
+        <span class="lang-switcher__sep">|</span>
+        <span class="lang-switcher__current">English</span>
+      </span>
+    </nav>
+  </div>
+</header>
+
+<!-- Hero -->
+<section class="guide-hero">
+  <h1 class="guide-hero__title">How AI API Billing Anomaly Detection Works</h1>
+  <p class="guide-hero__sub">Read raw quota before and after test requests to detect billing anomalies. Understand pre-deduction billing, empty-reply charges, and usage integrity.</p>
+</section>
+
+<!-- Content -->
+<main>
+  <div class="guide-content">
+
+    <h2>1. What Is Pre-Deduction Billing?</h2>
+    <p>Some AI API relay stations pre-charge quota at the start of a request, then settle and refund the difference after the request completes.</p>
+    <p>This mechanism itself is fine. The quota change you see during a request is not necessarily the final amount. The station may pre-charge $0.001 and then refund $0.0008 if the actual usage was cheaper.</p>
+    <p>Problems arise when failed requests or empty replies are <strong>not refunded</strong> — in that case, users see their quota decrease without receiving valid output.</p>
+
+    <div class="guide-callout guide-callout--warn">
+      <svg class="guide-callout__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <span>The frontend balance may only show two decimal places. A change of $0.0001 may be invisible on the page but observable in raw quota.</span>
+    </div>
+
+    <h2>2. What Is Raw Quota?</h2>
+    <p>Raw quota is the granular quota value stored by the New API / One API backend — far more precise than the frontend balance display.</p>
+    <p>AI API Doctor uses raw quota as the primary evidence for billing anomaly detection. The Chrome extension (under review) can read raw quota automatically. The web version supports manual entry.</p>
+
+    <h2>3. Why Wait 10 Seconds?</h2>
+    <p>The 10-second wait is the core of the detection logic. It distinguishes:</p>
+    <ul>
+      <li><strong>Temporary pre-charge:</strong> Quota was deducted during the request but refunded within ~10 seconds. This is normal.</li>
+      <li><strong>Final deduction:</strong> Quota is still lower after 10 seconds. This is a billing anomaly signal.</li>
+    </ul>
+    <p>Some stations settle within 3 seconds; others take longer. AI API Doctor uses 10 seconds as a conservative default.</p>
+
+    <div class="guide-callout guide-callout--warn">
+      <svg class="guide-callout__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <span>If quota is still not restored after 10 seconds, record the final value and compare with the pre-test baseline.</span>
+    </div>
+
+    <h2>4. Failed Request Charges</h2>
+    <p>A <strong>failed request billing anomaly</strong> is indicated when all of the following are true:</p>
+    <ul>
+      <li>HTTP status &ge; 400, or upstream returns 503 / 502 / 504 / timeout</li>
+      <li>No valid output (completion_tokens = 0 or missing)</li>
+      <li>No tool_call / image / audio / search output</li>
+      <li>Raw quota still decreased after 10 seconds</li>
+    </ul>
+    <p>This means the station charged for a request that produced no valid result.</p>
+
+    <h2>5. Empty Reply Charges</h2>
+    <p>An <strong>empty reply billing anomaly</strong> is indicated when all of the following are true:</p>
+    <ul>
+      <li>HTTP status is 200</li>
+      <li>Visible output is empty</li>
+      <li>completion_tokens = 0 or missing</li>
+      <li>No tool_call / image / audio / search output</li>
+      <li>Raw quota still decreased after 10 seconds</li>
+    </ul>
+    <p>This means the station charged for a request that returned no usable output.</p>
+
+    <h2>6. Usage Integrity</h2>
+    <p>If a response does not return <code>prompt_tokens</code>, <code>completion_tokens</code>, <code>total_tokens</code>, or cache fields, you cannot verify whether the theoretical cost matches the actual deduction.</p>
+    <p>AI API Doctor flags responses as "usage incomplete" when these fields are missing or partial. Contact the provider for verification.</p>
+
+    <h2>7. cached_tokens / cache_read_input_tokens</h2>
+    <p><code>cached_tokens</code> shows how many input tokens were served from cache instead of being recomputed. Cache hits typically mean lower latency and lower input cost.</p>
+    <p>Different providers handle cache fields and discount rates differently. Actual billing follows the provider's published rates.</p>
+
+    <h2>8. How to Read Reports</h2>
+    <p>AI API Doctor reports show five possible results:</p>
+    <div class="guide-result-cards">
+      <div class="guide-result-card guide-result-card--ok">
+        <div class="guide-result-card__status">Normal</div>
+        <div class="guide-result-card__title">Failed request not charged</div>
+        <div class="guide-result-card__desc">Request failed but raw quota was not deducted.</div>
+      </div>
+      <div class="guide-result-card guide-result-card--ok">
+        <div class="guide-result-card__status">Normal</div>
+        <div class="guide-result-card__title">Pre-charge refunded</div>
+        <div class="guide-result-card__desc">Quota was pre-deducted but fully refunded within 10 seconds.</div>
+      </div>
+      <div class="guide-result-card guide-result-card--warn">
+        <div class="guide-result-card__status">Warning</div>
+        <div class="guide-result-card__title">Cannot read raw quota</div>
+        <div class="guide-result-card__desc">Raw quota unavailable — report is for reference only.</div>
+      </div>
+      <div class="guide-result-card guide-result-card--danger">
+        <div class="guide-result-card__status">Anomaly</div>
+        <div class="guide-result-card__title">Failed request charged</div>
+        <div class="guide-result-card__desc">Request failed with no valid output but quota was deducted.</div>
+      </div>
+    </div>
+
+    <hr class="guide-divider" />
+
+    <h2>9. Quick Test Steps</h2>
+    <p>If you want to run this test manually without AI API Doctor:</p>
+    <ol>
+      <li>Record your raw quota value before the test</li>
+      <li>Send a request expected to fail (e.g., a non-existent model or trigger a 503)</li>
+      <li>Wait 10 seconds</li>
+      <li>Record the raw quota value again</li>
+      <li>Compare: if quota decreased without valid output, this is a billing anomaly signal</li>
+    </ol>
+
+    <h2>10. How to Share Reports</h2>
+    <p>AI API Doctor reports automatically sanitize API Keys, showing only <code>sk-****abcd</code>. You can share the report with the provider's support team.</p>
+    <p>Steps:</p>
+    <ul>
+      <li>Use a short prompt to minimize per-test cost</li>
+      <li>Run the test multiple times to check result consistency</li>
+      <li>Share the report text (not a screenshot with your full balance)</li>
+      <li>Compare against the provider's official billing</li>
+    </ul>
+
+    <div class="guide-callout guide-callout--danger">
+      <svg class="guide-callout__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <span><strong>Never send your full API Key, account password, or balance screenshots to strangers.</strong> Reports are auto-sanitized but always verify the text before sharing publicly.</span>
+    </div>
+
+    <h2>11. Owner-Side Fix Reference</h2>
+    <p>If you operate a relay station, failed requests and empty replies should not result in final deductions. A reference fix:</p>
+    <div class="guide-code">if (completion_tokens == 0
+    &amp;&amp; visible_output == ""
+    &amp;&amp; !has_tool_call
+    &amp;&amp; !has_image
+    &amp;&amp; !has_audio) {
+  actual_cost = 0
+  refund_precharge()
+  log("empty_response_no_charge")
+}</div>
+
+    <h2>12. Safety Boundaries</h2>
+    <p>AI API Doctor only shows reproducible signals from a single test. It does not prove intentional overbilling by the provider. Reports are best suited for:</p>
+    <ul>
+      <li>Troubleshooting with the provider's support team</li>
+      <li>Owner-side diagnosis and fix verification</li>
+      <li>Community comparison of billing behavior across stations</li>
+    </ul>
+    <p>It is not a financial audit and should not be used as legal evidence.</p>
+
+    <p>AI API Doctor does not recommend or rank any relay providers. Reports only show reproducible signals — they do not prove intent.</p>
+
+    <!-- CTA -->
+    <div class="guide-cta">
+      <a href="/en/" class="btn btn--primary">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        Start Diagnosis
+      </a>
+      <a href="/en/faq/" class="btn btn--secondary">View FAQ</a>
+    </div>
+
+  </div>
+</main>
+
+<!-- Footer -->
+<footer class="site-footer">
+  <div class="container site-footer__inner">
+    <div class="site-footer__links">
+      <a href="/en/">Home</a>
+      <a href="/en/faq/">FAQ</a>
+      <a href="/en/privacy/">Privacy</a>
+      <a href="/en/support/">Support</a>
+      <a href="/en/guides/billing-anomaly/">How It Works</a>
+    </div>
+    <p>&copy; 2026 AI API Doctor &middot; aiapidoctor.com</p>
+  </div>
+</footer>
+
+</body>
+</html>
