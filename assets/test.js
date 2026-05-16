@@ -722,7 +722,14 @@ function buildReportCardHTML(result, formData, lang) {
     `<span style="background:${gradeBg};color:${gradeColor};font-size:10px;font-weight:700;padding:2px 9px;border-radius:20px">${escH(c.label)}</span>`
   );
 
-  const maskedKey = maskKey(formData.apiKey);
+  // Sanitize baseUrl: only show origin + pathname, strip query params and trailing slash
+  let safeBaseUrl = '';
+  try {
+    const u = new URL(formData.baseUrl);
+    safeBaseUrl = u.origin + u.pathname.replace(/\/$/, '');
+  } catch (_) {
+    safeBaseUrl = formData.baseUrl;
+  }
 
   return `<div style="max-width:540px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;background:#f8fafc;padding:32px;box-sizing:border-box">
     <div style="background:#0f172a;border-radius:20px;padding:18px 20px 16px;margin-bottom:12px">
@@ -752,9 +759,8 @@ function buildReportCardHTML(result, formData, lang) {
 
     <div style="background:#fff;border-radius:12px;padding:12px 14px;margin-bottom:10px;font-size:11px;color:#64748b">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        <div><span style="font-weight:600;color:#374151">Base URL:</span> ${escH(formData.baseUrl)}</div>
+        <div><span style="font-weight:600;color:#374151">Base URL:</span> ${escH(safeBaseUrl)}</div>
         <div><span style="font-weight:600;color:#374151">Model:</span> ${escH(formData.model)}</div>
-        <div><span style="font-weight:600;color:#374151">API Key:</span> ${escH(maskedKey)}</div>
       </div>
     </div>
 
@@ -975,10 +981,8 @@ window.Doctor = {
 
     this._formData = {
       baseUrl: normalizedUrl,
-      apiKey,
       model,
-      interfaceType,
-      maskedKey: maskKey(apiKey)
+      interfaceType
     };
 
     try {
@@ -1064,7 +1068,10 @@ window.Doctor = {
     const html = buildReportCardHTML(result, this._formData, lang);
     resultNode.innerHTML = html;
 
-    resultNode.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const rect = resultNode.getBoundingClientRect();
+    if (rect.top > window.innerHeight * 0.6) {
+      resultNode.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
   },
 
   showProgress(state) {

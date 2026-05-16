@@ -3,21 +3,32 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>API Doctor?????????</title>
-  <meta name="description" content="?????????????????????????????? usage ????????????????????????API Key ??????????????" />
+  <title>API Doctor：中转站最强照妖镜</title>
+  <meta name="description" content="一键照出中转站有没有坑，生成可晒的验货分。不推荐、不排名任何中转站。" />
   <meta name="robots" content="index, follow" />
   <link rel="canonical" href="https://aiapidoctor.com/" />
   <link rel="alternate" hreflang="zh-CN" href="https://aiapidoctor.com/" />
   <link rel="alternate" hreflang="en" href="https://aiapidoctor.com/en/" />
   <link rel="alternate" hreflang="x-default" href="https://aiapidoctor.com/" />
   <link rel="manifest" href="/manifest.webmanifest" />
-  <link rel="icon" href="/assets/icons/icon-128.png">
   <link rel="stylesheet" href="/assets/site.css" />
   <meta property="og:type" content="website" />
-  <meta property="og:title" content="API Doctor?????????" />
-  <meta property="og:description" content="????????????????????? usage ????????????????????????" />
+  <meta property="og:title" content="API Doctor：中转站最强照妖镜" />
+  <meta property="og:description" content="一键照出中转站有没有坑，生成可晒的验货分。" />
   <meta property="og:url" content="https://aiapidoctor.com/" />
   <meta property="og:locale" content="zh_CN" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "AI API Doctor",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Web, Chrome",
+    "description": "AI API billing anomaly detection tool. Detects failed-request charges, empty-reply charges, cache anomalies, usage integrity issues, and model degradation. Generates shareable diagnostic reports. Does not recommend or rank any relay providers.",
+    "url": "https://aiapidoctor.com",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+  }
+  </script>
 </head>
 <body>
 
@@ -32,17 +43,17 @@
       </div>
       AI API Doctor
     </a>
-    <button class="nav-toggle" aria-label="??" onclick="document.querySelector('.site-nav').classList.toggle('open')">
+    <button class="nav-toggle" aria-label="菜单" onclick="document.querySelector('.site-nav').classList.toggle('open')">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
     </button>
     <nav class="site-nav">
-      <a href="/#doctor">???</a>
+      <a href="/">体检台</a>
       <a href="/faq/">FAQ</a>
-      <a href="/guides/billing-anomaly/">??</a>
-      <a href="/privacy/">??</a>
-      <a href="/support/">??</a>
+      <a href="/guides/billing-anomaly/">原理</a>
+      <a href="/privacy/">隐私</a>
+      <a href="/support/">支持</a>
       <span class="lang-switcher">
-        <span class="lang-switcher__current">??</span>
+        <span class="lang-switcher__current">中文</span>
         <span class="lang-switcher__sep">|</span>
         <a href="/en/" class="lang-switcher__link">English</a>
       </span>
@@ -50,136 +61,134 @@
   </div>
 </header>
 
-<!-- Main -->
-<main class="single-tool-page">
+<!-- Doctor Section: Tool-first layout -->
+<section id="doctor" class="doctor-section">
+  <div class="doctor-layout">
 
-  <!-- Hero -->
-  <section class="tool-hero">
-    <h1>API Doctor</h1>
-    <p class="tool-hero__tagline">????????</p>
-    <p class="tool-hero__desc">?????????????????????????????</p>
-    <div class="hero-badges">
-      <span class="hero-badge hero-badge--green">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-        API Key ????
-      </span>
-      <span class="hero-badge hero-badge--neutral">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
-        ????????
-      </span>
-      <span class="hero-badge">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
-        ??????
-      </span>
+    <!-- Hero header -->
+    <div class="doctor-hero">
+      <h1 class="doctor-hero__h1">API Doctor</h1>
+      <p class="doctor-hero__tagline">中转站最强照妖镜</p>
+      <p class="doctor-hero__desc">
+        先验货，再充钱。<br/>
+        一键照出中转站有没有坑，生成可晒的验货分。
+      </p>
     </div>
-  </section>
 
-  <!-- Tool Card -->
-  <section id="doctor" class="center-tool-shell">
-    <div class="doctor-card">
+    <!-- Form + Result -->
+    <div class="doctor-tool-area">
 
-      <!-- Card Header -->
-      <div class="doctor-card__header">
-        <span class="doctor-card__title">????</span>
-      </div>
+      <!-- Form panel -->
+      <div class="doctor-form-panel">
+        <div class="tool-card" id="tool-card">
+          <div class="tool-card__body">
 
-      <!-- Local Test -->
-      <div id="panel-local">
-
-        <!-- Base URL -->
-        <div class="form-field">
-          <label class="form-label" for="doctor-base-url">Base URL</label>
-          <input
-            id="doctor-base-url"
-            class="form-input"
-            placeholder="https://api.example.com/v1"
-            oninput="Doctor.normalizeBaseUrl(this)"
-          />
-          <div class="form-hint" id="base-url-hint" style="display:none;color:var(--warning)">Base URL ???? <code>/v1</code>???????</div>
-        </div>
-
-        <!-- API Key -->
-        <div class="form-field">
-          <label class="form-label" for="doctor-api-key">API Key</label>
-          <input
-            id="doctor-api-key"
-            type="password"
-            class="form-input form-input--key"
-            placeholder="sk-..."
-            autocomplete="off"
-          />
-          <div class="form-hint">API Key ???????????????????? API Doctor?</div>
-        </div>
-
-        <!-- Model ID -->
-        <div class="form-field">
-          <label class="form-label" for="doctor-model">Model ID</label>
-          <input id="doctor-model" class="form-input" placeholder="gpt-5.5" />
-          <div class="form-hint">???????????????? ID?</div>
-        </div>
-
-        <!-- Primary CTA -->
-        <button id="doctor-run-btn" class="btn btn--primary run-check-button" data-action="run-check" onclick="Doctor.run()">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-          ????
-        </button>
-
-        <div class="form-hint" style="text-align:center;margin-top:6px">???????? $0.05</div>
-
-        <!-- Collapsible: Paste connection info -->
-        <div class="collapse-section" style="margin-top:12px">
-          <button class="collapse-toggle" type="button" onclick="toggleCollapse('collapse-conn', this)">
-            <svg class="collapse-toggle__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-            ?????? / cURL / ENV
-          </button>
-          <div class="collapse-panel" id="collapse-conn">
-            <div class="form-field form-field--compact">
-              <textarea
-                id="doctor-conn-info"
-                class="form-textarea"
-                placeholder="?? New API ?????Base URL?API Key ? cURL"
-                rows="2"
-                oninput="Doctor.onConnectionInfoInput(this)"
-              ></textarea>
-              <button type="button" class="btn btn--secondary btn--sm" onclick="tryParseConnectionInfo()" style="width:100%;margin-top:6px;box-sizing:border-box">?????</button>
-              <div class="form-hint">????????Base URL ???? <code>/v1</code>?</div>
+            <!-- Paste config link (collapsed) -->
+            <div class="paste-config-row">
+              <button class="paste-config-link" id="paste-config-btn" type="button" onclick="document.getElementById('paste-config-panel').classList.toggle('open'); this.classList.toggle('open')">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                粘贴配置
+              </button>
             </div>
+            <div class="advanced-panel" id="paste-config-panel">
+              <div class="tool-form__group" style="margin-top:8px">
+                <textarea
+                  id="doctor-conn-info"
+                  class="tool-form__textarea"
+                  placeholder="支持 New API 连接信息、Base URL、API Key 或 cURL。例如：
+{&quot;_type&quot;:&quot;newapi_channel_conn&quot;,&quot;key&quot;:&quot;sk-...&quot;,&quot;url&quot;:&quot;https://api.example.com&quot;}
+或：
+https://api.example.com/v1
+或：
+OPENAI_API_KEY=sk-..."
+                  rows="3"
+                  oninput="Doctor.onConnectionInfoInput(this)"
+                ></textarea>
+                <div class="tool-form__hint">自动解析 JSON、cURL、ENV 格式。解析后请检查下方字段。</div>
+              </div>
+            </div>
+
+            <!-- Base URL -->
+            <div class="tool-form__group">
+              <label class="tool-form__label">Base URL</label>
+              <input
+                id="doctor-base-url"
+                class="tool-form__input"
+                placeholder="https://api.example.com/v1"
+                oninput="Doctor.normalizeBaseUrl(this)"
+              />
+            </div>
+
+            <!-- API Key -->
+            <div class="tool-form__group">
+              <label class="tool-form__label">API Key</label>
+              <input
+                id="doctor-api-key"
+                type="password"
+                class="tool-form__input tool-form__input--key"
+                placeholder="sk-..."
+                autocomplete="off"
+              />
+            </div>
+
+            <!-- Model ID -->
+            <div class="tool-form__group">
+              <label class="tool-form__label">Model ID</label>
+              <input id="doctor-model" class="tool-form__input" placeholder="gpt-5.5" />
+            </div>
+
+            <!-- Run button -->
+            <button id="doctor-run-btn" class="btn btn--primary-run" onclick="Doctor.run()">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              一键验货
+            </button>
+            <div class="run-cost-hint">预计消耗通常低于 $0.05</div>
+
+          </div><!-- /tool-card__body -->
+        </div><!-- /tool-card -->
+      </div><!-- /doctor-form-panel -->
+
+      <!-- Result panel -->
+      <div class="doctor-report-panel">
+        <div id="result-card">
+          <div class="result-empty">
+            填写信息后点击检测按钮，即可查看诊断结果。
           </div>
         </div>
+        <div id="diag-progress"></div>
+      </div><!-- /doctor-report-panel -->
 
-      </div><!-- /panel-local -->
+    </div><!-- /doctor-tool-area -->
 
-      <!-- Progress -->
-      <div id="diag-progress"></div>
+  </div><!-- /doctor-layout -->
+</section>
 
-      <!-- Result -->
-      <div id="result-card" style="margin-top:14px">
-      </div>
-
-    </div><!-- /doctor-card -->
-  </section>
-
-  <!-- Bottom links -->
-  <section class="tool-bottom-links">
-    <a href="/faq/">?? FAQ</a>
-    <span>�</span>
-    <a href="/guides/billing-anomaly/">????</a>
-    <span>�</span>
-    <span class="bottom-note">Chrome ?????</span>
-  </section>
-
-</main>
+<!-- Plugin corner entry (small, non-intrusive) -->
+<div class="plugin-corner">
+  查真实扣费？<a href="/extension/">插件审核中</a>
+</div>
 
 <!-- Footer -->
 <footer class="site-footer">
   <div class="container site-footer__inner">
+    <div class="site-logo" style="font-size:15px;margin-bottom:8px">
+      <div class="site-logo__icon" style="width:28px;height:28px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px">
+          <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+        </svg>
+      </div>
+      AI API Doctor
+    </div>
     <div class="site-footer__links">
       <a href="/faq/">FAQ</a>
-      <a href="/privacy/">??</a>
-      <a href="/support/">??</a>
-      <a href="/guides/billing-anomaly/">????</a>
+      <a href="/guides/billing-anomaly/">原理</a>
+      <a href="/privacy/">隐私</a>
+      <a href="/support/">支持</a>
     </div>
-    <p>&copy; 2026 AI API Doctor &middot; aiapidoctor.com</p>
+    <p class="site-footer__note">
+      AI API Doctor 不推荐、不排名任何中转站。报告只展示本次测试中的可复现信号，不证明服务商主观故意。
+    </p>
+    <p style="color:#9ca3af;font-size:12px;margin-top:4px">&copy; 2026 AI API Doctor &middot; aiapidoctor.com</p>
   </div>
 </footer>
 
@@ -187,76 +196,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.min.js"></script>
 <script src="/assets/test.js"></script>
-<script>
-/* Collapse toggle */
-function toggleCollapse(id, btn) {
-  const panel = document.getElementById(id);
-  if (!panel) return;
-  const open = panel.classList.toggle('open');
-  if (btn) btn.classList.toggle('open', open);
-}
-
-/* Parse connection info helper */
-function tryParseConnectionInfo() {
-  const text = document.getElementById('doctor-conn-info').value;
-  if (!text) return;
-
-  // Try to extract Base URL
-  const urlMatch = text.match(/https?:\/\/[^\s'"]+\/v1[^\s'"]*/);
-  if (urlMatch) {
-    const urlInput = document.getElementById('doctor-base-url');
-    if (urlInput) {
-      urlInput.value = urlMatch[0].replace(/\/v1\/.*/, '/v1');
-      Doctor.normalizeBaseUrl(urlInput);
-    }
-  }
-
-  // Try to extract API Key
-  const keyMatch = text.match(/(?:sk-|api[-_]?key[:\s=]*)([a-zA-Z0-9_-]{10,})/i);
-  if (keyMatch) {
-    const keyInput = document.getElementById('doctor-api-key');
-    if (keyInput) keyInput.value = keyMatch[1];
-  }
-
-  // Try to extract Model ID
-  const modelMatch = text.match(/(?:model[:\s=]*)"?([\w\.\-]+)"?/i);
-  if (modelMatch) {
-    const modelInput = document.getElementById('doctor-model');
-    if (modelInput && !modelInput.value) modelInput.value = modelMatch[1];
-  }
-
-  Doctor.showToast('????');
-}
-
-/* Escape HTML */
-function esc(str) {
-  if (!str && str !== 0) return '';
-  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
-/* Init */
-function safeInit() {
-  if (window.Doctor) {
-    window.Doctor.init();
-  }
-}
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', safeInit);
-} else {
-  safeInit();
-}
-</script>
-
-<!-- Chrome Extension corner link -->
-<a href="/extension/" target="_blank" rel="noopener" class="ext-float-link" title="Chrome ?????">
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-  ?????
-</a>
-<style>
-.ext-float-link{position:fixed;bottom:24px;right:24px;display:flex;align-items:center;gap:6px;background:var(--accent);color:#fff;padding:10px 14px;border-radius:24px;font-size:13px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,.2);text-decoration:none;z-index:999;transition:background .2s,transform .15s}
-.ext-float-link:hover{background:#1e293b;text-decoration:none;transform:translateY(-2px)}
-@media(max-width:480px){.ext-float-link{bottom:16px;right:16px;font-size:12px;padding:8px 12px}}
-</style>
 
 </body>
 </html>
