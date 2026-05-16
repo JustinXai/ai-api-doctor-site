@@ -14,8 +14,8 @@
   <link rel="icon" href="/assets/icons/icon-128.png">
   <link rel="stylesheet" href="/assets/site.css" />
   <meta property="og:type" content="website" />
-  <meta property="og:title" content="AI API Doctor: Relay API Black-box Check Tool" />
-  <meta property="og:description" content="Relay API Black-box Check. Do not trust the dashboard. Check it. Detect empty runs, missing usage, and model shrinkage. Generate a shareable scorecard." />
+  <meta property="og:title" content="API Doctor: The Ultimate Relay API Mirror" />
+  <meta property="og:description" content="Test before you pay. Check for empty-run charges, model swaps, and usage disappearance. Uncover whether the relay provider is trustworthy. Generate a shareable scorecard." />
   <meta property="og:url" content="https://aiapidoctor.com/en/" />
   <meta property="og:locale" content="en_US" />
   <script type="application/ld+json">
@@ -68,8 +68,8 @@
   <!-- Hero -->
   <section class="tool-hero">
     <h1>API Doctor</h1>
-    <p class="tool-hero__tagline">Relay API Black-box Check</p>
-    <p>Don't trust the dashboard. Check it. Detect empty runs, missing usage, cache waste, and possible model shrinkage. Generate a shareable relay API scorecard.</p>
+    <p class="tool-hero__tagline">The Ultimate Relay API Mirror</p>
+    <p class="tool-hero__desc">Test before you pay. Check for empty-run charges, model swaps, and usage disappearance. Uncover whether the relay provider is trustworthy. Generate a shareable scorecard.</p>
     <div class="hero-badges">
       <span class="hero-badge hero-badge--green">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
@@ -92,8 +92,8 @@
 
       <!-- Card Header -->
       <div class="doctor-card__header">
-        <span class="doctor-card__title">Start Diagnosis</span>
-        <button class="btn btn--link btn--sm" type="button" id="btn-show-manual" data-action="show-manual-report" onclick="switchTab('manual')">Manual Report</button>
+        <span class="doctor-card__title">Start Check</span>
+        <button class="btn btn--link btn--sm" type="button" onclick="switchTab('manual')">Manual Report</button>
       </div>
 
       <!-- ── LOCAL TEST ── -->
@@ -101,7 +101,7 @@
 
         <!-- Base URL -->
         <div class="form-field">
-          <label class="form-label">Base URL</label>
+          <label class="form-label" for="doctor-base-url">Base URL</label>
           <input
             id="doctor-base-url"
             class="form-input"
@@ -113,7 +113,7 @@
 
         <!-- API Key -->
         <div class="form-field">
-          <label class="form-label">API Key</label>
+          <label class="form-label" for="doctor-api-key">API Key</label>
           <input
             id="doctor-api-key"
             type="password"
@@ -126,9 +126,9 @@
 
         <!-- Model ID -->
         <div class="form-field">
-          <label class="form-label">Model ID</label>
+          <label class="form-label" for="doctor-model">Model ID</label>
           <div class="input-with-btn">
-            <input id="doctor-model" class="form-input" placeholder="gpt-4o" />
+            <input id="doctor-model" class="form-input" placeholder="Enter model name, e.g. gpt-5.5" />
             <button class="btn btn--sm btn--secondary" type="button" id="read-models-btn" data-action="fetch-models" onclick="Doctor.readModelList()">Fetch Models</button>
           </div>
           <div class="form-hint">Don't know the model ID? Try "Fetch Models" first.</div>
@@ -146,15 +146,22 @@
           <input type="hidden" id="doctor-interface" value="OpenAI Chat" />
         </div>
 
-        <!-- Mode + Cost line -->
+        <!-- Mode + Cost row -->
         <div class="mode-cost-row">
           <div class="mode-selector">
             <button class="mode-btn active" data-mode="quick" data-action="set-quick-check" onclick="Doctor.setMode('quick')">Quick Check</button>
             <button class="mode-btn" data-mode="full" data-action="set-full-check" onclick="Doctor.setMode('full')">Full Check</button>
           </div>
-          <div class="cost-hint" id="cost-hint">
-            Quick Check: about 1 request, very low cost
-          </div>
+          <div class="cost-hint" id="cost-hint">Quick Check: about 1 request, very low cost</div>
+        </div>
+
+        <!-- Actions — primary CTA -->
+        <div class="tool-actions">
+          <button id="doctor-run-btn" class="btn btn--primary btn--run" data-action="run-check" onclick="Doctor.run()">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Start Check
+          </button>
+          <button id="doctor-clear-btn" class="btn btn--secondary" data-action="clear-form" onclick="Doctor.clear()">Clear</button>
         </div>
 
         <!-- Collapsible: Paste connection info -->
@@ -172,10 +179,8 @@
                 rows="2"
                 oninput="Doctor.onConnectionInfoInput(this)"
               ></textarea>
-              <button type="button" class="btn btn--secondary btn--sm" data-action="parse-connection" style="margin-top:6px;width:100%;box-sizing:border-box">
-                Parse &amp; Fill
-              </button>
-              <div class="form-hint">Auto-parses on paste. Click above button to re-parse manually.</div>
+              <button type="button" class="btn btn--secondary btn--sm" onclick="tryParseConnectionInfo()" style="width:100%;margin-top:6px;box-sizing:border-box">Parse &amp; Fill</button>
+              <div class="form-hint">Auto-parses on paste. Base URL auto-completes with <code>/v1</code>.</div>
             </div>
           </div>
         </div>
@@ -247,21 +252,16 @@
                   <input id="price-cached-read" class="form-input" placeholder="default" type="number" step="0.001" />
                 </div>
                 <div>
+                  <div class="form-label" style="font-size:11px">cached write / 1M</div>
+                  <input id="price-cached-write" class="form-input" placeholder="default" type="number" step="0.001" />
+                </div>
+                <div>
                   <div class="form-label" style="font-size:11px">actual cost</div>
                   <input id="price-actual" class="form-input" placeholder="USD" type="number" step="0.000001" />
                 </div>
               </div>
             </div>
           </div>
-        </div>
-
-        <!-- Actions -->
-        <div class="tool-actions">
-          <button id="doctor-run-btn" class="btn btn--primary btn--run" data-action="run-check" onclick="Doctor.run()">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-            Start Check
-          </button>
-          <button id="doctor-clear-btn" class="btn btn--secondary" data-action="clear-form" onclick="Doctor.clear()">Clear</button>
         </div>
 
       </div><!-- /panel-local -->
@@ -271,23 +271,23 @@
 
         <div class="form-row">
           <div class="form-field">
-            <label class="form-label">Provider Name <span class="form-label-opt">(optional)</span></label>
+            <label class="form-label" for="manual-provider">Provider Name <span class="form-label-opt">(optional)</span></label>
             <input id="manual-provider" class="form-input" placeholder="Provider name" />
           </div>
           <div class="form-field">
-            <label class="form-label">Base URL</label>
+            <label class="form-label" for="manual-base-url">Base URL</label>
             <input id="manual-base-url" class="form-input" placeholder="https://api.example.com/v1" />
           </div>
         </div>
 
         <div class="form-field">
-          <label class="form-label">Model ID</label>
-          <input id="manual-model" class="form-input" placeholder="gpt-4o" />
+            <label class="form-label" for="manual-model">Model ID</label>
+          <input id="manual-model" class="form-input" placeholder="Enter model name, e.g. gpt-5.5" />
         </div>
 
         <div class="form-row">
           <div class="form-field">
-            <label class="form-label">Interface</label>
+            <label class="form-label" for="manual-interface">Interface</label>
             <select id="manual-interface" class="form-select">
               <option>OpenAI Chat</option>
               <option>OpenAI Responses</option>
@@ -295,29 +295,29 @@
             </select>
           </div>
           <div class="form-field">
-            <label class="form-label">HTTP Status</label>
+            <label class="form-label" for="manual-http-status">HTTP Status</label>
             <input id="manual-http-status" class="form-input" placeholder="200" type="number" />
           </div>
         </div>
 
         <div class="form-row">
           <div class="form-field">
-            <label class="form-label">prompt_tokens</label>
+            <label class="form-label" for="manual-prompt-tokens">prompt_tokens</label>
             <input id="manual-prompt-tokens" class="form-input" placeholder="0" type="number" />
           </div>
           <div class="form-field">
-            <label class="form-label">completion_tokens</label>
+            <label class="form-label" for="manual-completion-tokens">completion_tokens</label>
             <input id="manual-completion-tokens" class="form-input" placeholder="0" type="number" />
           </div>
         </div>
 
         <div class="form-row">
           <div class="form-field">
-            <label class="form-label">total_tokens</label>
+            <label class="form-label" for="manual-total-tokens">total_tokens</label>
             <input id="manual-total-tokens" class="form-input" placeholder="0" type="number" />
           </div>
           <div class="form-field">
-            <label class="form-label">cached_tokens</label>
+            <label class="form-label" for="manual-cached-tokens">cached_tokens</label>
             <input id="manual-cached-tokens" class="form-input" placeholder="0" type="number" />
           </div>
         </div>
@@ -330,19 +330,18 @@
           <button class="btn btn--secondary" onclick="ManualReport.clear()">Clear</button>
         </div>
 
-        <div style="margin-top:12px">
-          <button class="btn btn--link btn--sm" type="button" data-action="show-auto-check" onclick="switchTab('local')">Back to Auto Test</button>
+        <div style="margin-top:10px">
+          <button class="btn btn--link btn--sm" type="button" onclick="switchTab('local')">Back to Auto Test</button>
         </div>
 
       </div><!-- /panel-manual -->
 
       <!-- Progress -->
-      <div id="diag-progress" style="margin-top:12px"></div>
+      <div id="diag-progress"></div>
 
       <!-- Result -->
-      <div id="result-card" class="result-empty-state">
-        Enter Base URL, API Key, and Model ID to start.
-      </div>
+      <!-- Result -->
+      <div id="result-card" style="margin-top:14px">
 
     </div><!-- /doctor-card -->
   </section>
@@ -386,8 +385,6 @@ function toggleCollapse(id, btn) {
 
 /* ── Tab switcher ── */
 function switchTab(tab) {
-  document.getElementById('tab-local') && document.getElementById('tab-local').classList.toggle('active', tab === 'local');
-  document.getElementById('tab-manual') && document.getElementById('tab-manual').classList.toggle('active', tab === 'manual');
   document.getElementById('panel-local').style.display = tab === 'local' ? 'block' : 'none';
   document.getElementById('panel-manual').style.display = tab === 'manual' ? 'block' : 'none';
 }
@@ -402,13 +399,13 @@ function updateCostHint() {
 
   if (mode === 'quick') {
     if (cacheEnabled) {
-      hint.textContent = 'Quick Check: about 3 requests, cache detection may consume a small amount of credits';
+      hint.textContent = 'Quick Check: about 3 requests, cache hit test may consume a small amount of credits';
     } else {
       hint.textContent = 'Quick Check: about 1 request, very low cost';
     }
   } else {
-    let text = 'Full Check: about 3–6 requests, may consume a small amount of credits';
-    if (cacheEnabled) text += ' · includes cache detection';
+    let text = 'Full Check: about 3–6 requests, may generate small costs';
+    if (cacheEnabled) text += ' · includes cache test';
     if (sanityEnabled) text += ' · includes model test';
     hint.textContent = text;
   }
@@ -434,29 +431,10 @@ window.ManualReport = {
     const ok = httpStatus >= 200 && httpStatus < 400 && hasOutput;
     const bg = ok ? '#dcfce7' : httpStatus >= 400 ? '#fee2e2' : '#fef3c7';
     const color = ok ? '#16a34a' : httpStatus >= 400 ? '#dc2626' : '#d97706';
-    const label = ok ? 'Normal' : httpStatus >= 400 ? 'Error' : 'Needs Review';
-    const sub = ok ? 'Connectivity OK' : httpStatus >= 400 ? 'Connectivity Failed' : 'Please verify billing';
+    const label = ok ? 'OK' : httpStatus >= 400 ? 'Error' : 'Review Needed';
+    const sub = ok ? 'Connected' : httpStatus >= 400 ? 'Connection Failed' : 'Verify Billing';
 
-    f('result-card').innerHTML = `
-      <div class="report-card">
-        <div class="report-card__header">
-          <div class="report-card__title">AI API Doctor</div>
-          <div class="report-card__meta">API Key Not Included &middot; ${timestamp}</div>
-        </div>
-        <div class="report-card__status" style="background:${bg}">
-          <div class="report-card__status-label" style="color:${color}">${label}</div>
-          <div class="report-card__status-text">${sub}</div>
-        </div>
-        <div class="report-card__grid">
-          <div class="report-cell"><div class="report-cell__label">Base URL</div><div class="report-cell__value mono">${esc(baseUrl)}</div></div>
-          <div class="report-cell"><div class="report-cell__label">Model</div><div class="report-cell__value mono">${esc(model)}</div></div>
-          <div class="report-cell"><div class="report-cell__label">HTTP</div><div class="report-cell__value mono" style="color:${httpStatus>=400?'#dc2626':'#16a34a'}">${httpStatus||'—'}</div></div>
-          <div class="report-cell"><div class="report-cell__label">usage</div><div class="report-cell__value">${usageOk?'Complete':'Incomplete'}</div></div>
-          <div class="report-cell"><div class="report-cell__label">completion</div><div class="report-cell__value mono">${ct||'—'}</div></div>
-          <div class="report-cell"><div class="report-cell__label">total</div><div class="report-cell__value mono">${tt||'—'}</div></div>
-        </div>
-        <div class="report-card__footer">This report only shows reproducible signals from this test. It does not prove provider intent and is not a legal conclusion.</div>
-      </div>`;
+    f('result-card').innerHTML = '<div style="text-align:center;padding:32px 16px;color:#94a3b8;font-size:13px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;min-height:80px;display:flex;align-items:center;justify-content:center">Enter Base URL, API Key, and Model ID to start.</div>';
   },
   clear() {
     ['manual-provider','manual-base-url','manual-model','manual-http-status','manual-prompt-tokens','manual-completion-tokens','manual-total-tokens','manual-cached-tokens'].forEach(id => {
@@ -475,7 +453,7 @@ function esc(str) {
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-/* ── Init (safe) ── */
+/* ── Init ── */
 function safeInit() {
   if (window.Doctor) {
     window.Doctor.init();

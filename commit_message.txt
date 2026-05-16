@@ -1,0 +1,30 @@
+fix: stabilize JS initialization and button event binding
+
+Critical bug fixes (no functional changes to scoring or copy):
+
+JS initialization:
+- Add initDoctor() with document.readyState guard (handles defer/async/cache timing)
+- bindDoctorEvents() for stable data-action delegation
+- bindConnectionParser() for auto-parse on paste with 300ms debounce
+- tryParseConnectionInfo() for manual parse button
+
+Button stability:
+- Add data-action attributes to all key buttons
+- Centralized event delegation in test.js (no more scattered onclick=)
+- Even if one onclick throws, others still work via delegation
+
+Parse & Fill:
+- Add Parse & Fill button (data-action="parse-connection") below textarea
+- Enhanced parseConnectionInfo to support url/key/baseUrl/apiKey fields
+- Auto-adds /v1 suffix to extracted Base URLs
+- Shows green success or yellow failure hints
+
+Validation:
+- Doctor.run() now validates API Key (was missing)
+- All await operations in try/catch/finally
+- finally always restores button state
+
+Other:
+- Add favicon icon links to both index.html and en/index.html
+- Fix inline init block to use safeInit() with readyState guard
+- en/index.html gets same fixes as index.html

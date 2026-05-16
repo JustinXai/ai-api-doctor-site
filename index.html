@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AI API Doctor：中转站黑盒验货工具</title>
-  <meta name="description" content="中转站黑盒验货。别信面板，先验货。测空跑、usage 消失、缓存吃亏和模型缩水，生成一张可晒的 A/B/C/D/F/U 档验货分。API Key 本地使用，不推荐任何中转站。" />
+  <title>API Doctor：中转站最强照妖镜</title>
+  <meta name="description" content="中转站最强照妖镜。先验货再充钱。测空值扣费、测偷换模型、测 usage 消失，检测中转站到底有没有坑，生成可晒的验货分。API Key 本地使用，不推荐任何中转站。" />
   <meta name="robots" content="index, follow" />
   <link rel="canonical" href="https://aiapidoctor.com/" />
   <link rel="alternate" hreflang="zh-CN" href="https://aiapidoctor.com/" />
@@ -14,8 +14,8 @@
   <link rel="icon" href="/assets/icons/icon-128.png">
   <link rel="stylesheet" href="/assets/site.css" />
   <meta property="og:type" content="website" />
-  <meta property="og:title" content="AI API Doctor：AI API 扣费异常检测工具" />
-  <meta property="og:description" content="中转站黑盒验货。别信面板，先验货。测空跑、usage 消失、缓存吃亏和模型缩水，生成一张可晒的验货分。" />
+  <meta property="og:title" content="API Doctor：中转站最强照妖镜" />
+  <meta property="og:description" content="中转站最强照妖镜。先验货再充钱。测空值扣费、测偷换模型、测 usage 消失，检测中转站到底有没有坑，生成可晒的验货分。" />
   <meta property="og:url" content="https://aiapidoctor.com/" />
   <meta property="og:locale" content="zh_CN" />
   <script type="application/ld+json">
@@ -50,7 +50,7 @@
     <nav class="site-nav">
       <a href="/#doctor">体检台</a>
       <a href="/faq/">FAQ</a>
-      <a href="/guides/billing-anomaly/">检测原理</a>
+      <a href="/guides/billing-anomaly/">原理</a>
       <a href="/privacy/">隐私</a>
       <a href="/support/">支持</a>
       <span class="lang-switcher">
@@ -68,8 +68,8 @@
   <!-- Hero -->
   <section class="tool-hero">
     <h1>API Doctor</h1>
-    <p class="tool-hero__tagline">中转站黑盒验货</p>
-    <p>别信面板，先验货。测空跑、usage 消失、缓存吃亏和模型缩水，生成一张可晒的中转站验货分。</p>
+    <p class="tool-hero__tagline">中转站最强照妖镜</p>
+    <p class="tool-hero__desc">先验货再充钱。测空值扣费、测偷换模型、测 usage 消失，检测中转站到底有没有坑，生成可晒的验货分。</p>
     <div class="hero-badges">
       <span class="hero-badge hero-badge--green">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
@@ -92,8 +92,8 @@
 
       <!-- Card Header -->
       <div class="doctor-card__header">
-        <span class="doctor-card__title">开始体检</span>
-        <button class="btn btn--link btn--sm" type="button" id="btn-show-manual" data-action="show-manual-report" onclick="switchTab('manual')">手动生成报告</button>
+        <span class="doctor-card__title">开始验货</span>
+        <button class="btn btn--link btn--sm" type="button" onclick="switchTab('manual')">手动生成报告</button>
       </div>
 
       <!-- ── LOCAL TEST ── -->
@@ -101,7 +101,7 @@
 
         <!-- Base URL -->
         <div class="form-field">
-          <label class="form-label">Base URL</label>
+          <label class="form-label" for="doctor-base-url">Base URL</label>
           <input
             id="doctor-base-url"
             class="form-input"
@@ -113,7 +113,7 @@
 
         <!-- API Key -->
         <div class="form-field">
-          <label class="form-label">API Key</label>
+          <label class="form-label" for="doctor-api-key">API Key</label>
           <input
             id="doctor-api-key"
             type="password"
@@ -126,9 +126,9 @@
 
         <!-- Model ID -->
         <div class="form-field">
-          <label class="form-label">Model ID</label>
+          <label class="form-label" for="doctor-model">Model ID</label>
           <div class="input-with-btn">
-            <input id="doctor-model" class="form-input" placeholder="gpt-4o" />
+            <input id="doctor-model" class="form-input" placeholder="填写模型名，如 gpt-5.5" />
             <button class="btn btn--sm btn--secondary" type="button" id="read-models-btn" data-action="fetch-models" onclick="Doctor.readModelList()">自动读取模型</button>
           </div>
           <div class="form-hint">不知道模型 ID？可以先点「自动读取模型」。</div>
@@ -146,15 +146,22 @@
           <input type="hidden" id="doctor-interface" value="OpenAI Chat" />
         </div>
 
-        <!-- Mode + Cost line -->
+        <!-- Mode + Cost row -->
         <div class="mode-cost-row">
           <div class="mode-selector">
             <button class="mode-btn active" data-mode="quick" data-action="set-quick-check" onclick="Doctor.setMode('quick')">快速验货</button>
             <button class="mode-btn" data-mode="full" data-action="set-full-check" onclick="Doctor.setMode('full')">完整验货</button>
           </div>
-          <div class="cost-hint" id="cost-hint">
-            快速验货：预计 1 次请求，消耗极低
-          </div>
+          <div class="cost-hint" id="cost-hint">快速验货：预计 1 次请求，消耗极低</div>
+        </div>
+
+        <!-- Actions — primary CTA -->
+        <div class="tool-actions">
+          <button id="doctor-run-btn" class="btn btn--primary btn--run" data-action="run-check" onclick="Doctor.run()">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            开始验货
+          </button>
+          <button id="doctor-clear-btn" class="btn btn--secondary" data-action="clear-form" onclick="Doctor.clear()">清空</button>
         </div>
 
         <!-- Collapsible: Paste connection info -->
@@ -172,10 +179,8 @@
                 rows="2"
                 oninput="Doctor.onConnectionInfoInput(this)"
               ></textarea>
-              <button type="button" class="btn btn--secondary btn--sm" data-action="parse-connection" style="margin-top:6px;width:100%;box-sizing:border-box">
-              解析并填入
-            </button>
-            <div class="form-hint">粘贴后会自动解析，也可手动点击上方按钮。</div>
+              <button type="button" class="btn btn--secondary btn--sm" onclick="tryParseConnectionInfo()" style="width:100%;margin-top:6px;box-sizing:border-box">解析并填入</button>
+              <div class="form-hint">粘贴后自动解析，Base URL 自动补全 <code>/v1</code>。</div>
             </div>
           </div>
         </div>
@@ -198,7 +203,7 @@
         <div class="collapse-section">
           <button class="collapse-toggle" type="button" onclick="toggleCollapse('collapse-adv', this)">
             <svg class="collapse-toggle__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-            完整体检与高级选项
+            完整验货与高级选项
           </button>
           <div class="collapse-panel" id="collapse-adv">
             <div class="form-field form-field--compact">
@@ -247,21 +252,16 @@
                   <input id="price-cached-read" class="form-input" placeholder="默认" type="number" step="0.001" />
                 </div>
                 <div>
+                  <div class="form-label" style="font-size:11px">cached write / 1M</div>
+                  <input id="price-cached-write" class="form-input" placeholder="默认" type="number" step="0.001" />
+                </div>
+                <div>
                   <div class="form-label" style="font-size:11px">actual cost</div>
                   <input id="price-actual" class="form-input" placeholder="USD" type="number" step="0.000001" />
                 </div>
               </div>
             </div>
           </div>
-        </div>
-
-        <!-- Actions -->
-        <div class="tool-actions">
-          <button id="doctor-run-btn" class="btn btn--primary btn--run" data-action="run-check" onclick="Doctor.run()">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-            开始验货
-          </button>
-          <button id="doctor-clear-btn" class="btn btn--secondary" data-action="clear-form" onclick="Doctor.clear()">清空</button>
         </div>
 
       </div><!-- /panel-local -->
@@ -271,23 +271,23 @@
 
         <div class="form-row">
           <div class="form-field">
-            <label class="form-label">服务商名称 <span class="form-label-opt">（可选）</span></label>
+            <label class="form-label" for="manual-provider">服务商名称 <span class="form-label-opt">（可选）</span></label>
             <input id="manual-provider" class="form-input" placeholder="服务商名称" />
           </div>
           <div class="form-field">
-            <label class="form-label">Base URL</label>
+            <label class="form-label" for="manual-base-url">Base URL</label>
             <input id="manual-base-url" class="form-input" placeholder="https://api.example.com/v1" />
           </div>
         </div>
 
         <div class="form-field">
-          <label class="form-label">Model ID</label>
-          <input id="manual-model" class="form-input" placeholder="gpt-4o" />
+          <label class="form-label" for="manual-model">Model ID</label>
+          <input id="manual-model" class="form-input" placeholder="填写模型名，如 gpt-5.5" />
         </div>
 
         <div class="form-row">
           <div class="form-field">
-            <label class="form-label">Interface</label>
+            <label class="form-label" for="manual-interface">Interface</label>
             <select id="manual-interface" class="form-select">
               <option>OpenAI Chat</option>
               <option>OpenAI Responses</option>
@@ -295,29 +295,29 @@
             </select>
           </div>
           <div class="form-field">
-            <label class="form-label">HTTP Status</label>
+            <label class="form-label" for="manual-http-status">HTTP Status</label>
             <input id="manual-http-status" class="form-input" placeholder="200" type="number" />
           </div>
         </div>
 
         <div class="form-row">
           <div class="form-field">
-            <label class="form-label">prompt_tokens</label>
+            <label class="form-label" for="manual-prompt-tokens">prompt_tokens</label>
             <input id="manual-prompt-tokens" class="form-input" placeholder="0" type="number" />
           </div>
           <div class="form-field">
-            <label class="form-label">completion_tokens</label>
+            <label class="form-label" for="manual-completion-tokens">completion_tokens</label>
             <input id="manual-completion-tokens" class="form-input" placeholder="0" type="number" />
           </div>
         </div>
 
         <div class="form-row">
           <div class="form-field">
-            <label class="form-label">total_tokens</label>
+            <label class="form-label" for="manual-total-tokens">total_tokens</label>
             <input id="manual-total-tokens" class="form-input" placeholder="0" type="number" />
           </div>
           <div class="form-field">
-            <label class="form-label">cached_tokens</label>
+            <label class="form-label" for="manual-cached-tokens">cached_tokens</label>
             <input id="manual-cached-tokens" class="form-input" placeholder="0" type="number" />
           </div>
         </div>
@@ -330,19 +330,17 @@
           <button class="btn btn--secondary" onclick="ManualReport.clear()">清空</button>
         </div>
 
-        <div style="margin-top:12px">
-          <button class="btn btn--link btn--sm" type="button" data-action="show-auto-check" onclick="switchTab('local')">返回自动检测</button>
+        <div style="margin-top:10px">
+          <button class="btn btn--link btn--sm" type="button" onclick="switchTab('local')">返回自动检测</button>
         </div>
 
       </div><!-- /panel-manual -->
 
       <!-- Progress -->
-      <div id="diag-progress" style="margin-top:12px"></div>
+      <div id="diag-progress"></div>
 
       <!-- Result -->
-      <div id="result-card" class="result-empty-state">
-        填写 Base URL、API Key 和 Model ID 后开始检测。
-      </div>
+      <div id="result-card" style="margin-top:14px">
 
     </div><!-- /doctor-card -->
   </section>
@@ -386,8 +384,6 @@ function toggleCollapse(id, btn) {
 
 /* ── Tab switcher ── */
 function switchTab(tab) {
-  document.getElementById('tab-local') && document.getElementById('tab-local').classList.toggle('active', tab === 'local');
-  document.getElementById('tab-manual') && document.getElementById('tab-manual').classList.toggle('active', tab === 'manual');
   document.getElementById('panel-local').style.display = tab === 'local' ? 'block' : 'none';
   document.getElementById('panel-manual').style.display = tab === 'manual' ? 'block' : 'none';
 }
@@ -437,26 +433,7 @@ window.ManualReport = {
     const label = ok ? '正常' : httpStatus >= 400 ? '异常' : '需复查';
     const sub = ok ? '联通正常' : httpStatus >= 400 ? '联通失败' : '请核实扣费';
 
-    f('result-card').innerHTML = `
-      <div class="report-card">
-        <div class="report-card__header">
-          <div class="report-card__title">AI API Doctor</div>
-          <div class="report-card__meta">API Key 未包含 &middot; ${timestamp}</div>
-        </div>
-        <div class="report-card__status" style="background:${bg}">
-          <div class="report-card__status-label" style="color:${color}">${label}</div>
-          <div class="report-card__status-text">${sub}</div>
-        </div>
-        <div class="report-card__grid">
-          <div class="report-cell"><div class="report-cell__label">Base URL</div><div class="report-cell__value mono">${esc(baseUrl)}</div></div>
-          <div class="report-cell"><div class="report-cell__label">模型</div><div class="report-cell__value mono">${esc(model)}</div></div>
-          <div class="report-cell"><div class="report-cell__label">HTTP</div><div class="report-cell__value mono" style="color:${httpStatus>=400?'#dc2626':'#16a34a'}">${httpStatus||'—'}</div></div>
-          <div class="report-cell"><div class="report-cell__label">usage</div><div class="report-cell__value">${usageOk?'完整':'不完整'}</div></div>
-          <div class="report-cell"><div class="report-cell__label">completion</div><div class="report-cell__value mono">${ct||'—'}</div></div>
-          <div class="report-cell"><div class="report-cell__label">total</div><div class="report-cell__value mono">${tt||'—'}</div></div>
-        </div>
-        <div class="report-card__footer">本报告只展示本次测试中的可复现信号，不证明服务商主观故意，也不构成法律结论。</div>
-      </div>`;
+    f('result-card').innerHTML = '<div style="text-align:center;padding:32px 16px;color:#94a3b8;font-size:13px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;min-height:80px;display:flex;align-items:center;justify-content:center">' + (zh?'填写 Base URL、API Key 和 Model ID 后开始检测。':'Fill in Base URL, API Key and Model ID to start.') + '</div>';
   },
   clear() {
     ['manual-provider','manual-base-url','manual-model','manual-http-status','manual-prompt-tokens','manual-completion-tokens','manual-total-tokens','manual-cached-tokens'].forEach(id => {

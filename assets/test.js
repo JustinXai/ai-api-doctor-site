@@ -428,7 +428,8 @@ function escHtml(str) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function maskKey(key) {
@@ -695,31 +696,27 @@ function newCalcScore(result) {
     modelSanity:  { state: result.modelSanity?.state,   score: null },
   };
 
-  if (result.billing?.state) {
-    dims.billing.state = result.billing.state;
-  } else if (result.billing?.verdict) {
-    const v = result.billing.verdict;
-    if (v === 'failed_request_not_charged' || v === 'precharge_refunded') {
-      dims.billing.state = 'pass'; dims.billing.score = 100;
-    } else if (v === 'failed_request_charged' || v === 'empty_response_charged') {
-      dims.billing.state = 'fail'; dims.billing.score = 0;
-    } else if (v === 'raw_quota_unavailable') {
-      dims.billing.state = 'skipped';
-    } else {
-      dims.billing.state = 'warn'; dims.billing.score = 50;
-    }
-  } else {
+  dims.billing.state = result.billing?.state ?? 'skipped';
+  const bv = result.billing?.verdict;
+  if (bv === 'failed_request_not_charged' || bv === 'precharge_refunded') {
+    dims.billing.state = 'pass'; dims.billing.score = 100;
+  } else if (bv === 'failed_request_charged' || bv === 'empty_response_charged') {
+    dims.billing.state = 'fail'; dims.billing.score = 0;
+  } else if (bv === 'raw_quota_unavailable' || !bv) {
     dims.billing.state = 'skipped';
+  } else {
+    dims.billing.state = 'warn'; dims.billing.score = 50;
   }
 
   if (result.connectivity) {
     const s = result.connectivity.status;
+    const vos = result.connectivity.visibleOutputStatus || 'absent';
     if (result.connectivity.error === 'cors_or_network') {
       dims.connectivity.state = 'blocked';
       dims.connectivity.score = 20;
-    } else if (s >= 200 && s < 300 && (result.connectivity.visibleLength > 0)) {
+    } else if (s >= 200 && s < 300 && vos === 'present') {
       dims.connectivity.state = 'pass'; dims.connectivity.score = 100;
-    } else if (s >= 200 && result.connectivity.visibleLength === 0) {
+    } else if (s >= 200 && (vos === 'absent' || vos === 'parser_unknown')) {
       dims.connectivity.state = 'warn'; dims.connectivity.score = 50;
     } else if (s === 0) {
       dims.connectivity.state = 'fail'; dims.connectivity.score = 0;
@@ -902,6 +899,198 @@ function getMainFindingEn(result, dims) {
   return 'Diagnosis complete';
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   Shareable Card — 传播短卡评分系统
+   优先级顺序：有无产物 > 扣没扣钱 > 账单明细 > 流式 > 模型 > 能否连上
+   ═══════════════════════════════════════════════════════════════════ */
+function calcShareableCard(result, dims, lang) {
+  const zh = lang !== 'en';
+  const conn = result.connectivity || {};
+  const scored = result._scored || {};
+
+  // ── 判断扣款证据 ────────────────────────────────────────────────
+  const hasBalanceDelta = result.billing && (
+    result.billing.beforeBalance !== undefined ||
+    result.billing.afterBalance !== undefined
+  );
+  const balanceReduced = hasBalanceDelta && result.billing.beforeBalance !== undefined &&
+    result.billing.afterBalance !== undefined &&
+    result.billing.afterBalance < result.billing.beforeBalance;
+
+  const hasUsage = conn.totalTokens != null;
+  const hasOutput = conn.visibleOutputStatus === 'present';
+  const hasRawQuota = result.billing?.rawQuotaAvailable === true;
+
+  // ── 6维读条数据 ────────────────────────────────────────────────
+  // 1. 有无产物
+  const outputState = hasOutput ? 'pass' : 'fail';
+  const outputScore = hasOutput ? 100 : 0;
+  const outputDetail = hasOutput ? (zh ? '有文字产出' : 'Has output') : (zh ? '没出字' : 'No output');
+
+  // 2. 扣没扣钱
+  let billingState, billingScore, billingDetail;
+  if (balanceReduced) {
+    billingState = 'fail'; billingScore = 0;
+    billingDetail = zh ? '余额少了' : 'Balance reduced';
+  } else if (hasBalanceDelta) {
+    billingState = 'pass'; billingScore = 100;
+    billingDetail = zh ? '没扣钱' : 'No charge';
+  } else {
+    billingState = 'skipped'; billingScore = 0;
+    billingDetail = zh ? '网页没读余额' : 'No balance read';
+  }
+
+  // 3. 账单明细
+  const usageState = conn.totalTokens != null ? 'pass' : 'fail';
+  const usageScore = conn.totalTokens != null ? 100 : 0;
+  const usageDetail = conn.totalTokens != null
+    ? (zh ? '有 token' : 'Has tokens')
+    : (zh ? '无账单明细' : 'No token data');
+
+  // 4. 流式会不会炸 (未单独测试，标记为未验)
+  const streamState = 'skipped';
+  const streamScore = 0;
+  const streamDetail = zh ? '需完整验货' : 'Needs full check';
+
+  // 5. 模型有没有缩水
+  let modelState, modelScore, modelDetail;
+  if (result.modelSanity && result.modelSanity.overallScore !== null) {
+    const ms = result.modelSanity.overallScore;
+    modelState = ms >= 70 ? 'pass' : ms >= 50 ? 'warn' : 'fail';
+    modelScore = ms;
+    modelDetail = zh
+      ? (result.modelSanity.label || '模型正常')
+      : (result.modelSanity.labelEn || 'Model OK');
+  } else {
+    modelState = 'skipped'; modelScore = 0;
+    modelDetail = zh ? '需完整验货' : 'Needs full check';
+  }
+
+  // 6. 能否连上
+  const connState = dims.connectivity?.state ?? 'skipped';
+  const connScore = dims.connectivity?.score ?? 0;
+  const connDetail = (() => {
+    if (!conn || !conn.status) return zh ? '无响应' : 'No response';
+    if (conn.status === 200) return 'HTTP 200';
+    if (conn.status >= 400) return 'HTTP ' + conn.status;
+    return conn.status;
+  })();
+
+  const bars = [
+    { label: zh ? '有无产物' : 'Output',     state: outputState,  score: outputScore,  detail: outputDetail,   key: 'output' },
+    { label: zh ? '扣没扣钱' : 'Charged?', state: billingState,  score: billingScore, detail: billingDetail, key: 'billing' },
+    { label: zh ? '账单明细' : 'Token Details', state: usageState, score: usageScore, detail: usageDetail, key: 'usage' },
+    { label: zh ? '流式会不会炸' : 'Streaming', state: streamState,  score: streamScore,  detail: streamDetail,  key: 'streaming' },
+    { label: zh ? '模型有没有缩水' : 'Model Shrinkage', state: modelState, score: modelScore, detail: modelDetail, key: 'model' },
+    { label: zh ? '能否连上' : 'Connection', state: connState,     score: connScore,   detail: connDetail,    key: 'conn' },
+  ];
+
+  // ── 动态 verdict + grade + chips ──────────────────────────────
+  let verdict, grade, chips;
+
+  if (!hasOutput && balanceReduced) {
+    verdict = zh ? '空跑扣费' : 'Empty-Run Fraud';
+    grade = 'F';
+    chips = [
+      zh ? '没产物' : 'No Output',
+      zh ? '已扣钱' : 'Charged',
+      zh ? '高危' : 'High Risk'
+    ];
+  } else if (!hasOutput && hasUsage) {
+    verdict = zh ? '返回废包' : 'Empty Response';
+    grade = connScore >= 65 ? 'D' : 'C';
+    chips = [
+      zh ? '没产物' : 'No Output',
+      zh ? '有账单' : 'Has Tokens',
+      zh ? '扣钱没验' : 'Unverified Charge'
+    ];
+  } else if (!hasOutput && !hasUsage) {
+    verdict = zh ? '疑似空跑' : 'Suspected Empty Run';
+    grade = 'D';
+    chips = [
+      zh ? '没产物' : 'No Output',
+      zh ? '没账单' : 'No Tokens',
+      zh ? '扣钱没验' : 'Charge Unverified'
+    ];
+  } else if (connState === 'blocked') {
+    verdict = zh ? '连不上' : 'Cannot Connect';
+    grade = 'U';
+    chips = [
+      zh ? '浏览器拦截' : 'Browser Blocked',
+      zh ? '需看详情' : 'See Details'
+    ];
+  } else if (modelState === 'fail') {
+    verdict = zh ? '模型缩水' : 'Model Shrinkage';
+    grade = 'C';
+    chips = [
+      zh ? '表现不对' : 'Perf. Anomaly',
+      zh ? '需复查' : 'Needs Review'
+    ];
+  } else if (modelState === 'warn') {
+    verdict = zh ? '模型存疑' : 'Model Uncertain';
+    grade = 'C';
+    chips = [
+      zh ? '指令不稳' : 'Unstable Output',
+      zh ? '需复查' : 'Needs Review'
+    ];
+  } else if (billingState === 'fail') {
+    verdict = zh ? '扣费异常' : 'Billing Anomaly';
+    grade = 'D';
+    chips = [
+      zh ? '已扣钱' : 'Charged',
+      zh ? '需复查' : 'Needs Review'
+    ];
+  } else if (!hasOutput) {
+    verdict = zh ? '无产物' : 'No Output';
+    grade = 'D';
+    chips = [zh ? '没产物' : 'No Output'];
+  } else if (usageState !== 'pass') {
+    verdict = zh ? '账单异常' : 'Token Anomaly';
+    grade = 'C';
+    chips = [zh ? '账单不明' : 'Tokens Unclear'];
+  } else if (billingState === 'pass') {
+    verdict = zh ? '硬货' : 'Solid';
+    grade = connScore >= 100 ? 'A' : 'B';
+    chips = [
+      zh ? '有产物' : 'Has Output',
+      zh ? '账单完整' : 'Tokens OK',
+      zh ? '能对账' : 'Verified'
+    ];
+  } else {
+    verdict = zh ? '能用' : 'Usable';
+    grade = connScore >= 90 ? 'A' : 'B';
+    chips = [
+      zh ? '有产物' : 'Has Output',
+      zh ? '账单完整' : 'Tokens OK'
+    ];
+  }
+
+  // ── 综合分 ─────────────────────────────────────────────────────
+  const activeBars = bars.filter(b => b.state !== 'skipped');
+  const totalScore = activeBars.length > 0
+    ? Math.round(activeBars.reduce((sum, b) => sum + (b.score || 0), 0) / activeBars.length)
+    : 0;
+
+  // ── 一句话结论 ────────────────────────────────────────────────
+  const conclusion = (() => {
+    if (grade === 'F') return zh ? '没拿到东西，钱却扣了，请仔细核查。' : 'No output, but charged. Verify carefully.';
+    if (grade === 'D') return zh ? '返回无效内容，或扣费无法核验。' : 'Invalid content returned, or charges unverified.';
+    if (grade === 'C') return zh ? '有产出，但有些指标存疑。' : 'Has output, but some indicators are questionable.';
+    if (grade === 'A') return zh ? '有产物、有账单明细，扣钱也能对上。' : 'Has output and tokens, charges verified.';
+    return zh ? '有产物，基础功能可用。' : 'Has output, basic functions work.';
+  })();
+
+  return {
+    verdict, grade, chips, conclusion,
+    score: totalScore,
+    bars,
+    conn,
+    model: formData => formData?.model || '—',
+    reportId: result.reportId,
+    timestamp: result.timestamp,
+  };
+}
+
 /* ═══════════════════════════════════════════════════════
    Quick mode: simple finding
    ═══════════════════════════════════════════════════════ */
@@ -920,8 +1109,10 @@ function getQuickFinding(result, lang) {
   }
 
   const s = conn.status;
-  const hasOutput = conn.visibleLength > 0;
+  const vos = conn.visibleOutputStatus || 'absent'; // 'present' | 'absent' | 'parser_unknown'
+  const hasOutput = vos === 'present';
   const hasUsage = conn.totalTokens != null;
+  const completionTokens = conn.completionTokens ?? null;
   const latency = conn.latency || 0;
 
   // ── U: CORS / timeout ──────────────────────────────────────
@@ -991,15 +1182,10 @@ function getQuickFinding(result, lang) {
   let latencyScore = 0;
   let errorScore = 10;
 
-  // HTTP: 35 (already default)
   if (s >= 200 && s < 300) { httpScore = 35; }
 
   // Effective output: 25
-  // Valid if: text content, tool_call, image, audio, search in the response
-  // We check visibleLength for now; in a full impl we'd also check data.choices[0].tool_calls etc.
-  if (hasOutput) {
-    outputScore = 25;
-  }
+  if (hasOutput) { outputScore = 25; }
 
   // Usage: 20
   if (hasUsage) { usageScore = 20; }
@@ -1011,28 +1197,25 @@ function getQuickFinding(result, lang) {
   else { latencyScore = 0; }
 
   // Error explainability: 10
-  // If normal with output: full 10
   if (hasOutput && hasUsage) { errorScore = 10; }
-  // HTTP 200 but no output and no usage: +5
   else if (!hasOutput && !hasUsage) { errorScore = 5; }
-  // Has output but no usage (opaque): +6
   else if (hasOutput && !hasUsage) { errorScore = 6; }
-  // Has usage but no output (dead output): +4
-  else if (!hasOutput && hasUsage) { errorScore = 4; }
+  else if (vos === 'parser_unknown') { errorScore = 4; }
+  else { errorScore = 4; } // absent + usage
 
   let rawScore = httpScore + outputScore + usageScore + latencyScore + errorScore;
 
   // ── Apply capping rules ───────────────────────────────────
   // Rule 1: 200 + no output + no usage → max D / 55
-  if (hasOutput === false && hasUsage === false) {
+  if (vos === 'absent' && !hasUsage) {
     rawScore = Math.min(rawScore, 55);
   }
-  // Rule 2: 200 + no output + has usage → max C / 65
-  else if (hasOutput === false && hasUsage === true) {
+  // Rule 2: 200 + has usage (absent or parser_unknown) → max C / 65
+  else if (hasUsage && !hasOutput) {
     rawScore = Math.min(rawScore, 65);
   }
   // Rule 3: 200 + has output + no usage → max C / 69
-  else if (hasOutput === true && hasUsage === false) {
+  else if (hasOutput && !hasUsage) {
     rawScore = Math.min(rawScore, 69);
   }
 
@@ -1060,16 +1243,26 @@ function getQuickFinding(result, lang) {
       : 'Usable: mostly passed, minor issues to address.';
     riskChips = zh ? ['延迟偏高'].filter(Boolean) : ['High Latency'].filter(Boolean);
   } else if (grade === 'C') {
-    if (!hasOutput && hasUsage) {
+    if (vos === 'parser_unknown') {
+      mainFinding = zh
+        ? '输出解析异常：usage 有 completion tokens，但未发现标准输出字段。可能是中转站兼容层返回格式不标准，也可能是 API Doctor 需要适配该响应结构。'
+        : 'Output parser unknown: usage shows completion tokens but no standard output fields found. The response may use a non-standard format from a compatibility layer.';
+      riskChips = zh ? ['输出解析异常', '兼容层不兼容'] : ['Parser Unknown', 'Compatibility Layer Issue'];
+    } else if (vos === 'absent' && hasUsage) {
       mainFinding = zh
         ? '返回废包：usage 有记录，但本次没有有效输出。'
         : 'Dead output: usage exists, but no effective response was produced.';
       riskChips = zh ? ['返回废包', 'usage 消失'] : ['Dead Output', 'Usage Missing'];
-    } else {
+    } else if (!hasUsage) {
       mainFinding = zh
         ? '能用但不透明：模型有输出，但 usage 明细消失。'
         : 'Usable but opaque: output exists, but usage details are missing.';
       riskChips = zh ? ['usage 消失', '扣费黑洞风险'] : ['Usage Missing', 'Billing Blackhole Risk'];
+    } else {
+      mainFinding = zh
+        ? 'C档：模型输出状态异常。'
+        : 'C: Abnormal output state.';
+      riskChips = zh ? ['输出异常'] : ['Abnormal Output'];
     }
   } else if (grade === 'D') {
     mainFinding = zh
@@ -1142,15 +1335,11 @@ async function runDiagnosis(opts) {
     let data;
     try { data = await resp.json(); } catch { data = {}; }
 
-    let visibleOutput = '';
-    if (interfaceType === 'OpenAI Chat' || interfaceType === 'OpenAI Responses') {
-      const choices = data.choices || data.output?.text ? [data.output] : [];
-      visibleOutput = (choices[0]?.message?.content || choices[0]?.text || '').trim();
-    } else {
-      visibleOutput = (data.content?.[0]?.text || '').trim();
-    }
-    result.connectivity.visibleOutput = visibleOutput;
-    result.connectivity.visibleLength = visibleOutput.length;
+    const outputInfo = extractVisibleOutput(data, interfaceType);
+    result.connectivity.visibleOutputStatus = outputInfo.status;
+    result.connectivity.visibleOutputFoundFields = outputInfo.foundFields;
+    result.connectivity.visibleLength = outputInfo.text.length;
+    result.connectivity.responseShapeSummary = buildResponseShapeSummary(data, interfaceType);
 
     const usage = data.usage || {};
     result.connectivity.promptTokens = usage.prompt_tokens || usage.input_tokens || null;
@@ -1165,9 +1354,9 @@ async function runDiagnosis(opts) {
 
   } catch (err) {
     if (err.name === 'AbortError') {
-      result.connectivity = { status: 0, latency: 0, error: 'timeout', state: 'fail' };
+      result.connectivity = { status: 0, latency: 0, error: 'timeout', state: 'fail', visibleOutputStatus: 'absent', visibleLength: 0, responseShapeSummary: [] };
     } else {
-      result.connectivity = { status: 0, latency: 0, error: 'cors_or_network', rawMessage: err.message, state: 'blocked' };
+      result.connectivity = { status: 0, latency: 0, error: 'cors_or_network', rawMessage: err.message, state: 'blocked', visibleOutputStatus: 'absent', visibleLength: 0, responseShapeSummary: [] };
       result.errorAttribution = 'CORS / 浏览器拦截：网页无法直接读取当前站点的响应内容。这是浏览器的安全限制，不代表 API 本身不可用。建议手动填写 Model ID，或使用 Chrome 插件绕过此限制。';
     }
   }
@@ -1182,7 +1371,11 @@ async function runDiagnosis(opts) {
     result.priceAudit = runPriceAudit(result.connectivity, priceData);
   }
 
-  result.billing = { verdict: 'raw_quota_unavailable', reason: '网页版无法自动读取 raw quota，请切换到手动报告模式填写原始额度。', state: 'skipped' };
+  // ── Billing Integrity Test ──────────────────────────────────
+  // Billing test sends a 2nd request → only run in full mode to keep quick at 1 request
+  result.billing = mode === 'full'
+    ? await runBillingTest(baseUrl, apiKey, model, interfaceType, signal, result.connectivity)
+    : { verdict: 'raw_quota_unavailable', reason: 'Billing check requires Full Check mode.', state: 'skipped' };
 
   if (runSanityTest) {
     result.modelSanity = await runModelSanityTests({ baseUrl, apiKey, model, interfaceType, signal });
@@ -1215,6 +1408,86 @@ async function runDiagnosis(opts) {
   result.reportFingerprint = await generateReportFingerprint(fpData);
 
   return result;
+}
+
+/* ── Billing Integrity Test ─────────────────────────────────────
+   Sends a second request with an intentionally invalid model.
+   If the provider returns a 4xx response WITH usage reported → overcharging.
+   If 4xx without usage → correctly not charged.
+   ═══════════════════════════════════════════════════════════════ */
+async function runBillingTest(baseUrl, apiKey, model, interfaceType, signal, connResult) {
+  // Skip if we have no connectivity result yet
+  if (!connResult || connResult.status === 0) {
+    return { verdict: 'raw_quota_unavailable', reason: 'No baseline connectivity — skipped', state: 'skipped' };
+  }
+
+  // Check if the first (valid) request returned any usage data at all
+  const hasBaselineUsage = connResult.totalTokens != null && connResult.totalTokens > 0;
+  if (!hasBaselineUsage) {
+    return { verdict: 'raw_quota_unavailable', reason: 'Baseline request returned no usage data — cannot compare', state: 'skipped' };
+  }
+
+  // Build a second request with an obviously invalid model name
+  const badModel = `__invalid-model-test-99999__billing-check__${Date.now()}`;
+  const req = buildRequest(baseUrl, apiKey, badModel, interfaceType, 'reply with just the word "test"', 1);
+
+  try {
+    const resp = await fetch(req.endpoint, {
+      method: 'POST',
+      headers: req.headers,
+      body: JSON.stringify(req.body),
+      signal
+    });
+
+    // Only meaningful if we got a client error (provider rejected the bad model)
+    if (resp.status >= 400 && resp.status < 500) {
+      let data = {};
+      try { data = await resp.json(); } catch { /* not JSON */ }
+      const badUsage = data.usage || {};
+
+      // If usage is still reported on a 4xx → provider charged for a bad request
+      if (badUsage.total_tokens > 0 || badUsage.prompt_tokens > 0 || badUsage.completion_tokens > 0) {
+        return {
+          verdict: 'failed_request_charged',
+          reason: `Provider charged for a 4xx request (HTTP ${resp.status}). prompt_tokens=${badUsage.prompt_tokens}, completion_tokens=${badUsage.completion_tokens}`,
+          state: 'fail',
+          badRequestUsage: {
+            promptTokens: badUsage.prompt_tokens || badUsage.input_tokens || 0,
+            completionTokens: badUsage.completion_tokens || badUsage.output_tokens || 0,
+            totalTokens: badUsage.total_tokens || 0
+          }
+        };
+      } else {
+        return {
+          verdict: 'failed_request_not_charged',
+          reason: `HTTP ${resp.status} with no usage — provider correctly declined to charge.`,
+          state: 'pass'
+        };
+      }
+    }
+
+    // 2xx: provider accepted the bad model — might be routing elsewhere
+    if (resp.status >= 200 && resp.status < 300) {
+      return {
+        verdict: 'raw_quota_unavailable',
+        reason: 'Provider accepted the invalid model name — model validation unclear.',
+        state: 'warn'
+      };
+    }
+
+    // 5xx: upstream error — inconclusive
+    return {
+      verdict: 'raw_quota_unavailable',
+      reason: `Provider returned HTTP ${resp.status} — result inconclusive.`,
+      state: 'skipped'
+    };
+
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      return { verdict: 'raw_quota_unavailable', reason: 'Test aborted — timeout', state: 'skipped' };
+    }
+    return { verdict: 'raw_quota_unavailable', reason: `Network error: ${err.message}`, state: 'skipped' };
+  }
 }
 
 async function runCacheTestFn(baseUrl, apiKey, model, interfaceType, signal) {
@@ -1283,10 +1556,199 @@ function runPriceAudit(connectivity, priceData) {
   return { status, expectedCost: expected, actualCost: actual, ratio, inputTokens, outputTokens, cachedTokens, state: status };
 }
 
+/* ═══════════════════════════════════════════════════════
+   Visible output extraction
+   ═══════════════════════════════════════════════════════ */
+function extractVisibleOutput(data, interfaceType) {
+  const EMPTY = { text: '', status: 'absent', foundFields: [] };
+  if (!data || typeof data !== 'object') return EMPTY;
+
+  const foundFields = [];
+
+  if (interfaceType === 'OpenAI Chat') {
+    const choices = data.choices;
+    if (!choices || !Array.isArray(choices) || choices.length === 0) return EMPTY;
+
+    const c0 = choices[0];
+    if (!c0) return EMPTY;
+
+    // 1. message.content (string)
+    const mc = c0.message?.content;
+    if (typeof mc === 'string' && mc.trim()) {
+      foundFields.push('choices[0].message.content');
+      return { text: mc.trim(), status: 'present', foundFields };
+    }
+    // 2. message.content (array of content parts)
+    if (Array.isArray(mc)) {
+      for (const part of mc) {
+        if (part?.type === 'text' && part?.text?.trim()) {
+          foundFields.push('choices[0].message.content[type=text].text');
+          return { text: part.text.trim(), status: 'present', foundFields };
+        }
+        if ((part?.type === 'input_text' || part?.type === 'output_text') && part?.text?.trim()) {
+          foundFields.push(`choices[0].message.content[type=${part.type}].text`);
+          return { text: part.text.trim(), status: 'present', foundFields };
+        }
+      }
+      // array with content but no text
+      foundFields.push('choices[0].message.content (array)');
+    }
+    // 3. reasoning_content
+    if (c0.message?.reasoning_content && String(c0.message.reasoning_content).trim()) {
+      foundFields.push('choices[0].message.reasoning_content');
+      return { text: String(c0.message.reasoning_content).trim(), status: 'present', foundFields };
+    }
+    // 4. tool_calls
+    if (c0.message?.tool_calls && c0.message.tool_calls.length > 0) {
+      foundFields.push('choices[0].message.tool_calls');
+      return { text: '[tool_calls]', status: 'present', foundFields };
+    }
+    // 5. finish_reason
+    if (c0.finish_reason) {
+      foundFields.push('choices[0].finish_reason');
+    }
+    // 6. delta.content
+    const delta = c0.delta;
+    if (delta?.content && String(delta.content).trim()) {
+      foundFields.push('choices[0].delta.content');
+      return { text: String(delta.content).trim(), status: 'present', foundFields };
+    }
+
+  } else if (interfaceType === 'OpenAI Responses') {
+    // output_text top-level
+    if (data.output_text && String(data.output_text).trim()) {
+      foundFields.push('output_text');
+      return { text: String(data.output_text).trim(), status: 'present', foundFields };
+    }
+    // response.output_text
+    if (data.response?.output_text && String(data.response.output_text).trim()) {
+      foundFields.push('response.output_text');
+      return { text: String(data.response.output_text).trim(), status: 'present', foundFields };
+    }
+    // output[].content[].text
+    const outputs = data.output || data.response?.output || [];
+    if (Array.isArray(outputs)) {
+      for (const out of outputs) {
+        if (out?.content && Array.isArray(out.content)) {
+          for (const part of out.content) {
+            if (part?.type === 'output_text' && part?.text?.trim()) {
+              foundFields.push(`output[].content[type=output_text].text`);
+              return { text: part.text.trim(), status: 'present', foundFields };
+            }
+            if (part?.type === 'text' && part?.text?.trim()) {
+              foundFields.push(`output[].content[type=text].text`);
+              return { text: part.text.trim(), status: 'present', foundFields };
+            }
+            if (part?.type === 'message' && part?.text?.trim()) {
+              foundFields.push(`output[].content[type=message].text`);
+              return { text: part.text.trim(), status: 'present', foundFields };
+            }
+            if (part?.annotations && part.annotations.length > 0) {
+              foundFields.push('output[].content[].annotations');
+              return { text: '[annotations]', status: 'present', foundFields };
+            }
+          }
+          if (out.content.length > 0) foundFields.push('output[].content (array)');
+        }
+        if (out?.type) foundFields.push(`output[].type=${out.type}`);
+      }
+    }
+
+  } else if (interfaceType === 'Claude Messages') {
+    // content[].text
+    const content = data.content;
+    if (Array.isArray(content)) {
+      for (const part of content) {
+        if (part?.type === 'text' && part?.text?.trim()) {
+          foundFields.push('content[type=text].text');
+          return { text: part.text.trim(), status: 'present', foundFields };
+        }
+        if (part?.type === 'tool_use') {
+          foundFields.push('content[type=tool_use]');
+          return { text: '[tool_use]', status: 'present', foundFields };
+        }
+        if (part?.type === 'image' || part?.type === 'source') {
+          foundFields.push(`content[type=${part.type}]`);
+          return { text: `[${part.type}]`, status: 'present', foundFields };
+        }
+      }
+      if (content.length > 0) foundFields.push('content (array)');
+    }
+    // delta.text
+    if (data.delta?.text && String(data.delta.text).trim()) {
+      foundFields.push('delta.text');
+      return { text: String(data.delta.text).trim(), status: 'present', foundFields };
+    }
+    // stop_reason
+    if (data.stop_reason) foundFields.push('stop_reason');
+    // usage
+    if (data.usage) foundFields.push('usage');
+  }
+
+  // If we reached here, we found some structural fields but no text
+  return { text: '', status: foundFields.length > 0 ? 'parser_unknown' : 'absent', foundFields };
+}
+
+/* ═══════════════════════════════════════════════════════
+   Response shape summary builder
+   ═══════════════════════════════════════════════════════ */
+function buildResponseShapeSummary(data, interfaceType) {
+  if (!data || typeof data !== 'object') return [];
+  const lines = [];
+  const topKeys = Object.keys(data).filter(k => k !== 'choices' && k !== 'content' && k !== 'output' && k !== 'error');
+
+  // Top-level safe keys
+  const safeTop = topKeys.filter(k => !k.toLowerCase().includes('key') && !k.toLowerCase().includes('secret') && !k.toLowerCase().includes('token') && k !== 'body');
+  if (safeTop.length > 0) {
+    lines.push(`response keys: ${safeTop.join(', ')}`);
+  }
+
+  // Choices / output
+  if (interfaceType === 'OpenAI Chat') {
+    const choices = data.choices;
+    if (choices && Array.isArray(choices) && choices[0]) {
+      const cKeys = Object.keys(choices[0]).filter(k => k !== 'message');
+      if (cKeys.length > 0) lines.push(`choices[0] keys: ${cKeys.join(', ')}`);
+      if (choices[0].message) {
+        const mKeys = Object.keys(choices[0].message).filter(k => !k.toLowerCase().includes('key') && !k.toLowerCase().includes('token'));
+        if (mKeys.length > 0) lines.push(`choices[0].message keys: ${mKeys.join(', ')}`);
+        if (Array.isArray(choices[0].message.content)) {
+          const partTypes = choices[0].message.content.map(p => p?.type || '?').filter((v, i, a) => a.indexOf(v) === i);
+          lines.push(`choices[0].message.content types: ${partTypes.join(', ')}`);
+        }
+      }
+    }
+  } else if (interfaceType === 'OpenAI Responses') {
+    const outputs = data.output || data.response?.output;
+    if (outputs && Array.isArray(outputs) && outputs[0]) {
+      const oKeys = Object.keys(outputs[0]).filter(k => k !== 'content');
+      if (oKeys.length > 0) lines.push(`output[0] keys: ${oKeys.join(', ')}`);
+      if (outputs[0].content && Array.isArray(outputs[0].content)) {
+        const pTypes = outputs[0].content.map(p => p?.type || '?').filter((v, i, a) => a.indexOf(v) === i);
+        lines.push(`output[0].content types: ${pTypes.join(', ')}`);
+      }
+    }
+  } else if (interfaceType === 'Claude Messages') {
+    if (data.content && Array.isArray(data.content)) {
+      const partTypes = data.content.map(p => p?.type || '?').filter((v, i, a) => a.indexOf(v) === i);
+      lines.push(`content types: ${partTypes.join(', ')}`);
+    }
+  }
+
+  // Usage keys
+  const usage = data.usage;
+  if (usage && typeof usage === 'object') {
+    const uKeys = Object.keys(usage).filter(k => !k.toLowerCase().includes('key') && !k.toLowerCase().includes('secret'));
+    if (uKeys.length > 0) lines.push(`usage keys: ${uKeys.join(', ')}`);
+  }
+
+  return lines;
+}
+
 function assessUsageIntegrity(conn) {
   if (!conn || conn.status === 0) return 'skipped';
   if (conn.status >= 400) return 'skipped';
-  if (!conn.visibleLength) return 'skipped';
+  if (conn.visibleOutputStatus === 'absent' || conn.visibleOutputStatus === 'parser_unknown') return 'skipped';
 
   const hasPrompt = conn.promptTokens != null;
   const hasCompletion = conn.completionTokens != null;
@@ -1312,427 +1774,279 @@ function sleep(ms) {
 }
 
 /* ═══════════════════════════════════════════════════════
-   Report rendering — Quick mode (no scores)
+   Report rendering — Shareable Short Card (Playground v4 style)
+   All modes use the same card format for consistency
    ═══════════════════════════════════════════════════════ */
-function renderQuickReport(result, formData) {
+function renderCard(result, formData) {
   const lang = getDocLang();
   const zh = lang !== 'en';
   const conn = result.connectivity || {};
-  const qs = result._quickScore || getQuickFinding(result, lang);
+  const isQuick = result.mode === 'quick';
+
+  // ── Score data ──────────────────────────────────────────────
+  const qs = isQuick ? (result._quickScore || getQuickFinding(result, lang)) : null;
+  const scored = result._scored;
+
+  // Build 6-dim bar data
+  const hasBalanceDelta = result.billing && (
+    result.billing.beforeBalance !== undefined || result.billing.afterBalance !== undefined
+  );
+  const balanceReduced = hasBalanceDelta &&
+    result.billing.beforeBalance !== undefined &&
+    result.billing.afterBalance !== undefined &&
+    result.billing.afterBalance < result.billing.beforeBalance;
+  const hasOutput = conn.visibleOutputStatus === 'present';
+  const hasUsage = conn.totalTokens != null;
+
+  // Output bar
+  const barOutput = {
+    label: zh ? '有无产物' : 'Output',
+    state: hasOutput ? 'pass' : 'fail',
+    score: hasOutput ? 100 : 0,
+    detail: hasOutput ? (zh ? '有文字产出' : 'Has output') : (zh ? '没出字' : 'No output'),
+  };
+
+  // Billing bar
+  const barBilling = (() => {
+    if (balanceReduced) return { label: zh ? '扣没扣钱' : 'Charged?', state: 'fail', score: 0, detail: zh ? '余额少了' : 'Balance reduced' };
+    if (hasBalanceDelta) return { label: zh ? '扣没扣钱' : 'Charged?', state: 'pass', score: 100, detail: zh ? '没扣钱' : 'No charge' };
+    return { label: zh ? '扣没扣钱' : 'Charged?', state: 'skipped', score: 0, detail: zh ? '网页没读余额' : 'No balance read' };
+  })();
+
+  // Usage bar
+  const barUsage = {
+    label: zh ? '账单明细' : 'Token Details',
+    state: hasUsage ? 'pass' : 'fail',
+    score: hasUsage ? 100 : 0,
+    detail: hasUsage ? (zh ? '有 token' : 'Has tokens') : (zh ? '无账单明细' : 'No token data'),
+  };
+
+  // Streaming bar (untested in quick mode)
+  const barStream = {
+    label: zh ? '流式会不会炸' : 'Streaming',
+    state: isQuick ? 'skipped' : 'skipped',
+    score: 0,
+    detail: zh ? '需完整验货' : 'Needs full check',
+  };
+
+  // Model bar
+  const barModel = (() => {
+    if (result.modelSanity && result.modelSanity.overallScore !== null) {
+      const ms = result.modelSanity.overallScore;
+      return {
+        label: zh ? '模型有没有缩水' : 'Model Shrinkage',
+        state: ms >= 70 ? 'pass' : ms >= 50 ? 'warn' : 'fail',
+        score: ms,
+        detail: zh ? (result.modelSanity.label || '正常') : (result.modelSanity.labelEn || 'OK'),
+      };
+    }
+    return { label: zh ? '模型有没有缩水' : 'Model Shrinkage', state: 'skipped', score: 0, detail: zh ? '需完整验货' : 'Needs full check' };
+  })();
+
+  // Connection bar
+  const barConn = (() => {
+    const s = conn.status;
+    const st = scored?.dims?.connectivity?.state ?? 'skipped';
+    const sc = scored?.dims?.connectivity?.score ?? 0;
+    if (st === 'blocked') return { label: zh ? '能否连上' : 'Connection', state: 'warn', score: sc, detail: zh ? 'CORS 限制' : 'CORS Blocked' };
+    if (!s) return { label: zh ? '能否连上' : 'Connection', state: 'fail', score: 0, detail: zh ? '无响应' : 'No response' };
+    if (s >= 200 && s < 300) return { label: zh ? '能否连上' : 'Connection', state: 'pass', score: sc || 100, detail: 'HTTP 200' };
+    return { label: zh ? '能否连上' : 'Connection', state: 'fail', score: 0, detail: 'HTTP ' + s };
+  })();
+
+  const bars = [barOutput, barBilling, barUsage, barStream, barModel, barConn];
+
+  // ── Dynamic verdict / grade / chips ─────────────────────────
+  let verdict, grade, chips, conclusion;
+
+  if (!hasOutput && balanceReduced) {
+    verdict = zh ? '空跑扣费' : 'Empty-Run Fraud'; grade = 'F';
+    chips = [zh ? '没产物' : 'No Output', zh ? '已扣钱' : 'Charged', zh ? '高危' : 'High Risk'];
+    conclusion = zh ? '没拿到东西，钱却扣了，请仔细核查。' : 'No output, but charged. Verify carefully.';
+  } else if (!hasOutput && hasUsage) {
+    verdict = zh ? '返回废包' : 'Empty Response'; grade = 'D';
+    chips = [zh ? '没产物' : 'No Output', zh ? '有账单' : 'Has Tokens', zh ? '扣钱没验' : 'Charge Unverified'];
+    conclusion = zh ? '返回无效内容，账单明细无法核验。' : 'Invalid content returned, charges unverified.';
+  } else if (!hasOutput && !hasUsage) {
+    verdict = zh ? '疑似空跑' : 'Suspected Empty Run'; grade = 'D';
+    chips = [zh ? '没产物' : 'No Output', zh ? '没账单' : 'No Tokens', zh ? '扣钱没验' : 'Charge Unverified'];
+    conclusion = zh ? '返回无效内容，无账单明细，扣费无法核验。' : 'Invalid content, no tokens, charges unverified.';
+  } else if (barConn.state === 'blocked') {
+    verdict = zh ? '连不上' : 'Cannot Connect'; grade = 'U';
+    chips = [zh ? '浏览器拦截' : 'Browser Blocked'];
+    conclusion = zh ? '浏览器跨域限制，无法完成检测。' : 'Browser CORS restriction blocks the check.';
+  } else if (barModel.state === 'fail') {
+    verdict = zh ? '模型缩水' : 'Model Shrinkage'; grade = 'C';
+    chips = [zh ? '表现不对' : 'Perf. Anomaly', zh ? '需复查' : 'Needs Review'];
+    conclusion = zh ? '模型输出异常，表现与标称不符。' : 'Model output anomaly detected.';
+  } else if (barModel.state === 'warn') {
+    verdict = zh ? '模型存疑' : 'Model Uncertain'; grade = 'C';
+    chips = [zh ? '指令不稳' : 'Unstable', zh ? '需复查' : 'Needs Review'];
+    conclusion = zh ? '模型输出不太稳定，建议复查。' : 'Model output is unstable, recommend review.';
+  } else if (barBilling.state === 'fail') {
+    verdict = zh ? '扣费异常' : 'Billing Anomaly'; grade = 'D';
+    chips = [zh ? '已扣钱' : 'Charged', zh ? '需复查' : 'Needs Review'];
+    conclusion = zh ? '扣费证据显示异常，请核查账单。' : 'Billing evidence shows anomaly.';
+  } else if (!hasOutput) {
+    verdict = zh ? '无产物' : 'No Output'; grade = 'D';
+    chips = [zh ? '没产物' : 'No Output'];
+    conclusion = zh ? '未获得有效输出。' : 'No valid output received.';
+  } else if (barUsage.state !== 'pass') {
+    verdict = zh ? '账单异常' : 'Token Anomaly'; grade = 'C';
+    chips = [zh ? '账单不明' : 'Tokens Unclear'];
+    conclusion = zh ? '有产出，但账单明细不完整。' : 'Has output but token details incomplete.';
+  } else if (barBilling.state === 'pass') {
+    verdict = zh ? '硬货' : 'Solid'; grade = barConn.state === 'pass' && barOutput.state === 'pass' && barUsage.state === 'pass' ? 'A' : 'B';
+    chips = [zh ? '有产物' : 'Has Output', zh ? '账单完整' : 'Tokens OK', zh ? '能对账' : 'Verified'];
+    conclusion = zh ? '有产物、有账单明细，扣钱也能对上。' : 'Has output and tokens, charges verified.';
+  } else {
+    verdict = zh ? '能用' : 'Usable'; grade = barConn.state === 'pass' ? 'B' : 'C';
+    chips = [zh ? '有产物' : 'Has Output', zh ? '账单完整' : 'Tokens OK'];
+    conclusion = zh ? '有产物，基础功能可用。' : 'Has output, basic functions work.';
+  }
+
+  // ── Score ───────────────────────────────────────────────────
+  const activeBars = bars.filter(b => b.state !== 'skipped');
+  const totalScore = activeBars.length > 0
+    ? Math.round(activeBars.reduce((sum, b) => sum + (b.score || 0), 0) / activeBars.length)
+    : (qs ? qs.score : 0);
+
+  // ── Color helpers ───────────────────────────────────────────
+  const gradeColor = { A: '#16a34a', B: '#3b82f6', C: '#f59e0b', D: '#f97316', F: '#dc2626', U: '#64748b' }[grade] || '#94a3b8';
+  const gradeBg    = { A: '#dcfce7', B: '#eff6ff', C: '#fef9c3', D: '#ffedd5', F: '#fee2e2', U: '#f1f5f9' }[grade] || '#f1f5f9';
+
+  const barColor = (s) => {
+    if (s === 'pass') return '#16a34a';
+    if (s === 'fail') return '#dc2626';
+    if (s === 'warn') return '#f59e0b';
+    return '#94a3b8';
+  };
+  const barBg = (s) => {
+    if (s === 'pass') return '#dcfce7';
+    if (s === 'fail') return '#fee2e2';
+    if (s === 'warn') return '#fef9c3';
+    return '#f1f5f9';
+  };
+  const barTextColor = (s) => barColor(s);
+  const barPct = (s) => {
+    if (s === 'pass') return 100;
+    if (s === 'fail') return 0;
+    if (s === 'warn') return 50;
+    return 0;
+  };
+  const statePill = (s) => {
+    const c = barColor(s);
+    const t = s === 'pass' ? (zh ? '通过' : 'Pass') : s === 'fail' ? (zh ? '失败' : 'Fail') : s === 'warn' ? (zh ? '警告' : 'Warn') : (zh ? '未验' : 'N/A');
+    return '<span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:9px;font-weight:700;color:' + c + ';background:' + barBg(s) + ';white-space:nowrap">' + t + '</span>';
+  };
+
+  // ── Render bars ─────────────────────────────────────────────
+  const barRow = (b) => {
+    const pct = barPct(b.state);
+    const c = barColor(b.state);
+    const bg = barBg(b.state);
+    return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f1f5f9">' +
+      '<div style="width:88px;font-size:11px;font-weight:600;color:#374151;flex-shrink:0">' + b.label + '</div>' +
+      '<div style="flex:1;height:8px;background:' + (b.state === 'skipped' ? '#f1f5f9' : bg) + ';border-radius:4px;overflow:hidden">' +
+      '<div style="height:100%;width:' + pct + '%;background:' + (b.state === 'skipped' ? '#cbd5e1' : c) + ';border-radius:4px"></div></div>' +
+      '<div style="width:40px;flex-shrink:0">' + statePill(b.state) + '</div>' +
+      '<div style="width:70px;text-align:right;font-size:10px;color:#94a3b8;flex-shrink:0">' + b.detail + '</div>' +
+      '</div>';
+  };
+
+  // ── Tech detail (collapsible) ────────────────────────────────
+  const techDetail = '<div id="tech-detail" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid #e2e8f0">' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px">' +
+    '<div style="background:#f8fafc;border-radius:6px;padding:6px 8px"><div style="font-size:8px;color:#64748b;font-weight:600;text-transform:uppercase;margin-bottom:2px">HTTP</div><div style="font-size:12px;font-weight:700;color:' + (conn.status === 200 ? '#16a34a' : '#dc2626') + ';font-family:monospace">' + (conn.status || '—') + '</div></div>' +
+    '<div style="background:#f8fafc;border-radius:6px;padding:6px 8px"><div style="font-size:8px;color:#64748b;font-weight:600;text-transform:uppercase;margin-bottom:2px">Latency</div><div style="font-size:12px;font-weight:700;color:#0f172a;font-family:monospace">' + (conn.latency ? conn.latency + 'ms' : '—') + '</div></div>' +
+    '<div style="background:#f8fafc;border-radius:6px;padding:6px 8px"><div style="font-size:8px;color:#64748b;font-weight:600;text-transform:uppercase;margin-bottom:2px">completion</div><div style="font-size:12px;font-weight:700;color:#0f172a;font-family:monospace">' + (conn.completionTokens ?? '—') + '</div></div>' +
+    '<div style="background:#f8fafc;border-radius:6px;padding:6px 8px"><div style="font-size:8px;color:#64748b;font-weight:600;text-transform:uppercase;margin-bottom:2px">total_tokens</div><div style="font-size:12px;font-weight:700;color:#0f172a;font-family:monospace">' + (conn.totalTokens ?? '—') + '</div></div>' +
+    '<div style="background:#f8fafc;border-radius:6px;padding:6px 8px;grid-column:1/-1"><div style="font-size:8px;color:#64748b;font-weight:600;text-transform:uppercase;margin-bottom:2px">Model</div><div style="font-size:11px;font-weight:600;color:#0f172a;font-family:monospace;word-break:break-all">' + escHtml(formData.model || '—') + '</div></div>' +
+    '</div></div>';
+
+  // ── Build HTML ─────────────────────────────────────────────
   const reportId = result.reportId;
   const timestamp = result.timestamp;
 
-  const grade = qs.grade;
-  const score = qs.score;
-  const mainFinding = qs.mainFinding;
-  const riskChips = qs.riskChips || [];
-  const labelApiKey = zh ? 'API Key 已脱敏' : 'API Key Anonymized';
-  const labelSaveImg = zh ? '保存图片' : 'Save Image';
-  const labelCopy = zh ? '复制晒分' : 'Copy Score';
-  const reportNodeLabel = zh ? '报告 ID' : 'Report ID';
-  const safeNote = zh
-    ? '本报告只展示本次测试中的可复现信号，不证明服务商主观故意，也不构成法律结论。'
-    : 'This report only shows reproducible signals from this test. It does not prove provider intent and is not a legal conclusion.';
+  const html =
+    // ── Short card container (max-width: 540px) ─────────────────
+    '<div style="max-width:540px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',\'PingFang SC\',\'Microsoft YaHei\',sans-serif">' +
 
-  const gradeColor = { A: '#16a34a', B: '#2563eb', C: '#d97706', D: '#ea580c', F: '#dc2626', U: '#64748b' }[grade] || '#64748b';
-  const gradeBg = { A: '#dcfce7', B: '#dbeafe', C: '#fef3c7', D: '#ffedd5', F: '#fee2e2', U: '#f1f5f9' }[grade] || '#f1f5f9';
-  const gradeLabelMap = {
-    A: zh ? '硬货' : 'Solid',
-    B: zh ? '能用' : 'Usable',
-    C: zh ? '掺水' : 'Diluted',
-    D: zh ? '疑似空跑' : 'Suspected Empty Run',
-    F: zh ? '高危' : 'High Risk',
-    U: zh ? '验不出真身' : 'Unverified',
-  };
-  const gradeLabelText = gradeLabelMap[grade] || grade;
+    // ── Dark header ────────────────────────────────────────────
+    '<div style="background:#0f172a;border-radius:20px;padding:16px 18px 14px;margin-bottom:10px;position:relative">' +
 
-  const html = `
-    <div class="report-card">
-      <div class="report-card__header">
-        <div class="report-card__title">API Doctor 验货单</div>
-        <div class="report-card__meta">${labelApiKey} &middot; ${timestamp}</div>
-      </div>
+    // Top row: title + grade badge
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">' +
+    '<div>' +
+    '<div style="font-size:15px;font-weight:800;color:#fff;letter-spacing:-0.2px">API Doctor</div>' +
+    '<div style="font-size:10px;color:#94a3b8;margin-top:1px">' + (zh ? '中转站黑盒验货' : 'Relay API Black-box Check') + '</div>' +
+    '</div>' +
+    '<div style="background:' + gradeBg + ';border-radius:8px;padding:4px 10px;text-align:center;flex-shrink:0">' +
+    '<div style="font-size:22px;font-weight:900;color:' + gradeColor + ';line-height:1">' + grade + '</div>' +
+    '<div style="font-size:8px;color:' + gradeColor + ';font-weight:600;margin-top:1px">' + (zh ? '档' : 'Grade') + '</div>' +
+    '</div>' +
+    '</div>' +
 
-      <div class="scorecard-hero" style="background:${gradeBg}">
-        <div class="scorecard-hero__grade" style="color:${gradeColor}">${grade}档</div>
-        <div class="scorecard-hero__score" style="color:${gradeColor}">${score}<span class="scorecard-hero__score-unit">${zh ? '分' : ''}</span></div>
-        <div class="scorecard-hero__label">${gradeLabelText}</div>
-        <div class="scorecard-hero__finding">${escHtml(mainFinding)}</div>
-      </div>
+    // Score + verdict
+    '<div style="text-align:center;margin-bottom:8px">' +
+    '<div style="font-size:56px;font-weight:900;color:' + gradeColor + ';line-height:1">' + totalScore + '</div>' +
+    '<div style="font-size:13px;font-weight:700;color:' + gradeColor + ';margin-top:3px">' + verdict + '</div>' +
+    '</div>' +
 
-      ${riskChips.length > 0 ? `
-      <div class="risk-chips">
-        ${riskChips.map(c => `<span class="risk-chip">${escHtml(c)}</span>`).join('')}
-      </div>` : ''}
+    // Chips row
+    '<div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:center;margin-bottom:4px">' +
+    chips.map(c => '<span style="background:' + gradeBg + ';color:' + gradeColor + ';font-size:10px;font-weight:700;padding:2px 9px;border-radius:20px;white-space:nowrap">' + escHtml(c) + '</span>').join('') +
+    '</div>' +
 
-      <div class="evidence-grid">
-        <div class="evidence-cell"><div class="evidence-cell__label">HTTP</div><div class="evidence-cell__value" style="color:${conn.status >= 400 ? 'var(--danger)' : 'var(--success)'}">${conn.status || '—'}</div></div>
-        <div class="evidence-cell"><div class="evidence-cell__label">Latency</div><div class="evidence-cell__value">${conn.latency ? conn.latency + 'ms' : '—'}</div></div>
-        <div class="evidence-cell"><div class="evidence-cell__label">Visible Output</div><div class="evidence-cell__value">${conn.visibleLength > 0 ? (zh ? '有' : 'Yes') : (zh ? '无' : 'No')}</div></div>
-        <div class="evidence-cell"><div class="evidence-cell__label">Usage Returned</div><div class="evidence-cell__value">${conn.totalTokens != null ? (zh ? '有' : 'Yes') : (zh ? '无' : 'No')}</div></div>
-        <div class="evidence-cell"><div class="evidence-cell__label">completion_tokens</div><div class="evidence-cell__value mono">${conn.completionTokens ?? '—'}</div></div>
-        <div class="evidence-cell"><div class="evidence-cell__label">total_tokens</div><div class="evidence-cell__value mono">${conn.totalTokens ?? '—'}</div></div>
-        <div class="evidence-cell"><div class="evidence-cell__label">cached_tokens</div><div class="evidence-cell__value mono">${conn.cachedTokens ?? '—'}</div></div>
-        <div class="evidence-cell"><div class="evidence-cell__label">Model</div><div class="evidence-cell__value mono">${escHtml(formData.model || '—')}</div></div>
-        <div class="evidence-cell evidence-cell--full"><div class="evidence-cell__label">Base URL</div><div class="evidence-cell__value mono">${escHtml(formData.baseUrl || '—')}</div></div>
-      </div>
+    // One-line conclusion
+    '<div style="font-size:11px;color:#94a3b8;text-align:center;margin-top:6px;line-height:1.4">' + escHtml(conclusion) + '</div>' +
+    '</div>' + // end dark header
 
-      ${result.errorAttribution ? `<div class="report-callout report-callout--info">${escHtml(result.errorAttribution)}</div>` : ''}
+    // ── Score bars section ─────────────────────────────────────
+    '<div style="background:#fff;border-radius:16px;padding:12px 14px;margin-bottom:10px">' +
 
-      <div class="report-footer-note">${safeNote}</div>
+    '<div style="font-size:10px;font-weight:700;color:#0f172a;margin-bottom:2px">' + (zh ? '为什么是 ' + totalScore + ' 分？' : 'Why ' + totalScore + ' points?') + '</div>' +
+    '<div style="font-size:10px;color:#94a3b8;margin-bottom:8px">' + (zh ? '先看有没有产物，再看扣没扣钱' : 'Check output first, then billing') + '</div>' +
 
-      <div class="report-actions">
-        <button class="btn btn--primary btn--sm" onclick="Doctor.saveImage()">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          ${labelSaveImg}
-        </button>
-        <button class="btn btn--secondary btn--sm" onclick="Doctor.copyOneLine()">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-          ${labelCopy}
-        </button>
-      </div>
+    bars.map(barRow).join('') +
 
-      <div class="report-id-line">${reportNodeLabel}：${reportId}</div>
-    </div>`;
+    // Expand tech detail toggle
+    '<div style="margin-top:8px;text-align:center">' +
+    '<button id="toggle-tech" onclick="var d=document.getElementById(\'tech-detail\');var b=document.getElementById(\'toggle-tech\');if(d.style.display===\'none\'){d.style.display=\'block\';b.textContent=\'' + (zh ? '收起技术详情' : 'Hide Details') + '\'}else{d.style.display=\'none\';b.textContent=\'' + (zh ? '展开技术详情' : 'Show Details') + '\'}" style="background:none;border:none;color:#64748b;font-size:10px;cursor:pointer;padding:2px 0;font-family:inherit">' + (zh ? '展开技术详情' : 'Show Details') + '</button>' +
+    '</div>' +
+    techDetail +
+    '</div>' + // end bars section
+
+    // ── Footer ─────────────────────────────────────────────────
+    '<div style="text-align:center;font-size:10px;color:#94a3b8;padding:4px 0 6px">' +
+    (zh ? '模型' : 'Model') + ': ' + escHtml(formData.model || '—') + ' &nbsp;|&nbsp; ' +
+    (zh ? '报告 ID' : 'Report ID') + ': ' + reportId + ' &nbsp;|&nbsp; aiapidoctor.com' +
+    '</div>' +
+
+    // Action buttons
+    '<div style="display:flex;gap:6px;margin-top:6px">' +
+    '<button onclick="Doctor.saveImage()" style="flex:1;padding:8px 10px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">' + (zh ? '保存图片' : 'Save Image') + '</button>' +
+    '<button onclick="Doctor.copyOneLine()" style="flex:1;padding:8px 10px;background:#f1f5f9;color:#0f172a;border:1px solid #e2e8f0;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">' + (zh ? '复制晒分' : 'Copy Score') + '</button>' +
+    '<button onclick="Doctor.copyMarkdown()" style="flex:1;padding:8px 10px;background:#f1f5f9;color:#0f172a;border:1px solid #e2e8f0;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">' + (zh ? 'Markdown' : 'Markdown') + '</button>' +
+    '</div>' +
+
+    // Safety note
+    '<div style="font-size:9px;color:#94a3b8;text-align:center;padding:6px 0 4px;line-height:1.4">' +
+    (zh ? '本报告仅展示可复现信号，不构成法律结论。' : 'Report shows reproducible signals only, not a legal conclusion.') +
+    '</div>' +
+
+    '</div>'; // end card container
 
   const node = document.getElementById('result-card');
   if (node) node.innerHTML = html;
 }
+/* Alias for compatibility — both modes use renderCard */
+function renderQuickReport(result, formData) { renderCard(result, formData); }
+function renderFullReport(result, formData) { renderCard(result, formData); }
 
 /* ═══════════════════════════════════════════════════════
-   Report rendering — Full mode (with scores)
+   Markdown report — kept separate from visual card
    ═══════════════════════════════════════════════════════ */
-function renderFullReport(result, formData) {
-  const lang = getDocLang();
-  const zh = lang !== 'en';
-  const scored = result._scored;
-  const dims = scored.dims;
-  const conn = result.connectivity || {};
-  const overallScore = scored.overallScore;
-  const apiScore = scored.score;
-  const modelScore = scored.modelSanityScore;
-  const coverage = scored.coverage;
-  const confidence = scored.confidence;
-
-  const L = {
-    reportTitle:        zh ? 'API Doctor 完整验货分' : 'API Doctor Full Scorecard',
-    apiKeyAnonymized:  zh ? 'API Key 已脱敏' : 'API Key Anonymized',
-    localBrowser:       zh ? '本地浏览器检测' : 'Local Browser Test',
-    overallScore:       zh ? '综合分' : 'Overall Score',
-    apiScoreLabel:      zh ? 'API 验货分' : 'API Check Score',
-    coverage:           zh ? '覆盖度' : 'Coverage',
-    confidence:         zh ? '置信度' : 'Confidence',
-    modelScoreLabel:   zh ? '模型表现分' : 'Model Score',
-    basedOnTested:     zh ? '基于已测项目' : 'Based on tested items',
-    confidenceHigh:    zh ? '高' : 'High',
-    confidenceMid:     zh ? '中' : 'Medium',
-    confidenceLow:     zh ? '低' : 'Low',
-    testedItems:       zh ? '已测项目' : 'Tested Items',
-    untestedItems:     zh ? '未测项目' : 'Untested Items',
-    notEnabled:        zh ? '未开启' : 'Not enabled',
-    mainFinding:       zh ? '主要发现' : 'Main Finding',
-    reportId:          zh ? '报告 ID' : 'Report ID',
-    saveImage:         zh ? '保存图片' : 'Save Image',
-    copyMarkdown:      zh ? '复制 Markdown' : 'Copy Markdown',
-    copyForProvider:   zh ? '复制给站长' : 'Copy for Provider',
-    copyOneLine:       zh ? '复制一行晒分' : 'Copy Score Line',
-    copyForum:         zh ? '复制论坛回复' : 'Copy Forum Reply',
-    safetyNote:        zh ? '本报告只展示本次测试中的可复现信号，不证明服务商主观故意，也不构成法律结论。' : 'This report only shows reproducible signals from this test. It does not prove provider intent and is not a legal conclusion.',
-    heroSubOk:         zh ? '所有检测项均通过验货。' : 'All test items passed the check.',
-    heroSubFail:       zh ? '检测中发现疑似异常，请查看下方详情。' : 'Suspected anomalies detected — see details below.',
-    heroSubWarn:       zh ? '部分检测项有坑，请查看下方详情。' : 'Some items are risky — see details below.',
-    heroSubPartial:    zh ? '部分检测项已完成，结果请见下方。' : 'Some items completed — see results below.',
-    heroSubBasic:      zh ? '已完成基础验货，扣费/缓存/模型表现未检测。' : 'Basic check completed. Billing, cache, and model sanity not tested.',
-    heroTitleComplete:   zh ? '验货完成' : 'Diagnosis Complete',
-    heroTitleRisk:       zh ? '发现风险' : 'Risk Detected',
-    heroTitleReview:     zh ? '需要复查' : 'Needs Review',
-    heroTitlePartial:    zh ? '部分验货完成' : 'Partial Diagnosis Complete',
-    heroTitleBasic:      zh ? '基础检测完成' : 'Basic Test Complete',
-    heroStatusOk:         zh ? '通过验货' : 'Passed',
-    heroStatusDanger:    zh ? '疑似异常' : 'Suspect',
-    heroStatusWarn:      zh ? '有坑' : 'Risky',
-    heroStatusComplete:   zh ? '完成' : 'Complete',
-    heroStatusBlocked:    zh ? '验不出真身' : 'Unverified',
-    heroTitleMap: {
-      '验货完成': 'Diagnosis Complete',
-      '发现风险': 'Risk Detected',
-      '需要复查': 'Needs Review',
-      '部分验货完成': 'Partial Diagnosis Complete',
-      '基础检测完成': 'Basic Test Complete'
-    },
-    heroStatusLabelMap: {
-      '通过验货': 'Passed', '疑似异常': 'Suspect', '有坑': 'Risky',
-      '完成': 'Complete', '验不出真身': 'Unverified'
-    },
-    connectivityLabel:   zh ? '模型联通' : 'Model Connectivity',
-    usageLabel:           zh ? 'usage 完整性' : 'Usage Integrity',
-    billingLabel:         zh ? '扣费完整性' : 'Billing Integrity',
-    cacheLabel:           zh ? '缓存命中' : 'Cache Hit',
-    priceLabel:           zh ? '价格核对' : 'Price Audit',
-    modelSanityLabel:     zh ? '模型表现' : 'Model Performance',
-  };
-
-  const heroTitle = L.heroTitleMap[scored.heroTitle] ? L.heroTitleMap[scored.heroTitle] : scored.heroTitle;
-  const heroStatusLabel = L.heroStatusLabelMap[scored.heroStatusLabel] ? L.heroStatusLabelMap[scored.heroStatusLabel] : scored.heroStatusLabel;
-  let heroSub = scored.heroSub;
-  if (heroSub === '检测中发现异常，请查看下方详情。') heroSub = L.heroSubFail;
-  else if (heroSub === '部分检测项需要关注，请查看下方详情。') heroSub = L.heroSubWarn;
-  else if (heroSub === '所有检测项均通过。') heroSub = L.heroSubOk;
-  else if (heroSub === '部分检测项已完成，结果请见下方。') heroSub = L.heroSubPartial;
-  else if (heroSub === '已完成模型联通和基础响应检测，未运行扣费/缓存/模型表现检测。') heroSub = L.heroSubBasic;
-
-  const mainFinding = zh ? getMainFinding(result, dims) : getMainFindingEn(result, dims);
-  const reportId = result.reportId;
-
-  const stateColor = { pass: '#16a34a', warn: '#d97706', fail: '#dc2626', blocked: '#64748b', skipped: '#94a3b8' };
-  const stateBg = { pass: '#dcfce7', warn: '#fef3c7', fail: '#fee2e2', blocked: '#f1f5f9', skipped: '#f1f5f9' };
-  const stateText = zh ? { pass: '通过验货', warn: '有坑', fail: '疑似异常', blocked: '验不出真身', skipped: '未检测' } : { pass: 'Passed', warn: 'Risky', fail: 'Suspect', blocked: 'Unverified', skipped: 'Not Tested' };
-  const stateDot = { pass: '#16a34a', warn: '#d97706', fail: '#dc2626', blocked: '#94a3b8', skipped: '#94a3b8' };
-
-  function dimCard(item, muted) {
-    const sc = stateColor[item.state] || '#94a3b8';
-    const bg = muted ? '#f8fafc' : stateBg[item.state];
-    const txt = muted ? '#94a3b8' : sc;
-    const dot = stateDot[item.state];
-    const label = muted ? item.untestedReason : stateText[item.state];
-    return `<div style="background:${bg};border-radius:8px;padding:10px 12px;display:flex;align-items:center;gap:8px">
-      <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dot};flex-shrink:0"></span>
-      <div style="flex:1;min-width:0">
-        <div style="font-size:11px;font-weight:600;color:${muted?'#94a3b8':'#374151'};text-transform:uppercase;letter-spacing:0.3px">${escHtml(item.label)}</div>
-        <div style="font-size:13px;font-weight:700;color:${txt};margin-top:2px;display:flex;align-items:center;gap:6px">
-          ${!muted && item.state !== 'skipped' ? `<span style="font-size:10px;font-weight:400;opacity:0.6">${label}</span>` : ''}
-          ${muted ? `<span style="font-size:11px;font-weight:400">${escHtml(item.untestedReason)}</span>` : `<span style="font-size:11px;font-weight:400;opacity:0.7">${escHtml(item.detail)}</span>`}
-        </div>
-      </div>
-    </div>`;
-  }
-
-  const testedDims = [];
-  const untestedDims = [];
-
-  const dimDefs = [
-    { key: 'connectivity', label: L.connectivityLabel, weight: DIM_WEIGHTS.connectivity,
-      getState: () => dims.connectivity?.state,
-      getDetail: () => {
-        if (!conn) return '—';
-        if (conn.error === 'cors_or_network') return zh ? 'CORS Restriction' : 'CORS 限制';
-        if (conn.error === 'timeout') return zh ? 'Timeout' : '超时';
-        if (!conn.status) return zh ? 'No response' : '无响应';
-        if (conn.status >= 200 && conn.status < 300) return conn.visibleLength > 0 ? (zh ? 'OK' : '正常') : (zh ? 'Empty reply' : '空回复');
-        return 'HTTP ' + conn.status;
-      }
-    },
-    { key: 'usage', label: L.usageLabel, weight: DIM_WEIGHTS.usage,
-      getState: () => dims.usage?.state,
-      getDetail: () => {
-        const d = result.usageIntegrity;
-        return zh ? { complete: 'Complete', incomplete: 'Incomplete', missing: 'Missing', skipped: '—' }[d] || '—' : { complete: '完整', incomplete: '不完整', missing: '缺失', skipped: '—' }[d] || '—';
-      }
-    },
-    { key: 'billing', label: L.billingLabel, weight: DIM_WEIGHTS.billing,
-      getState: () => dims.billing?.state,
-      getDetail: () => {
-        const v = result.billing?.verdict;
-        return zh ? { failed_request_not_charged: 'Not charged', precharge_refunded: 'Refunded', failed_request_charged: 'Overcharged', empty_response_charged: 'Overcharged', raw_quota_unavailable: 'Cannot determine' }[v] || '—' : { failed_request_not_charged: '未扣费', precharge_refunded: '已返还', failed_request_charged: '扣费异常', empty_response_charged: '扣费异常', raw_quota_unavailable: '无法判断' }[v] || '—';
-      }
-    },
-    { key: 'cache', label: L.cacheLabel, weight: DIM_WEIGHTS.cache,
-      getState: () => dims.cache?.state,
-      getDetail: () => {
-        const s = result.cacheHit?.status;
-        return zh ? { hit: 'Hit', no_hit: 'No hit', error: 'Test failed' }[s] || '—' : { hit: '命中', no_hit: '未命中', error: '检测失败' }[s] || '—';
-      }
-    },
-    { key: 'price', label: L.priceLabel, weight: DIM_WEIGHTS.price,
-      getState: () => dims.price?.state,
-      getDetail: () => {
-        const s = result.priceAudit?.status;
-        return zh ? { normal: 'Normal', needs_review: 'Needs review', anomaly_risk: 'Anomaly', no_usage: 'No usage' }[s] || '—' : { normal: '正常', needs_review: '需复查', anomaly_risk: '异常', no_usage: '无 usage' }[s] || '—';
-      }
-    },
-    { key: 'modelSanity', label: L.modelSanityLabel, weight: DIM_WEIGHTS.modelSanity,
-      getState: () => dims.modelSanity?.state,
-      getDetail: () => {
-        if (!result.modelSanity) return '—';
-        return (zh ? result.modelSanity.label : result.modelSanity.labelEn) + ' (' + result.modelSanity.overallScore + (zh ? ' pts)' : '分)');
-      }
-    }
-  ];
-
-  for (const def of dimDefs) {
-    const state = def.getState();
-    const detail = def.getDetail();
-    const item = { key: def.key, label: def.label, state, detail, weight: def.weight };
-    if (state === 'skipped') {
-      untestedDims.push({ ...item, untestedReason: L.notEnabled });
-    } else {
-      testedDims.push(item);
-    }
-  }
-
-  const sanityHtml = result.modelSanity ? `
-    <div style="margin-bottom:20px">
-      <div style="font-size:12px;font-weight:700;color:#0f172a;margin-bottom:10px;text-transform:uppercase;letter-spacing:0.5px">${L.modelScoreLabel}</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px">
-        ${result.modelSanity.results.map(r => {
-          const sc = r.score >= 70 ? '#16a34a' : r.score >= 50 ? '#d97706' : '#dc2626';
-          return `<div style="background:#f1f5f9;border-radius:8px;padding:10px 8px;text-align:center">
-            <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.3px;margin-bottom:6px">${zh ? r.name : r.nameEn}</div>
-            <div style="font-size:22px;font-weight:800;color:${sc}">${r.score}</div>
-            <div style="font-size:10px;color:#94a3b8;margin-top:2px">${r.explanation}</div>
-          </div>`;
-        }).join('')}
-      </div>
-    </div>` : '';
-
-  const scoreColor = overallScore !== null
-    ? (overallScore >= 85 ? '#16a34a' : overallScore >= 60 ? '#d97706' : '#dc2626')
-    : '#64748b';
-
-  const heroBgMap = { ok: '#dcfce7', warn: '#fef3c7', danger: '#fee2e2', neutral: '#f1f5f9' };
-  const heroColorMap = { ok: '#16a34a', warn: '#d97706', danger: '#dc2626', neutral: '#64748b' };
-  const hBg = heroBgMap[scored.heroStatus] || '#f1f5f9';
-  const hColor = heroColorMap[scored.heroStatus] || '#64748b';
-
-  const confidenceText = confidence === 'high' ? L.confidenceHigh : confidence === 'medium' ? L.confidenceMid : L.confidenceLow;
-
-  const html = `
-    <div style="border-bottom:1px solid #e2e8f0;padding-bottom:20px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
-      <div>
-        <div style="font-size:18px;font-weight:700;color:#0f172a">AI API Doctor</div>
-        <div style="font-size:13px;color:#64748b;margin-top:2px">${L.reportTitle}</div>
-      </div>
-      <div style="text-align:right;font-size:12px;color:#64748b;line-height:1.8">
-        <div>${L.apiKeyAnonymized}</div>
-        <div>${L.localBrowser}</div>
-        <div>${result.timestamp}</div>
-      </div>
-    </div>
-
-    <div style="text-align:center;padding:20px 16px;border-radius:12px;background:${hBg};margin-bottom:16px">
-      <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${hColor};margin-bottom:6px">${escHtml(heroStatusLabel)}</div>
-      <div style="font-size:20px;font-weight:800;color:#0f172a;margin-bottom:4px">${escHtml(heroTitle)}</div>
-      ${heroSub ? `<div style="font-size:13px;color:#64748b;margin-bottom:16px;line-height:1.5">${escHtml(heroSub)}</div>` : '<div style="margin-bottom:12px"></div>'}
-
-      <div style="display:flex;gap:10px;justify-content:center;margin-bottom:12px;flex-wrap:wrap">
-        ${overallScore !== null ? `<div style="flex:1;max-width:180px;background:#fff;border-radius:10px;padding:14px">
-          <div style="font-size:11px;color:#64748b;margin-bottom:4px">${L.overallScore}</div>
-          <div style="font-size:40px;font-weight:800;color:${scoreColor};line-height:1">${overallScore}</div>
-          <div style="font-size:10px;color:#94a3b8;margin-top:3px">Overall</div>
-        </div>` : ''}
-        ${apiScore !== null ? `<div style="flex:1;max-width:180px;background:#fff;border-radius:10px;padding:14px">
-          <div style="font-size:11px;color:#64748b;margin-bottom:4px">${L.apiScoreLabel}</div>
-          <div style="font-size:32px;font-weight:800;color:${apiScore >= 85 ? '#16a34a' : apiScore >= 60 ? '#d97706' : '#dc2626'};line-height:1">${apiScore}</div>
-          <div style="font-size:10px;color:#94a3b8;margin-top:3px">${coverage < 100 ? L.basedOnTested : 'API Health'}</div>
-        </div>` : ''}
-        <div style="flex:1;max-width:180px;background:#fff;border-radius:10px;padding:14px">
-          <div style="font-size:11px;color:#64748b;margin-bottom:4px">${L.coverage}</div>
-          <div style="font-size:32px;font-weight:800;color:#0f172a;line-height:1">${coverage}%</div>
-          <div style="font-size:10px;color:#94a3b8;margin-top:3px">Coverage</div>
-        </div>
-        <div style="flex:1;max-width:180px;background:#fff;border-radius:10px;padding:14px">
-          <div style="font-size:11px;color:#64748b;margin-bottom:4px">${L.confidence}</div>
-          <div style="font-size:32px;font-weight:800;color:#0f172a;line-height:1">${confidenceText}</div>
-          <div style="font-size:10px;color:#94a3b8;margin-top:3px">Confidence</div>
-        </div>
-        ${modelScore !== null ? `<div style="flex:1;max-width:180px;background:#fff;border-radius:10px;padding:14px">
-          <div style="font-size:11px;color:#64748b;margin-bottom:4px">${L.modelScoreLabel}</div>
-          <div style="font-size:32px;font-weight:800;color:${modelScore >= 70 ? '#16a34a' : modelScore >= 50 ? '#d97706' : '#dc2626'};line-height:1">${modelScore}</div>
-          <div style="font-size:10px;color:#94a3b8;margin-top:3px">${result.modelSanity?.label || 'Model Sanity'}</div>
-        </div>` : ''}
-      </div>
-
-      <div style="font-size:13px;font-weight:600;color:#374151;padding:8px 14px;background:#fff;border-radius:8px;display:inline-block">
-        ${escHtml(mainFinding)}
-      </div>
-      <div style="font-size:11px;color:#64748b;margin-top:8px">${L.reportId}: ${reportId}</div>
-    </div>
-
-    ${testedDims.length > 0 ? `
-    <div style="margin-bottom:12px">
-      <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">${L.testedItems}</div>
-      <div style="display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(160px,1fr))">
-        ${testedDims.map(d => dimCard(d, false)).join('')}
-      </div>
-    </div>` : ''}
-
-    ${untestedDims.length > 0 ? `
-    <div style="margin-bottom:16px">
-      <div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">${L.untestedItems}</div>
-      <div style="display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(160px,1fr))">
-        ${untestedDims.map(d => dimCard(d, true)).join('')}
-      </div>
-    </div>` : ''}
-
-    ${sanityHtml}
-
-    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:16px">
-      <div style="background:#f1f5f9;border-radius:8px;padding:10px 12px">
-        <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.5px">Base URL</div>
-        <div style="font-size:12px;font-weight:600;color:#0f172a;word-break:break-all;font-family:monospace;margin-top:2px">${escHtml(formData.baseUrl || '—')}</div>
-      </div>
-      <div style="background:#f1f5f9;border-radius:8px;padding:10px 12px">
-        <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.5px">Model</div>
-        <div style="font-size:12px;font-weight:600;color:#0f172a;font-family:monospace;margin-top:2px">${escHtml(formData.model || '—')}</div>
-      </div>
-      <div style="background:#f1f5f9;border-radius:8px;padding:10px 12px">
-        <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.5px">Interface</div>
-        <div style="font-size:12px;font-weight:600;color:#0f172a;margin-top:2px">${escHtml(formData.interfaceType || '—')}</div>
-      </div>
-      <div style="background:#f1f5f9;border-radius:8px;padding:10px 12px">
-        <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.5px">HTTP</div>
-        <div style="font-size:12px;font-weight:700;color:${conn.status >= 400 ? '#dc2626' : '#16a34a'};font-family:monospace;margin-top:2px">${conn.status || '—'}</div>
-      </div>
-      <div style="background:#f1f5f9;border-radius:8px;padding:10px 12px">
-        <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.5px">Latency</div>
-        <div style="font-size:12px;font-weight:600;color:#0f172a;font-family:monospace;margin-top:2px">${conn.latency ? conn.latency + 'ms' : '—'}</div>
-      </div>
-      <div style="background:#f1f5f9;border-radius:8px;padding:10px 12px">
-        <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.5px">completion_tokens</div>
-        <div style="font-size:12px;font-weight:600;color:#0f172a;font-family:monospace;margin-top:2px">${conn.completionTokens ?? '—'}</div>
-      </div>
-      <div style="background:#f1f5f9;border-radius:8px;padding:10px 12px">
-        <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.5px">total_tokens</div>
-        <div style="font-size:12px;font-weight:600;color:#0f172a;font-family:monospace;margin-top:2px">${conn.totalTokens ?? '—'}</div>
-      </div>
-      <div style="background:#f1f5f9;border-radius:8px;padding:10px 12px">
-        <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.5px">cached_tokens</div>
-        <div style="font-size:12px;font-weight:600;color:#0f172a;font-family:monospace;margin-top:2px">${conn.cachedTokens ?? '—'}</div>
-      </div>
-    </div>
-
-    ${result.errorAttribution ? `<div style="background:#eff6ff;border-left:3px solid #2563eb;border-radius:0 6px 6px 0;padding:10px 14px;font-size:13px;color:#1e40af;line-height:1.6;margin-bottom:12px">${escHtml(result.errorAttribution)}</div>` : ''}
-
-    <div style="font-size:11px;color:#94a3b8;line-height:1.5;padding:10px 12px;background:#f9fafb;border-radius:8px;margin-bottom:16px">
-      ${L.safetyNote}
-    </div>
-
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
-      <button onclick="Doctor.saveImage()" style="flex:1;padding:10px 16px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;gap:6px">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        ${L.saveImage}
-      </button>
-      <button onclick="Doctor.copyMarkdown()" style="flex:1;padding:10px 16px;background:#f1f5f9;color:#0f172a;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;gap:6px">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-        ${L.copyMarkdown}
-      </button>
-    </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
-      <button onclick="Doctor.copyForProvider()" style="flex:1;padding:10px 16px;background:#f1f5f9;color:#0f172a;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;gap:6px">
-        ${L.copyForProvider}
-      </button>
-      <button onclick="Doctor.copyOneLine()" style="flex:1;padding:10px 16px;background:#f1f5f9;color:#0f172a;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;gap:6px">
-        ${L.copyOneLine}
-      </button>
-      <button onclick="Doctor.copyForum()" style="flex:1;padding:10px 16px;background:#f1f5f9;color:#0f172a;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;gap:6px">
-        ${L.copyForum}
-      </button>
-    </div>
-  `;
-
-  const node = document.getElementById('result-card');
-  if (node) node.innerHTML = html;
-}
 
 /* ═══════════════════════════════════════════════════════
    Markdown copy
@@ -1754,7 +2068,7 @@ function buildMarkdownReport(result, formData) {
       '',
       `**${zh ? '风险标签' : 'Risk Chips'}:** ${(qs.riskChips || []).join(', ')}`,
       `**${zh ? '报告 ID' : 'Report ID'}:** ${result.reportId}`,
-      `https://aiapidoctor.com/`
+      `https://aiapidoctor.com/`,
       '',
       `### ${zh ? '技术摘要' : 'Technical Summary'}`,
       `| ${zh ? '项目' : 'Item'} | ${zh ? '值' : 'Value'} |`,
@@ -1764,7 +2078,7 @@ function buildMarkdownReport(result, formData) {
       `| Interface | ${formData.interfaceType || '—'} |`,
       `| HTTP | ${conn.status || '—'} |`,
       `| Latency | ${conn.latency ? conn.latency + 'ms' : '—'} |`,
-      `| Visible Output | ${conn.visibleLength > 0 ? 'Yes' : 'No'} |`,
+      `| Visible Output | ${(conn.visibleOutputStatus || 'absent') === 'present' ? 'Yes' : (conn.visibleOutputStatus === 'parser_unknown' ? 'Parser Unknown' : 'No')} |`,
       `| completion_tokens | ${conn.completionTokens ?? '—'} |`,
       `| total_tokens | ${conn.totalTokens ?? '—'} |`,
       `| cached_tokens | ${conn.cachedTokens ?? '—'} |`,
@@ -1901,7 +2215,7 @@ function buildProviderReport(result, formData) {
   if (!isQuick && scored) {
     reportLines.push(
       '',
-      zh ? 'Test Results:' : '检测结果：',
+      zh ? '检测结果：' : 'Test Results:',
       dims.connectivity?.state !== 'skipped' ? `- ${dimLabels.connectivity}：${stateLabels[dims.connectivity?.state] || '—'}（HTTP ${conn.status || '—'}${conn.latency ? ', ' + conn.latency + 'ms' : ''}）` : '',
       dims.usage?.state !== 'skipped' ? `- ${dimLabels.usage}：${stateLabels[dims.usage?.state] || '—'}` : '',
       dims.billing?.state !== 'skipped' ? `- ${dimLabels.billing}：${result.billing?.verdict || '—'}` : '',
@@ -1941,136 +2255,91 @@ function buildProviderReport(result, formData) {
 }
 
 /* ═══════════════════════════════════════════════════════
-   Save image — dedicated export clone
-   Two templates: quick (no scores) and full (with scores)
+   Image export — always uses short card format (Playground v4)
    ═══════════════════════════════════════════════════════ */
-async function saveDiagnosticImage() {
-  const result = window.Doctor ? window.Doctor._result : null;
-  const formData = window.Doctor ? window.Doctor._formData : null;
+function buildShortCardHTML(result, formData) {
+  const lang = getDocLang();
+  const zh = lang !== 'en';
+  const conn = result.connectivity || {};
+  const isQuick = result.mode === 'quick';
+  const qs = isQuick ? (result._quickScore || getQuickFinding(result, lang)) : null;
+  const scored = result._scored;
+  const hasBalanceDelta = result.billing && (result.billing.beforeBalance !== undefined || result.billing.afterBalance !== undefined);
+  const balanceReduced = hasBalanceDelta && result.billing.beforeBalance !== undefined && result.billing.afterBalance !== undefined && result.billing.afterBalance < result.billing.beforeBalance;
+  const hasOutput = conn.visibleOutputStatus === 'present';
+  const hasUsage = conn.totalTokens != null;
+  const barOutput = { label: zh ? '有无产物' : 'Output', state: hasOutput ? 'pass' : 'fail', score: hasOutput ? 100 : 0, detail: hasOutput ? (zh ? '有文字产出' : 'Has output') : (zh ? '没出字' : 'No output') };
+  const barBilling = balanceReduced ? { label: zh ? '扣没扣钱' : 'Charged?', state: 'fail', score: 0, detail: zh ? '余额少了' : 'Balance reduced' } : hasBalanceDelta ? { label: zh ? '扣没扣钱' : 'Charged?', state: 'pass', score: 100, detail: zh ? '没扣钱' : 'No charge' } : { label: zh ? '扣没扣钱' : 'Charged?', state: 'skipped', score: 0, detail: zh ? '网页没读余额' : 'No balance read' };
+  const barUsage = { label: zh ? '账单明细' : 'Token Details', state: hasUsage ? 'pass' : 'fail', score: hasUsage ? 100 : 0, detail: hasUsage ? (zh ? '有 token' : 'Has tokens') : (zh ? '无账单明细' : 'No token data') };
+  const barStream = { label: zh ? '流式会不会炸' : 'Streaming', state: 'skipped', score: 0, detail: zh ? '需完整验货' : 'Needs full check' };
+  const barModel = result.modelSanity && result.modelSanity.overallScore !== null ? (function(){ var ms=result.modelSanity.overallScore; return { label: zh ? '模型有没有缩水' : 'Model Shrinkage', state: ms>=70?'pass':ms>=50?'warn':'fail', score: ms, detail: zh?(result.modelSanity.label||'正常'):(result.modelSanity.labelEn||'OK') }; })() : { label: zh ? '模型有没有缩水' : 'Model Shrinkage', state: 'skipped', score: 0, detail: zh ? '需完整验货' : 'Needs full check' };
+  const barConn = (function(){ var st=scored?.dims?.connectivity?.state??'skipped'; var s=conn.status; if(st==='blocked') return { label: zh?'能否连上':'Connection', state:'warn', score: scored?.dims?.connectivity?.score??0, detail: zh?'CORS 限制':'CORS Blocked' }; if(!s) return { label: zh?'能否连上':'Connection', state:'fail', score:0, detail: zh?'无响应':'No response' }; if(s>=200&&s<300) return { label: zh?'能否连上':'Connection', state:'pass', score:100, detail:'HTTP 200' }; return { label: zh?'能否连上':'Connection', state:'fail', score:0, detail:'HTTP '+s }; })();
+  var bars = [barOutput, barBilling, barUsage, barStream, barModel, barConn];
+  var verdict, grade, chips, conclusion;
+  if(!hasOutput&&balanceReduced){verdict=zh?'空跑扣费':'Empty-Run Fraud';grade='F';chips=[zh?'没产物':'No Output',zh?'已扣钱':'Charged',zh?'高危':'High Risk'];conclusion=zh?'没拿到东西，钱却扣了，请仔细核查。':'No output, but charged. Verify carefully.';}
+  else if(!hasOutput&&hasUsage){verdict=zh?'返回废包':'Empty Response';grade='D';chips=[zh?'没产物':'No Output',zh?'有账单':'Has Tokens',zh?'扣钱没验':'Charge Unverified'];conclusion=zh?'返回无效内容，账单明细无法核验。':'Invalid content returned, charges unverified.';}
+  else if(!hasOutput&&!hasUsage){verdict=zh?'疑似空跑':'Suspected Empty Run';grade='D';chips=[zh?'没产物':'No Output',zh?'没账单':'No Tokens',zh?'扣钱没验':'Charge Unverified'];conclusion=zh?'返回无效内容，无账单明细，扣费无法核验。':'Invalid content, no tokens, charges unverified.';}
+  else if(barConn.state==='blocked'){verdict=zh?'连不上':'Cannot Connect';grade='U';chips=[zh?'浏览器拦截':'Browser Blocked'];conclusion=zh?'浏览器跨域限制，无法完成检测。':'Browser CORS restriction blocks the check.';}
+  else if(barModel.state==='fail'){verdict=zh?'模型缩水':'Model Shrinkage';grade='C';chips=[zh?'表现不对':'Perf. Anomaly',zh?'需复查':'Needs Review'];conclusion=zh?'模型输出异常，表现与标称不符。':'Model output anomaly detected.';}
+  else if(barModel.state==='warn'){verdict=zh?'模型存疑':'Model Uncertain';grade='C';chips=[zh?'指令不稳':'Unstable',zh?'需复查':'Needs Review'];conclusion=zh?'模型输出不太稳定，建议复查。':'Model output is unstable, recommend review.';}
+  else if(barBilling.state==='fail'){verdict=zh?'扣费异常':'Billing Anomaly';grade='D';chips=[zh?'已扣钱':'Charged',zh?'需复查':'Needs Review'];conclusion=zh?'扣费证据显示异常，请核查账单。':'Billing evidence shows anomaly.';}
+  else if(!hasOutput){verdict=zh?'无产物':'No Output';grade='D';chips=[zh?'没产物':'No Output'];conclusion=zh?'未获得有效输出。':'No valid output received.';}
+  else if(barUsage.state!=='pass'){verdict=zh?'账单异常':'Token Anomaly';grade='C';chips=[zh?'账单不明':'Tokens Unclear'];conclusion=zh?'有产出，但账单明细不完整。':'Has output but token details incomplete.';}
+  else if(barBilling.state==='pass'){verdict=zh?'硬货':'Solid';grade=barConn.state==='pass'&&barOutput.state==='pass'&&barUsage.state==='pass'?'A':'B';chips=[zh?'有产物':'Has Output',zh?'账单完整':'Tokens OK',zh?'能对账':'Verified'];conclusion=zh?'有产物、有账单明细，扣钱也能对上。':'Has output and tokens, charges verified.';}
+  else{verdict=zh?'能用':'Usable';grade=barConn.state==='pass'?'B':'C';chips=[zh?'有产物':'Has Output',zh?'账单完整':'Tokens OK'];conclusion=zh?'有产物，基础功能可用。':'Has output, basic functions work.';}
+  var activeBars = bars.filter(function(b){return b.state!=='skipped';});
+  var totalScore = activeBars.length>0?Math.round(activeBars.reduce(function(s,b){return s+(b.score||0);},0)/activeBars.length):(qs?qs.score:0);
+  var gradeColor={A:'#16a34a',B:'#3b82f6',C:'#f59e0b',D:'#f97316',F:'#dc2626',U:'#64748b'}[grade]||'#94a3b8';
+  var gradeBg={A:'#dcfce7',B:'#eff6ff',C:'#fef9c3',D:'#ffedd5',F:'#fee2e2',U:'#f1f5f9'}[grade]||'#f1f5f9';
+  function barColor(s){return s==='pass'?'#16a34a':s==='fail'?'#dc2626':s==='warn'?'#f59e0b':'#94a3b8';}
+  function barBg(s){return s==='pass'?'#dcfce7':s==='fail'?'#fee2e2':s==='warn'?'#fef9c3':'#f1f5f9';}
+  function barPct(s){return s==='pass'?100:s==='fail'?0:s==='warn'?50:0;}
+  function escH(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+  function pill(s){var c=barColor(s);var t=s==='pass'?(zh?'通过':'Pass'):s==='fail'?(zh?'失败':'Fail'):s==='warn'?(zh?'警告':'Warn'):(zh?'未验':'N/A');return'<span style="display:inline-block;padding:2px 7px;border-radius:20px;font-size:8px;font-weight:700;color:'+c+';background:'+barBg(s)+';white-space:nowrap">'+t+'</span>';}
+  function row(b){var pct=barPct(b.state);var c=barColor(b.state);var bg=barBg(b.state);return'<div style="display:flex;align-items:center;gap:7px;padding:5px 0;border-bottom:1px solid #f1f5f9"><div style="width:86px;font-size:10px;font-weight:600;color:#374151;flex-shrink:0">'+b.label+'</div><div style="flex:1;height:7px;background:'+(b.state==='skipped'?'#f1f5f9':bg)+';border-radius:4px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:'+(b.state==='skipped'?'#cbd5e1':c)+';border-radius:4px"></div></div><div style="width:38px;flex-shrink:0;text-align:center">'+pill(b.state)+'</div><div style="width:68px;text-align:right;font-size:9px;color:#94a3b8;flex-shrink:0">'+escH(b.detail)+'</div></div>';}
+  return'<div style="max-width:540px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',\'PingFang SC\',\'Microsoft YaHei\',sans-serif;background:#f8fafc;padding:32px 36px;box-sizing:border-box">'+
+    '<div style="background:#0f172a;border-radius:20px;padding:16px 18px 14px;margin-bottom:10px">'+
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">'+
+    '<div><div style="font-size:15px;font-weight:800;color:#fff;letter-spacing:-0.2px">API Doctor</div><div style="font-size:10px;color:#94a3b8;margin-top:1px">'+(zh?'中转站黑盒验货':'Relay API Black-box Check')+'</div></div>'+
+    '<div style="background:'+gradeBg+';border-radius:8px;padding:4px 10px;text-align:center;flex-shrink:0"><div style="font-size:22px;font-weight:900;color:'+gradeColor+';line-height:1">'+grade+'</div><div style="font-size:8px;color:'+gradeColor+';font-weight:600;margin-top:1px">'+(zh?'档':'Grade')+'</div></div>'+
+    '</div>'+
+    '<div style="text-align:center;margin-bottom:8px"><div style="font-size:56px;font-weight:900;color:'+gradeColor+';line-height:1">'+totalScore+'</div><div style="font-size:13px;font-weight:700;color:'+gradeColor+';margin-top:3px">'+escH(verdict)+'</div></div>'+
+    '<div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:center;margin-bottom:4px">'+chips.map(function(c){return'<span style="background:'+gradeBg+';color:'+gradeColor+';font-size:10px;font-weight:700;padding:2px 9px;border-radius:20px;white-space:nowrap">'+escH(c)+'</span>';}).join('')+'</div>'+
+    '<div style="font-size:11px;color:#94a3b8;text-align:center;margin-top:6px;line-height:1.4">'+escH(conclusion)+'</div>'+
+    '</div>'+
+    '<div style="background:#fff;border-radius:16px;padding:12px 14px;margin-bottom:10px">'+
+    '<div style="font-size:10px;font-weight:700;color:#0f172a;margin-bottom:2px">'+(zh?'为什么是 '+totalScore+' 分？':'Why '+totalScore+' points?')+'</div>'+
+    '<div style="font-size:10px;color:#94a3b8;margin-bottom:8px">'+(zh?'先看有没有产物，再看扣没扣钱':'Check output first, then billing')+'</div>'+
+    bars.map(row).join('')+
+    '</div>'+
+    '<div style="text-align:center;font-size:11px;color:#94a3b8;padding:4px 0 6px">'+(zh?'模型':'Model')+': '+escH(formData.model||'—')+' &nbsp;|&nbsp; '+(zh?'报告 ID':'Report ID')+': '+result.reportId+' &nbsp;|&nbsp; aiapidoctor.com</div>'+
+    '<div style="font-size:9px;color:#94a3b8;text-align:center;padding:6px 0 4px;line-height:1.4">'+(zh?'本报告仅展示可复现信号，不构成法律结论。':'Report shows reproducible signals only, not a legal conclusion.')+'</div>'+
+    '</div>';
+}
 
+async function saveDiagnosticImage() {
+  var result = window.Doctor ? window.Doctor._result : null;
+  var formData = window.Doctor ? window.Doctor._formData : null;
   try {
     await new Promise(requestAnimationFrame);
-    await document.fonts.ready.catch(() => undefined);
-
-    if (typeof htmlToImage === 'undefined') {
-      showToast('Image generation failed, please use browser screenshot.');
-      return;
-    }
-
-    let clone;
-    if (result && result.mode === 'quick') {
-      clone = buildQuickImageNode(result, formData);
-    } else {
-      const sourceNode = document.getElementById('result-card');
-      if (!sourceNode) { showToast('Report node not found'); return; }
-      clone = sourceNode.cloneNode(true);
-    }
-
-    clone.style.cssText = [
-      'position:fixed',
-      'top:-9999px',
-      'left:-9999px',
-      'width:1080px',
-      'background:#f8fafc',
-      'padding:48px',
-      'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif',
-      'box-sizing:border-box',
-      'border:none',
-      'border-radius:0'
-    ].join(';');
+    await document.fonts.ready.catch(function(){});
+    if (typeof htmlToImage === 'undefined') { showToast('Image generation failed, please use browser screenshot.'); return; }
+    var clone = document.createElement('div');
+    clone.innerHTML = buildShortCardHTML(result, formData);
+    clone.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:540px;background:#f8fafc;padding:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;box-sizing:border-box';
     document.body.appendChild(clone);
-
-    const dataUrl = await htmlToImage.toPng(clone, {
-      pixelRatio: 1,
-      cacheBust: true,
-      backgroundColor: '#f8fafc',
-      width: 1080
-    });
-
+    var dataUrl = await htmlToImage.toPng(clone, { pixelRatio: 2, cacheBust: true, backgroundColor: '#f8fafc', width: 540 });
     document.body.removeChild(clone);
-    downloadDataUrl(dataUrl, `aiapidoctor-report-${Date.now()}.png`);
-    showToast('Report image saved');
+    downloadDataUrl(dataUrl, 'aiapidoctor-' + Date.now() + '.png');
+    showToast(getDocLang() !== 'en' ? '图片已保存' : 'Image saved');
   } catch (err) {
-    showToast('Image generation failed, please use browser screenshot.');
+    showToast(getDocLang() !== 'en' ? '保存失败，请用浏览器截图' : 'Image failed, use browser screenshot.');
   }
 }
 
 function buildQuickImageNode(result, formData) {
-  const lang = getDocLang();
-  const zh = lang !== 'en';
-  const conn = result.connectivity || {};
-  const qs = result._quickScore || getQuickFinding(result, lang);
-  const grade = qs.grade;
-  const score = qs.score;
-  const mainFinding = qs.mainFinding;
-  const riskChips = qs.riskChips || [];
-
-  const gradeColor = { A: '#16a34a', B: '#2563eb', C: '#d97706', D: '#ea580c', F: '#dc2626', U: '#64748b' }[grade] || '#64748b';
-  const gradeBg = { A: '#dcfce7', B: '#dbeafe', C: '#fef3c7', D: '#ffedd5', F: '#fee2e2', U: '#f1f5f9' }[grade] || '#f1f5f9';
-  const gradeLabelMap = {
-    A: zh ? '硬货' : 'Solid',
-    B: zh ? '能用' : 'Usable',
-    C: zh ? '掺水' : 'Diluted',
-    D: zh ? '疑似空跑' : 'Suspected Empty Run',
-    F: zh ? '高危' : 'High Risk',
-    U: zh ? '验不出真身' : 'Unverified',
-  };
-  const gradeLabelText = gradeLabelMap[grade] || grade;
-  const safeNote = zh
-    ? '本报告只展示本次测试中的可复现信号，不证明服务商主观故意，也不构成法律结论。'
-    : 'This report only shows reproducible signals from this test. It does not prove provider intent and is not a legal conclusion.';
-
-  const node = document.createElement('div');
-  node.innerHTML = `
-    <div style="padding:40px 40px 32px;background:#f8fafc;min-height:100%;box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif">
-
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px">
-        <div>
-          <div style="font-size:22px;font-weight:800;color:#0f172a;letter-spacing:-0.3px">API Doctor 验货单</div>
-          <div style="font-size:12px;color:#64748b;margin-top:3px">${escHtml(formData.model || '—')} · ${formData.baseUrl ? escHtml(formData.baseUrl.split('//')[1] || formData.baseUrl) : '—'}</div>
-        </div>
-        <div style="text-align:right;font-size:11px;color:#94a3b8;line-height:1.8">
-          <div>${zh ? 'API Key 已脱敏' : 'API Key Anonymized'}</div>
-          <div>${result.timestamp}</div>
-        </div>
-      </div>
-
-      <div style="background:${gradeBg};border-radius:16px;padding:28px 24px;text-align:center;margin-bottom:20px">
-        <div style="font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${gradeColor};margin-bottom:10px">${grade}档 · ${gradeLabelText}</div>
-        <div style="font-size:72px;font-weight:900;color:${gradeColor};line-height:1;margin-bottom:6px">${score}</div>
-        <div style="font-size:13px;color:${gradeColor};margin-bottom:16px">${zh ? '分' : ''}</div>
-        <div style="font-size:14px;color:#374151;line-height:1.6;max-width:480px;margin:0 auto 16px">${escHtml(mainFinding)}</div>
-        ${riskChips.length > 0 ? `
-        <div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center">
-          ${riskChips.map(c => `<span style="background:#fff;border:1px solid ${gradeColor}20;border-radius:20px;padding:4px 12px;font-size:12px;font-weight:600;color:${gradeColor}">${escHtml(c)}</span>`).join('')}
-        </div>` : ''}
-      </div>
-
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px">
-        <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px;text-align:center">
-          <div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">HTTP</div>
-          <div style="font-size:18px;font-weight:800;color:${conn.status >= 400 ? '#dc2626' : '#16a34a'};font-family:monospace">${conn.status || '—'}</div>
-        </div>
-        <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px;text-align:center">
-          <div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Latency</div>
-          <div style="font-size:18px;font-weight:800;color:#0f172a;font-family:monospace">${conn.latency ? conn.latency + 'ms' : '—'}</div>
-        </div>
-        <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px;text-align:center">
-          <div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Output</div>
-          <div style="font-size:18px;font-weight:800;color:#0f172a">${conn.visibleLength > 0 ? (zh ? '有' : 'Yes') : (zh ? '无' : 'No')}</div>
-        </div>
-        <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px;text-align:center">
-          <div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Usage</div>
-          <div style="font-size:18px;font-weight:800;color:#0f172a">${conn.totalTokens != null ? (zh ? '有' : 'Yes') : (zh ? '无' : 'No')}</div>
-        </div>
-      </div>
-
-      <div style="font-size:11px;color:#94a3b8;line-height:1.5;padding:10px 14px;background:#f1f5f9;border-radius:8px;margin-bottom:12px">${safeNote}</div>
-
-      <div style="text-align:center;font-size:11px;color:#94a3b8;margin-top:4px">
-        ${zh ? '报告 ID' : 'Report ID'}：${result.reportId} · aiapidoctor.com
-      </div>
-    </div>`;
+  var node = document.createElement('div');
+  node.innerHTML = buildShortCardHTML(result, formData);
   return node;
 }
 
@@ -2244,15 +2513,19 @@ window.Doctor = {
     const parsed = parseConnectionInfo(el.value);
     if (parsed.baseUrl) {
       const urlEl = document.getElementById('doctor-base-url');
-      if (urlEl && !urlEl.value) urlEl.value = parsed.baseUrl;
+      if (urlEl) {
+        let url = parsed.baseUrl;
+        if (!url.endsWith('/v1')) url = url + '/v1';
+        urlEl.value = url;
+      }
     }
     if (parsed.apiKey) {
       const keyEl = document.getElementById('doctor-api-key');
-      if (keyEl && !keyEl.value) keyEl.value = parsed.apiKey;
+      if (keyEl) keyEl.value = parsed.apiKey;
     }
     if (parsed.model) {
       const modelEl = document.getElementById('doctor-model');
-      if (modelEl && !modelEl.value) modelEl.value = parsed.model;
+      if (modelEl) modelEl.value = parsed.model;
     }
   },
 
@@ -2387,7 +2660,14 @@ window.Doctor = {
     const model = (document.getElementById('doctor-model')?.value || '').trim();
     const interfaceType = (document.getElementById('doctor-interface')?.value || 'OpenAI Chat');
     const providerName = (document.getElementById('doctor-provider')?.value || '').trim()
-      || (baseUrl ? new URL(baseUrl.startsWith('http') ? baseUrl : 'https://' + baseUrl).hostname : 'Unknown');
+      || (() => {
+        try {
+          const urlStr = baseUrl.startsWith('http') ? baseUrl : 'https://' + baseUrl;
+          return new URL(urlStr).hostname.split(':')[0];
+        } catch {
+          return 'Unknown';
+        }
+      })();
 
     const lang = getDocLang();
     const zh = lang !== 'en';
@@ -2410,9 +2690,21 @@ window.Doctor = {
     const clearBtn = document.getElementById('doctor-clear-btn');
     if (btn) {
       btn.disabled = true;
-      btn.innerHTML = `<span class="status-dot status-dot--running"></span>${btnRunningLabel}`;
+      btn.innerHTML = `<span class="status-dot"></span>${btnRunningLabel}`;
     }
     if (clearBtn) clearBtn.disabled = true;
+
+    // Clear result card and show loading state so old score doesn't flash
+    const lang2 = document.documentElement.lang;
+    const zh2 = lang2 !== 'en';
+    const resultNode = document.getElementById('result-card');
+    if (resultNode) {
+      resultNode.innerHTML = `
+        <div class="result-empty-state" style="font-size:14px">
+          <span class="status-dot" style="display:inline-block;vertical-align:middle;margin-right:6px"></span>
+          ${zh2 ? '正在检测...' : 'Checking...'}
+        </div>`;
+    }
 
     this.showProgress('running');
 
@@ -2500,7 +2792,7 @@ window.Doctor = {
         <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">
           ${steps.map((s, i) => `
             <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#64748b" id="step-${i}">
-              <span class="status-dot status-dot--running"></span>
+              <span class="status-dot"></span>
               <span>${s}</span>
             </div>`).join('')}
         </div>`;
@@ -2558,9 +2850,19 @@ window.Doctor = {
 
     if (result.mode === 'quick') {
       const qs = result._quickScore || getQuickFinding(result, lang);
+      const vos = result.connectivity?.visibleOutputStatus || 'absent';
+      // Build a concise label tag based on vos
+      let tag = '';
+      if (qs.grade === 'C') {
+        if (vos === 'parser_unknown') {
+          tag = zh ? '｜输出解析异常' : ' | Output Parser Unknown';
+        } else if (vos === 'absent' && result.connectivity?.totalTokens != null) {
+          tag = zh ? '｜返回废包' : ' | Dead Output';
+        }
+      }
       const text = zh
-        ? `我的 API Doctor 验货：${qs.grade}档 ${qs.score}分｜${qs.mainFinding}｜报告 ID：${result.reportId}\nhttps://aiapidoctor.com/`
-        : `My API Doctor score: ${qs.grade} ${qs.score}/100 | ${qs.mainFinding} | Report ID: ${result.reportId}\nhttps://aiapidoctor.com/`;
+        ? `我的 API Doctor 验货：${qs.grade}档 ${qs.score}分${tag}｜${qs.mainFinding}｜报告 ID：${result.reportId}\nhttps://aiapidoctor.com/`
+        : `My API Doctor score: ${qs.grade} ${qs.score}/100${tag} | ${qs.mainFinding} | Report ID: ${result.reportId}\nhttps://aiapidoctor.com/`;
       copyToClipboard(text, zh ? '晒分已复制' : 'Score copied');
     } else {
       const scored = result._scored;
@@ -2775,7 +3077,7 @@ function initDoctor() {
     bindConnectionParser();
     if (typeof updateCostHint === 'function') updateCostHint();
   } catch (err) {
-    console.error('[API Doctor init failed]', err?.message || err);
+    console.error('[API Doctor init failed]', err?.message || err, err?.stack);
     showSafeInitError(err);
   }
 }
