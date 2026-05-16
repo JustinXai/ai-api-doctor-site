@@ -35,13 +35,9 @@
 <!-- Header -->
 <header class="site-header">
   <div class="container site-header__inner">
-    <a href="/" class="site-logo">
-      <div class="site-logo__icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
-        </svg>
-      </div>
-      AI API Doctor
+    <a class="site-logo" href="/">
+      <span class="site-logo__mark">&#x2311;</span>
+      <span>AI API Doctor</span>
     </a>
     <button class="nav-toggle" aria-label="菜单" onclick="document.querySelector('.site-nav').classList.toggle('open')">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
@@ -61,134 +57,85 @@
   </div>
 </header>
 
-<!-- Doctor Section: Tool-first layout -->
-<section id="doctor" class="doctor-section">
-  <div class="doctor-layout">
+<!-- Main: single-tool layout -->
+<main class="single-tool-page">
 
-    <!-- Hero header -->
-    <div class="doctor-hero">
-      <h1 class="doctor-hero__h1">API Doctor</h1>
-      <p class="doctor-hero__tagline">中转站最强照妖镜</p>
-      <p class="doctor-hero__desc">
-        先验货，再充钱。<br/>
-        一键照出中转站有没有坑，生成可晒的验货分。
-      </p>
-    </div>
+  <!-- Hero -->
+  <section class="tool-hero">
+    <h1>API Doctor</h1>
+    <h2>中转站最强照妖镜</h2>
+    <p>先验货，再充钱。<br>一键照出中转站有没有坑，生成可晒的验货分。</p>
+  </section>
 
-    <!-- Form + Result -->
-    <div class="doctor-tool-area">
+  <!-- Tool -->
+  <section id="doctor" class="center-tool-shell">
+    <div class="doctor-card">
 
-      <!-- Form panel -->
-      <div class="doctor-form-panel">
-        <div class="tool-card" id="tool-card">
-          <div class="tool-card__body">
-
-            <!-- Paste config link (collapsed) -->
-            <div class="paste-config-row">
-              <button class="paste-config-link" id="paste-config-btn" type="button" onclick="document.getElementById('paste-config-panel').classList.toggle('open'); this.classList.toggle('open')">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                粘贴配置
-              </button>
-            </div>
-            <div class="advanced-panel" id="paste-config-panel">
-              <div class="tool-form__group" style="margin-top:8px">
-                <textarea
-                  id="doctor-conn-info"
-                  class="tool-form__textarea"
-                  placeholder="支持 New API 连接信息、Base URL、API Key 或 cURL。例如：
+      <!-- Paste config toggle -->
+      <details class="config-paste">
+        <summary>粘贴连接信息 / cURL / ENV</summary>
+        <textarea id="doctor-conn-info" placeholder="支持 New API JSON、Base URL、API Key、cURL 或环境变量。例如：
 {&quot;_type&quot;:&quot;newapi_channel_conn&quot;,&quot;key&quot;:&quot;sk-...&quot;,&quot;url&quot;:&quot;https://api.example.com&quot;}
 或：
 https://api.example.com/v1
 或：
 OPENAI_API_KEY=sk-..."
-                  rows="3"
-                  oninput="Doctor.onConnectionInfoInput(this)"
-                ></textarea>
-                <div class="tool-form__hint">自动解析 JSON、cURL、ENV 格式。解析后请检查下方字段。</div>
-              </div>
-            </div>
+          oninput="Doctor.onConnectionInfoInput(this)"></textarea>
+        <button type="button" id="parse-config" class="btn-secondary" onclick="Doctor.onConnectionInfoInput(document.getElementById('doctor-conn-info'))">解析并填入</button>
+      </details>
 
-            <!-- Base URL -->
-            <div class="tool-form__group">
-              <label class="tool-form__label">Base URL</label>
-              <input
-                id="doctor-base-url"
-                class="tool-form__input"
-                placeholder="https://api.example.com/v1"
-                oninput="Doctor.normalizeBaseUrl(this)"
-              />
-            </div>
+      <!-- Base URL -->
+      <div class="form-group">
+        <label for="doctor-base-url">Base URL</label>
+        <input id="doctor-base-url" type="url" placeholder="https://api.example.com/v1" autocomplete="off"
+          oninput="Doctor.normalizeBaseUrl(this)" />
+      </div>
 
-            <!-- API Key -->
-            <div class="tool-form__group">
-              <label class="tool-form__label">API Key</label>
-              <input
-                id="doctor-api-key"
-                type="password"
-                class="tool-form__input tool-form__input--key"
-                placeholder="sk-..."
-                autocomplete="off"
-              />
-            </div>
+      <!-- API Key -->
+      <div class="form-group">
+        <label for="doctor-api-key">API Key</label>
+        <input id="doctor-api-key" type="password" placeholder="sk-..." autocomplete="off" />
+        <p class="field-help">API Key 仅在当前浏览器内用于本次检测，不会上传到 API Doctor。</p>
+      </div>
 
-            <!-- Model ID -->
-            <div class="tool-form__group">
-              <label class="tool-form__label">Model ID</label>
-              <input id="doctor-model" class="tool-form__input" placeholder="gpt-5.5" />
-            </div>
+      <!-- Model ID -->
+      <div class="form-group">
+        <label for="doctor-model">Model ID</label>
+        <input id="doctor-model" type="text" placeholder="gpt-5.5" autocomplete="off" />
+        <p class="field-help">不知道模型名？先填你正在用的模型 ID。</p>
+      </div>
 
-            <!-- Run button -->
-            <button id="doctor-run-btn" class="btn btn--primary-run" onclick="Doctor.run()">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-              一键验货
-            </button>
-            <div class="run-cost-hint">预计消耗通常低于 $0.05</div>
+      <!-- Run button -->
+      <button id="doctor-run-btn" class="run-check-button btn-primary" onclick="Doctor.run()">
+        一键验货
+      </button>
+      <p class="cost-hint">预计消耗通常低于 $0.05</p>
 
-          </div><!-- /tool-card__body -->
-        </div><!-- /tool-card -->
-      </div><!-- /doctor-form-panel -->
+      <!-- Result -->
+      <div id="result-card" class="doctor-result">
+        <div class="result-empty-state">填写信息后点击检测按钮，即可查看诊断结果。</div>
+      </div>
 
-      <!-- Result panel -->
-      <div class="doctor-report-panel">
-        <div id="result-card">
-          <div class="result-empty">
-            填写信息后点击检测按钮，即可查看诊断结果。
-          </div>
-        </div>
-        <div id="diag-progress"></div>
-      </div><!-- /doctor-report-panel -->
+    </div><!-- /.doctor-card -->
+  </section><!-- /#doctor -->
 
-    </div><!-- /doctor-tool-area -->
+</main>
 
-  </div><!-- /doctor-layout -->
-</section>
-
-<!-- Plugin corner entry (small, non-intrusive) -->
-<div class="plugin-corner">
-  查真实扣费？<a href="/extension/">插件审核中</a>
-</div>
+<!-- Plugin corner (small, non-intrusive) -->
+<a class="floating-plugin" href="/extension/">查真实扣费？插件审核中</a>
 
 <!-- Footer -->
 <footer class="site-footer">
-  <div class="container site-footer__inner">
-    <div class="site-logo" style="font-size:15px;margin-bottom:8px">
-      <div class="site-logo__icon" style="width:28px;height:28px">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px">
-          <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
-        </svg>
-      </div>
-      AI API Doctor
-    </div>
-    <div class="site-footer__links">
+  <div class="site-footer__inner">
+    <strong>AI API Doctor</strong>
+    <nav>
       <a href="/faq/">FAQ</a>
       <a href="/guides/billing-anomaly/">原理</a>
       <a href="/privacy/">隐私</a>
       <a href="/support/">支持</a>
-    </div>
-    <p class="site-footer__note">
-      AI API Doctor 不推荐、不排名任何中转站。报告只展示本次测试中的可复现信号，不证明服务商主观故意。
-    </p>
-    <p style="color:#9ca3af;font-size:12px;margin-top:4px">&copy; 2026 AI API Doctor &middot; aiapidoctor.com</p>
+    </nav>
+    <p>AI API Doctor 不推荐、不排名任何中转站。报告只展示本次测试中的可复现信号。</p>
+    <p>&copy; 2026 AI API Doctor &middot; aiapidoctor.com</p>
   </div>
 </footer>
 

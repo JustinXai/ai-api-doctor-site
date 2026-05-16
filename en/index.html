@@ -38,12 +38,8 @@
 <header class="site-header">
   <div class="container site-header__inner">
     <a href="/en/" class="site-logo">
-      <div class="site-logo__icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
-        </svg>
-      </div>
-      AI API Doctor
+      <span class="site-logo__mark">&#x2311;</span>
+      <span>AI API Doctor</span>
     </a>
     <button class="nav-toggle" aria-label="Menu" onclick="document.querySelector('.site-nav').classList.toggle('open')">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
@@ -63,130 +59,85 @@
   </div>
 </header>
 
-<!-- Doctor Section -->
-<section id="doctor" class="doctor-section">
-  <div class="doctor-layout">
+<!-- Main: single-tool layout -->
+<main class="single-tool-page">
 
-    <!-- Hero -->
-    <div class="doctor-hero">
-      <h1 class="doctor-hero__h1">API Doctor</h1>
-      <p class="doctor-hero__tagline">AI API Gateway Trust Scanner</p>
-      <p class="doctor-hero__desc">
-        Check whether an AI API gateway has hidden issues before you top up.<br/>
-        Generate a shareable diagnostic scorecard.
-      </p>
-    </div>
+  <!-- Hero -->
+  <section class="tool-hero">
+    <h1>API Doctor</h1>
+    <h2>AI API Gateway Trust Scanner</h2>
+    <p>Check whether an AI API gateway has hidden issues before you top up.<br>Generate a shareable diagnostic scorecard.</p>
+  </section>
 
-    <!-- Form + Result -->
-    <div class="doctor-tool-area">
+  <!-- Tool -->
+  <section id="doctor" class="center-tool-shell">
+    <div class="doctor-card">
 
-      <!-- Form panel -->
-      <div class="doctor-form-panel">
-        <div class="tool-card" id="tool-card">
-          <div class="tool-card__body">
-
-            <!-- Paste config link (collapsed) -->
-            <div class="paste-config-row">
-              <button class="paste-config-link" id="paste-config-btn" type="button" onclick="document.getElementById('paste-config-panel').classList.toggle('open'); this.classList.toggle('open')">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                Paste Config
-              </button>
-            </div>
-            <div class="advanced-panel" id="paste-config-panel">
-              <div class="tool-form__group" style="margin-top:8px">
-                <textarea
-                  id="doctor-conn-info"
-                  class="tool-form__textarea"
-                  placeholder="Supports New API connection info, Base URL, API Key, or cURL. Example:
+      <!-- Paste config toggle -->
+      <details class="config-paste">
+        <summary>Paste Config / cURL / ENV</summary>
+        <textarea id="doctor-conn-info" placeholder="Supports New API connection info, Base URL, API Key, or cURL. Example:
+{&quot;_type&quot;:&quot;newapi_channel_conn&quot;,&quot;key&quot;:&quot;sk-...&quot;,&quot;url&quot;:&quot;https://api.example.com&quot;}
+or:
 https://api.example.com/v1
 or:
 OPENAI_API_KEY=sk-..."
-                  rows="3"
-                  oninput="Doctor.onConnectionInfoInput(this)"
-                ></textarea>
-                <div class="tool-form__hint">Auto-parses JSON, cURL, and ENV formats.</div>
-              </div>
-            </div>
+          oninput="Doctor.onConnectionInfoInput(this)"></textarea>
+        <button type="button" id="parse-config" class="btn-secondary" onclick="Doctor.onConnectionInfoInput(document.getElementById('doctor-conn-info'))">Parse & Fill</button>
+      </details>
 
-            <!-- Base URL -->
-            <div class="tool-form__group">
-              <label class="tool-form__label">Base URL</label>
-              <input
-                id="doctor-base-url"
-                class="tool-form__input"
-                placeholder="https://api.example.com/v1"
-                oninput="Doctor.normalizeBaseUrl(this)"
-              />
-            </div>
+      <!-- Base URL -->
+      <div class="form-group">
+        <label for="doctor-base-url">Base URL</label>
+        <input id="doctor-base-url" type="url" placeholder="https://api.example.com/v1" autocomplete="off"
+          oninput="Doctor.normalizeBaseUrl(this)" />
+      </div>
 
-            <!-- API Key -->
-            <div class="tool-form__group">
-              <label class="tool-form__label">API Key</label>
-              <input
-                id="doctor-api-key"
-                type="password"
-                class="tool-form__input tool-form__input--key"
-                placeholder="sk-..."
-                autocomplete="off"
-              />
-            </div>
+      <!-- API Key -->
+      <div class="form-group">
+        <label for="doctor-api-key">API Key</label>
+        <input id="doctor-api-key" type="password" placeholder="sk-..." autocomplete="off" />
+        <p class="field-help">API Key stays in your browser only and is never sent to API Doctor servers.</p>
+      </div>
 
-            <!-- Model ID -->
-            <div class="tool-form__group">
-              <label class="tool-form__label">Model ID</label>
-              <input id="doctor-model" class="tool-form__input" placeholder="gpt-5.5" />
-            </div>
+      <!-- Model ID -->
+      <div class="form-group">
+        <label for="doctor-model">Model ID</label>
+        <input id="doctor-model" type="text" placeholder="gpt-5.5" autocomplete="off" />
+        <p class="field-help">Not sure? Fill in the model ID you are currently using.</p>
+      </div>
 
-            <!-- Run button -->
-            <button id="doctor-run-btn" class="btn btn--primary-run" onclick="Doctor.run()">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-              Run Check
-            </button>
-            <div class="run-cost-hint">Estimated cost is usually under $0.05.</div>
+      <!-- Run button -->
+      <button id="doctor-run-btn" class="run-check-button btn-primary" onclick="Doctor.run()">
+        Run Check
+      </button>
+      <p class="cost-hint">Estimated cost is usually under $0.05.</p>
 
-          </div><!-- /tool-card__body -->
-        </div><!-- /tool-card -->
-      </div><!-- /doctor-form-panel -->
+      <!-- Result -->
+      <div id="result-card" class="doctor-result">
+        <div class="result-empty-state">Fill in the fields and click the button to see your diagnostic result.</div>
+      </div>
 
-      <!-- Result panel -->
-      <div class="doctor-report-panel">
-        <div id="result-card">
-          <div class="result-empty">
-            Fill in the fields and click the button to see your diagnostic result.
-          </div>
-        </div>
-        <div id="diag-progress"></div>
-      </div><!-- /doctor-report-panel -->
+    </div><!-- /.doctor-card -->
+  </section><!-- /#doctor -->
 
-    </div><!-- /doctor-tool-area -->
+</main>
 
-  </div><!-- /doctor-layout -->
-</section>
-
-<!-- Plugin corner entry -->
-<div class="plugin-corner">
-  Real billing check? <a href="/extension/">Extension under review</a>
-</div>
+<!-- Plugin corner (small, non-intrusive) -->
+<a class="floating-plugin" href="/extension/">Real billing check? Extension under review</a>
 
 <!-- Footer -->
 <footer class="site-footer">
-  <div class="container site-footer__inner">
-    <div class="site-logo" style="font-size:15px;margin-bottom:8px">
-      <div class="site-logo__icon" style="width:28px;height:28px">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px">
-          <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
-        </svg>
-      </div>
-      AI API Doctor
-    </div>
-    <div class="site-footer__links">
+  <div class="site-footer__inner">
+    <strong>AI API Doctor</strong>
+    <nav>
       <a href="/en/faq/">FAQ</a>
       <a href="/guides/billing-anomaly/">How It Works</a>
       <a href="/privacy/">Privacy</a>
       <a href="/support/">Support</a>
-    </div>
+    </nav>
     <p>AI API Doctor does not recommend or rank any relay providers. The report only shows reproducible signals from this test.</p>
-    <p style="color:#9ca3af;font-size:12px;margin-top:4px">&copy; 2026 AI API Doctor &middot; aiapidoctor.com</p>
+    <p>&copy; 2026 AI API Doctor &middot; aiapidoctor.com</p>
   </div>
 </footer>
 

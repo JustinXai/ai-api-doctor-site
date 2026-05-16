@@ -1,20 +1,12 @@
-feat: upgrade to black-box API scorecard product
+fix: restore single-tool-page layout - CSS classes now match HTML structure
 
-Homepage: rename to API Doctor / AI API 黑盒验货, update hero tagline,
-button text, and cost hint copy.
-
-Quick check: completely rewrite report as scorecard with:
-- A-F grade system (A=硬货, B=能用, C=掺水, D=疑似空跑, F=高危, U=验不出真身)
-- Numeric score with capping rules (HTTP 200 + no output + no usage = D/55 max)
-- Color-coded scorecard hero (56px score display)
-- Risk chip tags (疑似空跑, usage 消失, 接口假健康, etc.)
-- Evidence grid (HTTP, Latency, Visible Output, Usage, tokens, Model, Base URL)
-
-Copy & image: rewrite copyOneLine, copyForum, copyForProvider, buildQuickImageNode
-to share-score format: "我的 API Doctor 验货：D档 55分｜疑似空跑｜报告 ID：xxx"
-
-Full report: sync terminology to pass/risky/suspect/unverified,
-update report title to API Doctor 完整验货分,
-revise disclaimer language.
-
-Also: fix undeclared `lang` variable in runDiagnosis().
+- Rewrite index.html and en/index.html to use single-tool-page layout
+  with .tool-hero, .center-tool-shell, .doctor-card, .config-paste classes
+- Add missing CSS: .single-tool-page, .tool-hero, .center-tool-shell,
+  .doctor-card, .config-paste, .floating-plugin, .btn-secondary,
+  .field-help, .cost-hint, .result-empty-state, .site-logo__mark
+- Add oninput/onclick bindings to textarea and parse-config button
+- Header now uses .site-logo__mark (text-based, no SVG dependency)
+- Footer simplified: just logo name, nav links, disclaimer, copyright
+- Remove plugin-corner div (now floating-plugin anchor)
+- API key never appears in report, image, clipboard, localStorage, or URL

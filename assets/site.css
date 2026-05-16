@@ -1202,3 +1202,255 @@ button.primary,
   .plugin-corner { bottom: 12px; right: 12px; }
   .tool-form__group { margin-bottom: 10px; }
 }
+
+/* ══════════════════════════════════════════════════════════════
+   SINGLE-TOOL-PAGE LAYOUT (matches index.html class names)
+   ══════════════════════════════════════════════════════════════ */
+.single-tool-page {
+  min-height: calc(100vh - 60px);
+  padding: 34px 16px 48px;
+}
+
+.tool-hero {
+  max-width: 760px;
+  margin: 0 auto 22px;
+  text-align: center;
+}
+
+.tool-hero h1 {
+  margin: 0 0 4px;
+  font-size: clamp(36px, 5vw, 54px);
+  line-height: 1.05;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+}
+
+.tool-hero h2 {
+  margin: 0 0 12px;
+  font-size: clamp(24px, 3.5vw, 36px);
+  line-height: 1.15;
+  font-weight: 900;
+  color: var(--info);
+}
+
+.tool-hero p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 17px;
+  line-height: 1.8;
+}
+
+.center-tool-shell {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.doctor-card {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.10);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.form-group {
+  display: grid;
+  gap: 6px;
+}
+
+.form-group label {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.form-group input {
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0 14px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--surface);
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.form-group input:focus {
+  border-color: var(--info);
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
+}
+
+.form-group input::placeholder {
+  color: #94a3b8;
+}
+
+.field-help {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.config-paste {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+.config-paste summary {
+  cursor: pointer;
+  color: var(--info);
+  font-size: 14px;
+  font-weight: 700;
+  list-style: none;
+  padding: 4px 0;
+}
+
+.config-paste summary::-webkit-details-marker {
+  display: none;
+}
+
+.config-paste textarea {
+  width: 100%;
+  margin-top: 10px;
+  min-height: 88px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--surface);
+  resize: vertical;
+  line-height: 1.6;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.config-paste textarea:focus {
+  border-color: var(--info);
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
+}
+
+.config-paste textarea::placeholder {
+  color: #94a3b8;
+}
+
+.btn-secondary {
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  background: var(--soft);
+  color: var(--text);
+  border-radius: var(--radius);
+  height: 40px;
+  padding: 0 16px;
+  font-size: 14px;
+  font-weight: 700;
+  font-family: var(--font);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.btn-secondary:hover {
+  background: var(--border);
+}
+
+.run-check-button,
+.btn-primary {
+  width: 100%;
+  min-height: 50px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--info);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 900;
+  font-family: var(--font);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  writing-mode: horizontal-tb;
+  cursor: pointer;
+  box-shadow: 0 12px 28px rgba(37, 99, 235, 0.28);
+  text-decoration: none;
+  transition: background 0.15s;
+}
+
+.run-check-button:hover {
+  background: #1d4ed8;
+}
+
+.cost-hint {
+  margin: -6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+  line-height: 1.4;
+}
+
+.doctor-result {
+  margin-top: 4px;
+}
+
+.result-empty-state {
+  min-height: 56px;
+  border-radius: var(--radius-lg);
+  background: var(--soft);
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 14px;
+  font-size: 14px;
+}
+
+.floating-plugin {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 30;
+  padding: 9px 12px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.88);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.18);
+  text-decoration: none;
+}
+
+.floating-plugin:hover {
+  text-decoration: none;
+  background: rgba(15, 23, 42, 0.95);
+  color: #fff;
+}
+
+.site-logo__mark {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--info);
+  color: #fff;
+  font-size: 18px;
+  font-weight: 900;
+  flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  .single-tool-page { padding: 24px 12px 40px; }
+  .doctor-card { padding: 18px; border-radius: 18px; }
+  .floating-plugin { display: none; }
+  .tool-hero h1 { font-size: 28px; }
+  .tool-hero h2 { font-size: 22px; }
+}
