@@ -356,6 +356,17 @@ if (typeof updateCostHint === 'function') updateCostHint();
 if (typeof updateCostEstimate === 'function') updateCostEstimate();
 </script>
 
+<!-- Chrome Extension corner link -->
+<a href="https://chromewebstore.google.com" target="_blank" rel="noopener" class="ext-float-link" title="Chrome ??">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+  Chrome ??
+</a>
+<style>
+.ext-float-link{position:fixed;bottom:24px;right:24px;display:flex;align-items:center;gap:6px;background:var(--accent);color:#fff;padding:10px 14px;border-radius:24px;font-size:13px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,.2);text-decoration:none;z-index:999;transition:background .2s,transform .15s}
+.ext-float-link:hover{background:#1e293b;text-decoration:none;transform:translateY(-2px)}
+@media(max-width:480px){.ext-float-link{bottom:16px;right:16px;font-size:12px;padding:8px 12px}}
+</style>
+
 </body>
 </html>
 
