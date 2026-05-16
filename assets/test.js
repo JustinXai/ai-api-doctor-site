@@ -628,6 +628,113 @@ async function check6_ModelShrinkage(baseUrl, apiKey, model, interfaceType, sign
 }
 
 /* ═══════════════════════════════════════════════════════
+   Check 7: STABILITY SAMPLING (稳定性采样 - 10pts)
+   ═══════════════════════════════════════════════════════ */
+async function check7_Stability(baseUrl, apiKey, model, interfaceType, signal) {
+  const PROMPT = 'Reply with exactly one word: ok';
+
+  async function onePing(abortController) {
+    const start = Date.now();
+    try {
+      const req = buildRequest(baseUrl, apiKey, model, interfaceType, PROMPT, 5);
+      const resp = await fetch(req.endpoint, {
+        method: 'POST',
+        headers: req.headers,
+        body: JSON.stringify(req.body),
+        signal: abortController.signal,
+        keepalive: false
+      });
+      const elapsed = Date.now() - start;
+      const ok = resp.ok;
+      let text = '';
+      if (ok) {
+        try {
+          const data = await resp.json();
+          text = extractVisibleOutput(data, interfaceType).text;
+        } catch (_) {}
+      }
+      return { elapsed, ok, text, err: null };
+    } catch (err) {
+      return { elapsed: Date.now() - start, ok: false, text: '', err: err.name };
+    }
+  }
+
+  const TOTAL = 5;
+  const samples = [];
+  let aborted = false;
+
+  for (let i = 0; i < TOTAL; i++) {
+    const controller = new AbortController();
+    // Tie into the parent abort chain
+    const origAbort = signal._onabort;
+    signal._onabort = () => { controller.abort(); aborted = true; };
+
+    const s = await onePing(controller);
+    samples.push(s);
+
+    // Respect parent abort
+    if (aborted) break;
+
+    // Small gap between requests
+    if (i < TOTAL - 1) {
+      await sleep(600);
+    }
+  }
+
+  const errors = samples.filter(s => !s.ok).length;
+  const times = samples.filter(s => s.ok).map(s => s.elapsed);
+
+  if (errors === TOTAL) {
+    return {
+      name: 'stability', label: '稳定性采样', pts: 10, ptsEarned: 0,
+      state: 'fail', detail: '全部失败',
+      samples
+    };
+  }
+
+  if (times.length === 0) {
+    return {
+      name: 'stability', label: '稳定性采样', pts: 10, ptsEarned: 0,
+      state: 'fail', detail: '无可用数据',
+      samples
+    };
+  }
+
+  // CV (coefficient of variation) = stddev / mean
+  const mean = times.reduce((a, b) => a + b, 0) / times.length;
+  const variance = times.reduce((a, t) => a + Math.pow(t - mean, 2), 0) / times.length;
+  const stddev = Math.sqrt(variance);
+  const cv = mean > 0 ? (stddev / mean) * 100 : 0;
+
+  // Decision: CV < 30% + 0-1 error → pass; CV 30-60% or 1 error → warn; CV > 60% or 2+ errors → fail
+  const warn = cv > 30 && cv <= 60;
+  const fail = cv > 60 || errors >= 2;
+
+  if (fail) {
+    return {
+      name: 'stability', label: '稳定性采样', pts: 10, ptsEarned: 0,
+      state: 'fail',
+      detail: `不稳定(误差${Math.round(cv)}%,${errors}次失败)`,
+      samples, cv, mean: Math.round(mean), errors
+    };
+  } else if (warn) {
+    return {
+      name: 'stability', label: '稳定性采样', pts: 10, ptsEarned: 5,
+      state: 'warn',
+      detail: `波动偏大(误差${Math.round(cv)}%)`,
+      samples, cv, mean: Math.round(mean), errors
+    };
+  } else {
+    return {
+      name: 'stability', label: '稳定性采样', pts: 10, ptsEarned: 10,
+      state: 'pass',
+      detail: `稳定(${times.length}次成功,误差${Math.round(cv)}%)`,
+      samples, cv, mean: Math.round(mean), errors
+    };
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
    Score Calculator & Report Generator
    ═══════════════════════════════════════════════════════ */
 function calcScore(checks) {
@@ -654,7 +761,9 @@ function getJudgment(score, checks) {
   const hasStream = checks.find(c => c.name === 'stream')?.state === 'fail';
   const hasCache = checks.find(c => c.name === 'cache')?.state === 'warn';
   const hasShrinkage = checks.find(c => c.name === 'shrinkage')?.state === 'fail';
+  const hasStability = checks.find(c => c.name === 'stability')?.state === 'fail';
 
+  if (hasStability) return '不稳定';
   if (score >= 85 && hasOutput && hasBill) return '硬货';
   if (score >= 70 && hasOutput) return '能用';
   if (hasShrinkage) return '模型缩水风险';
@@ -751,7 +860,7 @@ function buildReportCardHTML(result, formData, lang) {
     </div>
 
     <div style="background:#fff;border-radius:16px;padding:14px 16px;margin-bottom:12px">
-      <div style="font-size:11px;font-weight:700;color:#0f172a;margin-bottom:8px">${zh ? '6 项检测结果' : '6 Test Results'}</div>
+      <div style="font-size:11px;font-weight:700;color:#0f172a;margin-bottom:8px">${checks.length} ${zh ? '项检测结果' : 'Test Results'}</div>
       ${checks.map(barRow).join('')}
     </div>
 
@@ -973,11 +1082,17 @@ window.Doctor = {
     if (resultNode) {
       resultNode.innerHTML = `<div style="text-align:center;padding:40px 20px;color:#64748b;font-size:14px">
         <div style="width:32px;height:32px;border:3px solid #e2e8f0;border-top-color:#2563eb;border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto 12px"></div>
-        ${zh ? '正在运行 6 项检测...' : 'Running 6 diagnostic checks...'}
+        ${zh ? '正在运行检测...' : 'Running diagnostic checks...'}
       </div>`;
     }
 
     this.showProgress('running');
+
+    this._formData = {
+      baseUrl: normalizedUrl,
+      model,
+      interfaceType
+    };
 
     this._formData = {
       baseUrl: normalizedUrl,
@@ -1007,6 +1122,11 @@ window.Doctor = {
       this.updateProgress(5, zh ? '6/6 模型缩水风险' : '6/6 Model Shrinkage');
 
       const checks = [check1, check2, check3, check4, check5, check6];
+
+      this.updateProgress(6, zh ? '7/7 稳定性采样' : '7/7 Stability Check');
+      const check7 = await check7_Stability(normalizedUrl, apiKey, model, interfaceType, signal);
+      checks.push(check7);
+
       const score = calcScore(checks);
       const grade = calcGrade(score);
       const judgment = getJudgment(score, checks);
@@ -1095,7 +1215,7 @@ window.Doctor = {
     if (!container) return;
 
     const zh = getDocLang() !== 'en';
-    const total = 6;
+    const total = 7;
     const pct = Math.round((index / total) * 100);
 
     let html = '';
@@ -1119,10 +1239,19 @@ window.Doctor = {
     }
 
     for (let i = index + 1; i < total; i++) {
+      const nextLabels = {
+        0: zh ? '1/6 有无产物' : '1/6 Output Check',
+        1: zh ? '2/6 账单明细' : '2/6 Bill Details',
+        2: zh ? '3/6 用量虚高' : '3/6 Token Overcount',
+        3: zh ? '4/6 流式丢账' : '4/6 Streaming Bill',
+        4: zh ? '5/6 缓存有没有透' : '5/6 Cache Check',
+        5: zh ? '6/6 模型缩水风险' : '6/6 Model Check',
+        6: zh ? '7/7 稳定性采样' : '7/7 Stability Check'
+      };
       html += `<div style="display:flex;align-items:center;gap:10px">
         <div style="flex-shrink:0"><div style="width:14px;height:14px;border:2px solid #e2e8f0;border-radius:50%"></div></div>
         <div style="flex:1;height:4px;background:#e2e8f0;border-radius:2px;margin:0 8px"></div>
-        <span style="font-size:12px;color:#cbd5e1;white-space:nowrap">${i === 5 ? (zh ? '6/6 模型缩水风险' : '6/6 Model Check') : (i === 4 ? (zh ? '5/6 缓存检测' : '5/6 Cache') : '...')}</span>
+        <span style="font-size:12px;color:#cbd5e1;white-space:nowrap">${nextLabels[i] || '...'}</span>
       </div>`;
     }
 
