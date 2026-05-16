@@ -108,7 +108,7 @@
             placeholder="https://api.example.com/v1"
             oninput="Doctor.normalizeBaseUrl(this)"
           />
-          <div class="form-hint" id="base-url-hint" style="display:none;color:var(--warning)">Base URL seems to be missing <code>/v1</code> — auto-corrected.</div>
+          <div class="form-hint" id="base-url-hint" style="display:none;color:var(--warning)">Base URL seems to be missing <code>/v1</code> �?auto-corrected.</div>
         </div>
 
         <!-- API Key -->
@@ -155,7 +155,7 @@
           <div class="cost-hint" id="cost-hint">Quick Check: about 1 request, very low cost</div>
         </div>
 
-        <!-- Actions — primary CTA -->
+        <!-- Actions �?primary CTA -->
         <div class="tool-actions">
           <button id="doctor-run-btn" class="btn btn--primary btn--run" data-action="run-check" onclick="Doctor.run()">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
@@ -404,7 +404,7 @@ function updateCostHint() {
       hint.textContent = 'Quick Check: about 1 request, very low cost';
     }
   } else {
-    let text = 'Full Check: about 3–6 requests, may generate small costs';
+    let text = 'Full Check: about 3�? requests, may generate small costs';
     if (cacheEnabled) text += ' · includes cache test';
     if (sanityEnabled) text += ' · includes model test';
     hint.textContent = text;
@@ -412,192 +412,7 @@ function updateCostHint() {
 }
 
 /* ── Manual Report ── */
-window.ManualReport = {
-  generate() {
-    const f = id => document.getElementById(id);
-    const get = (id, fb = '') => f(id)?.value?.trim() || fb;
-    const num = id => parseFloat(f(id)?.value) || 0;
-    const baseUrl = get('manual-base-url');
-    const model = get('manual-model');
-    if (!baseUrl) { window.showToast && window.showToast('Please fill in Base URL'); return; }
-    if (!model) { window.showToast && window.showToast('Please fill in Model ID'); return; }
 
-    const lang = document.documentElement.lang;
-    const zh = lang !== 'en';
-
-    const httpStatus = num('manual-http-status');
-    const pt = num('manual-prompt-tokens');
-    const ct = num('manual-completion-tokens');
-    const tt = num('manual-total-tokens');
-    const cached = num('manual-cached-tokens');
-    const provider = get('manual-provider') || (() => {
-      try {
-        const urlStr = baseUrl.startsWith('http') ? baseUrl : 'https://' + baseUrl;
-        return new URL(urlStr).hostname.split(':')[0];
-      } catch { return 'Unknown'; }
-    })();
-    const interfaceType = f('manual-interface')?.value || 'OpenAI Chat';
-    const timestamp = new Date().toLocaleString(zh ? 'zh-CN' : 'en-US', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
-
-    const hasOutput = ct > 0;
-    const usageComplete = pt > 0 && ct > 0 && tt > 0;
-    const ok = httpStatus >= 200 && httpStatus < 400 && hasOutput;
-
-    let statusLabel, statusColor, statusBg, statusIcon;
-    if (ok) {
-      statusLabel = 'OK';
-      statusColor = '#16a34a';
-      statusBg = '#dcfce7';
-      statusIcon = '✓';
-    } else if (httpStatus >= 400) {
-      statusLabel = 'Error';
-      statusColor = '#dc2626';
-      statusBg = '#fee2e2';
-      statusIcon = '✕';
-    } else {
-      statusLabel = 'Review';
-      statusColor = '#d97706';
-      statusBg = '#fef3c7';
-      statusIcon = '!';
-    }
-
-    let score = 0, grade = 'U';
-    if (httpStatus >= 200 && httpStatus < 300) {
-      score = 35;
-      if (hasOutput) score += 25;
-      if (usageComplete) score += 20;
-      if (pt > 0 || ct > 0) score += 10;
-      grade = score >= 90 ? 'A' : score >= 75 ? 'B' : score >= 60 ? 'C' : 'D';
-    } else if (httpStatus >= 400) {
-      score = 35; grade = 'F';
-    } else if (httpStatus >= 500) {
-      score = 45; grade = 'D';
-    } else if (httpStatus > 0) {
-      score = 20; grade = 'F';
-    }
-
-    let verdict, chips, conclusion;
-    if (!hasOutput && httpStatus >= 200 && httpStatus < 300) {
-      verdict = 'Suspected Empty Run';
-      grade = 'D';
-      chips = ['No Output', 'Needs Review'];
-      conclusion = 'HTTP 200 but no valid output. Verify billing.';
-    } else if (httpStatus >= 400) {
-      verdict = 'Connection Failed';
-      grade = 'F';
-      chips = ['HTTP ' + httpStatus];
-      conclusion = 'HTTP ' + httpStatus + ', request failed.';
-    } else if (!usageComplete && hasOutput) {
-      verdict = 'Incomplete Usage';
-      grade = 'C';
-      chips = ['Incomplete usage', 'Needs Review'];
-      conclusion = 'Output present but usage fields incomplete.';
-    } else if (ok) {
-      verdict = 'Connected';
-      grade = score >= 90 ? 'A' : score >= 75 ? 'B' : 'C';
-      chips = ['Has Output', 'Tokens OK'];
-      conclusion = 'Model connected, usage data complete.';
-    } else {
-      verdict = 'Needs Review';
-      conclusion = 'Verify values and regenerate report.';
-    }
-
-    const gradeColor = { A: '#16a34a', B: '#3b82f6', C: '#f59e0b', D: '#f97316', F: '#dc2626', U: '#64748b' }[grade] || '#94a3b8';
-    const gradeBg = { A: '#dcfce7', B: '#eff6ff', C: '#fef9c3', D: '#ffedd5', F: '#fee2e2', U: '#f1f5f9' }[grade] || '#f1f5f9';
-
-    f('result-card').innerHTML =
-      '<div style="max-width:540px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',\'PingFang SC\',\'Microsoft YaHei\',sans-serif">' +
-      '<div style="background:#0f172a;border-radius:20px;padding:16px 18px 14px;margin-bottom:10px">' +
-        '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">' +
-          '<div><div style="font-size:15px;font-weight:800;color:#fff;letter-spacing:-0.2px">API Doctor</div><div style="font-size:10px;color:#94a3b8;margin-top:1px">' + (zh ? '手动生成报告' : 'Manual Report') + '</div></div>' +
-          '<div style="background:' + gradeBg + ';border-radius:8px;padding:4px 10px;text-align:center;flex-shrink:0">' +
-            '<div style="font-size:22px;font-weight:900;color:' + gradeColor + ';line-height:1">' + grade + '</div>' +
-            '<div style="font-size:8px;color:' + gradeColor + ';font-weight:600;margin-top:1px">Grade</div>' +
-          '</div>' +
-        '</div>' +
-        '<div style="text-align:center;margin-bottom:8px">' +
-          '<div style="font-size:56px;font-weight:900;color:' + gradeColor + ';line-height:1">' + score + '</div>' +
-          '<div style="font-size:13px;font-weight:700;color:' + gradeColor + ';margin-top:3px">' + verdict + '</div>' +
-        '</div>' +
-        '<div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:center;margin-bottom:4px">' +
-          chips.map(c => '<span style="background:' + gradeBg + ';color:' + gradeColor + ';font-size:10px;font-weight:700;padding:2px 9px;border-radius:20px;white-space:nowrap">' + esc(c) + '</span>').join('') +
-        '</div>' +
-        '<div style="font-size:11px;color:#94a3b8;text-align:center;margin-top:6px;line-height:1.4">' + esc(conclusion) + '</div>' +
-      '</div>' +
-      '<div style="background:#fff;border-radius:16px;padding:12px 14px;margin-bottom:10px">' +
-        '<div style="font-size:10px;font-weight:700;color:#0f172a;margin-bottom:8px">Manual Report — Verify values manually</div>' +
-        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">' +
-          '<div style="background:#f8fafc;border-radius:6px;padding:8px"><div style="font-size:8px;color:#64748b;font-weight:600;text-transform:uppercase;margin-bottom:3px">HTTP</div><div style="font-size:13px;font-weight:700;font-family:monospace;color:' + (httpStatus >= 400 ? '#dc2626' : '#16a34a') + '">' + (httpStatus || '—') + '</div></div>' +
-          '<div style="background:#f8fafc;border-radius:6px;padding:8px"><div style="font-size:8px;color:#64748b;font-weight:600;text-transform:uppercase;margin-bottom:3px">Status</div><div style="font-size:11px;font-weight:700;color:' + statusColor + '">' + statusIcon + ' ' + statusLabel + '</div></div>' +
-          '<div style="background:#f8fafc;border-radius:6px;padding:8px"><div style="font-size:8px;color:#64748b;font-weight:600;text-transform:uppercase;margin-bottom:3px">prompt_tokens</div><div style="font-size:13px;font-weight:700;font-family:monospace;color:#0f172a">' + (pt || '—') + '</div></div>' +
-          '<div style="background:#f8fafc;border-radius:6px;padding:8px"><div style="font-size:8px;color:#64748b;font-weight:600;text-transform:uppercase;margin-bottom:3px">completion_tokens</div><div style="font-size:13px;font-weight:700;font-family:monospace;color:#0f172a">' + (ct || '—') + '</div></div>' +
-          '<div style="background:#f8fafc;border-radius:6px;padding:8px"><div style="font-size:8px;color:#64748b;font-weight:600;text-transform:uppercase;margin-bottom:3px">total_tokens</div><div style="font-size:13px;font-weight:700;font-family:monospace;color:#0f172a">' + (tt || '—') + '</div></div>' +
-          '<div style="background:#f8fafc;border-radius:6px;padding:8px"><div style="font-size:8px;color:#64748b;font-weight:600;text-transform:uppercase;margin-bottom:3px">cached_tokens</div><div style="font-size:13px;font-weight:700;font-family:monospace;color:#0f172a">' + (cached || '—') + '</div></div>' +
-          '<div style="background:#f8fafc;border-radius:6px;padding:8px;grid-column:1/-1"><div style="font-size:8px;color:#64748b;font-weight:600;text-transform:uppercase;margin-bottom:3px">Model</div><div style="font-size:11px;font-weight:600;font-family:monospace;color:#0f172a;word-break:break-all">' + esc(model) + '</div></div>' +
-        '</div>' +
-      '</div>' +
-      '<div style="text-align:center;font-size:11px;color:#94a3b8;padding:4px 0 6px">Provider: ' + esc(provider) + ' &nbsp;|&nbsp; Interface: ' + esc(interfaceType) + ' &nbsp;|&nbsp; ' + timestamp + '</div>' +
-      '<div style="display:flex;gap:6px;margin-top:6px">' +
-        '<button onclick="ManualReport.copyText()" style="flex:1;padding:8px 10px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">Copy Report</button>' +
-      '</div>' +
-      '<div style="font-size:9px;color:#94a3b8;text-align:center;padding:6px 0 4px;line-height:1.4">Manual report is for reference only — verify values manually.</div>' +
-    '</div>';
-  },
-
-  copyText() {
-    const f = id => document.getElementById(id);
-    const get = (id, fb = '') => f(id)?.value?.trim() || fb;
-    const num = id => parseFloat(f(id)?.value) || 0;
-    const lang = document.documentElement.lang;
-    const zh = lang !== 'en';
-
-    const baseUrl = get('manual-base-url');
-    const model = get('manual-model');
-    const httpStatus = num('manual-http-status');
-    const pt = num('manual-prompt-tokens');
-    const ct = num('manual-completion-tokens');
-    const tt = num('manual-total-tokens');
-    const cached = num('manual-cached-tokens');
-    const provider = get('manual-provider') || 'Unknown';
-    const interfaceType = f('manual-interface')?.value || 'OpenAI Chat';
-    const timestamp = new Date().toLocaleString(zh ? 'zh-CN' : 'en-US', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
-
-    const text = [
-      'AI API Doctor Manual Report',
-      '',
-      'Base URL: ' + baseUrl,
-      'Model: ' + model,
-      'Interface: ' + interfaceType,
-      'HTTP Status: ' + (httpStatus || '—'),
-      'prompt_tokens: ' + (pt || '—'),
-      'completion_tokens: ' + (ct || '—'),
-      'total_tokens: ' + (tt || '—'),
-      'cached_tokens: ' + (cached || '—'),
-      'Provider: ' + provider,
-      'Time: ' + timestamp,
-      '',
-      'https://aiapidoctor.com/en/'
-    ].join('\n');
-
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(text).then(() => showToast && showToast('Report copied')).catch(() => showToast && showToast('Copy failed'));
-    } else {
-      showToast && showToast('Copy failed');
-    }
-  },
-
-  clear() {
-    ['manual-provider','manual-base-url','manual-model','manual-http-status','manual-prompt-tokens','manual-completion-tokens','manual-total-tokens','manual-cached-tokens'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.value = '';
-    });
-    const card = document.getElementById('result-card');
-    if (card) card.outerHTML = '<div id="result-card" class="result-empty-state">Enter Base URL, API Key, and Model ID to start.</div>';
-    window.showToast && window.showToast('Cleared');
-  }
-};
-
-/* ── Esc ── */
 function esc(str) {
   if (!str && str !== 0) return '';
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -621,3 +436,4 @@ if (typeof updateCostEstimate === 'function') updateCostEstimate();
 
 </body>
 </html>
+

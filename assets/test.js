@@ -413,12 +413,6 @@ const SANITY_QUESTION_BANK = {
   }
 };
 
-function pickRandomQuestion(bankKey) {
-  const bank = SANITY_QUESTION_BANK[bankKey];
-  if (!bank || !bank.pool || bank.pool.length === 0) return null;
-  return bank.pool[Math.floor(Math.random() * bank.pool.length)];
-}
-
 /* ═══════════════════════════════════════════════════════
    Utilities
    ═══════════════════════════════════════════════════════ */
@@ -566,83 +560,106 @@ function buildRequest(baseUrl, apiKey, model, interfaceType, prompt, maxTokens) 
 
 /* ═══════════════════════════════════════════════════════
    Model Sanity Tests
+   Each dimension runs ALL questions in its pool (not just 1).
+   Dimension score = average of all question scores in that dimension.
+   Overall score = weighted average across dimensions.
    ═══════════════════════════════════════════════════════ */
 async function runModelSanityTests(opts) {
   const { baseUrl, apiKey, model, interfaceType, signal } = opts;
-  const results = [];
+  const dimResults = {}; // dimKey -> { questions: [], dimScore: number }
 
   const dimensionKeys = ['instruction_following', 'basic_reasoning', 'number_trap', 'code_understanding', 'context_retention'];
 
   for (const dimKey of dimensionKeys) {
     const bank = SANITY_QUESTION_BANK[dimKey];
-    const question = pickRandomQuestion(dimKey);
-    if (!question) continue;
+    if (!bank || !bank.pool || bank.pool.length === 0) continue;
 
-    const req = buildRequest(baseUrl, apiKey, model, interfaceType, question.prompt, 50);
-    let rawOutput = '';
-    let latency = 0;
-    let status = 'ok';
+    const qResults = [];
+    for (const question of bank.pool) {
+      const req = buildRequest(baseUrl, apiKey, model, interfaceType, question.prompt, 50);
+      let rawOutput = '';
+      let latency = 0;
+      let status = 'ok';
 
-    try {
-      const t0 = Date.now();
-      const resp = await fetch(req.endpoint, {
-        method: 'POST',
-        headers: req.headers,
-        body: JSON.stringify(req.body),
-        signal
+      try {
+        const t0 = Date.now();
+        const resp = await fetch(req.endpoint, {
+          method: 'POST',
+          headers: req.headers,
+          body: JSON.stringify(req.body),
+          signal
+        });
+        latency = Date.now() - t0;
+
+        let data;
+        try { data = await resp.json(); } catch { data = {}; }
+
+        if (interfaceType === 'OpenAI Chat' || interfaceType === 'OpenAI Responses') {
+          rawOutput = (data.choices?.[0]?.message?.content || data.output?.text || '').trim();
+        } else {
+          rawOutput = (data.content?.[0]?.text || '').trim();
+        }
+
+        if (!resp.ok) {
+          status = 'error';
+          rawOutput = `HTTP ${resp.status}`;
+        }
+      } catch (err) {
+        if (err.name === 'AbortError') {
+          status = 'timeout';
+          rawOutput = 'Request timed out';
+        } else {
+          status = 'error';
+          rawOutput = err.message;
+        }
+      }
+
+      const norm = question.normalize(rawOutput);
+      const score = question.score(norm);
+      const explanation = question.explain(norm);
+
+      qResults.push({
+        id: dimKey,
+        name: bank.name,
+        nameEn: bank.nameEn,
+        prompt: question.prompt,
+        expected: question.expected,
+        rawOutput: rawOutput.length > 200 ? rawOutput.slice(0, 200) + '...' : rawOutput,
+        norm,
+        score,
+        latency,
+        status,
+        explanation
       });
-      latency = Date.now() - t0;
-
-      let data;
-      try { data = await resp.json(); } catch { data = {}; }
-
-      if (interfaceType === 'OpenAI Chat' || interfaceType === 'OpenAI Responses') {
-        rawOutput = (data.choices?.[0]?.message?.content || data.output?.text || '').trim();
-      } else {
-        rawOutput = (data.content?.[0]?.text || '').trim();
-      }
-
-      if (!resp.ok) {
-        status = 'error';
-        rawOutput = `HTTP ${resp.status}`;
-      }
-    } catch (err) {
-      if (err.name === 'AbortError') {
-        status = 'timeout';
-        rawOutput = 'Request timed out';
-      } else {
-        status = 'error';
-        rawOutput = err.message;
-      }
     }
 
-    const norm = question.normalize(rawOutput);
-    const score = question.score(norm);
-    const explanation = question.explain(norm);
+    // Dimension score = average of all question scores in this dimension
+    const dimAvg = qResults.length > 0
+      ? Math.round(qResults.reduce((s, q) => s + q.score, 0) / qResults.length)
+      : null;
 
-    results.push({
-      id: dimKey,
-      name: bank.name,
-      nameEn: bank.nameEn,
-      prompt: question.prompt,
-      expected: question.expected,
-      rawOutput: rawOutput.length > 200 ? rawOutput.slice(0, 200) + '...' : rawOutput,
-      norm,
-      score,
-      latency,
-      status,
-      explanation
-    });
+    dimResults[dimKey] = { questions: qResults, dimScore: dimAvg };
   }
 
+  // Compute weighted overall score across dimensions
   const weights = { instruction_following: 0.25, basic_reasoning: 0.25, number_trap: 0.20, code_understanding: 0.15, context_retention: 0.15 };
   let weightedSum = 0, totalWeight = 0;
-  results.forEach(r => {
-    const w = weights[r.id] || 0.1;
-    weightedSum += r.score * w;
+  for (const [dimKey, dimData] of Object.entries(dimResults)) {
+    if (dimData.dimScore === null) continue;
+    const w = weights[dimKey] || 0.1;
+    weightedSum += dimData.dimScore * w;
     totalWeight += w;
-  });
+  }
   const overallScore = totalWeight > 0 ? Math.round(weightedSum / totalWeight) : 0;
+
+  // Flatten all question results for display
+  const results = [];
+  for (const [dimKey, dimData] of Object.entries(dimResults)) {
+    for (const q of dimData.questions) {
+      q.dimScore = dimData.dimScore;
+      results.push(q);
+    }
+  }
 
   let label, labelEn;
   if (overallScore >= 90) { label = '表现稳定'; labelEn = 'Stable'; }
