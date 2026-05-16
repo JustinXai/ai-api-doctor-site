@@ -1,30 +1,15 @@
-fix: stabilize JS initialization and button event binding
+refactor: report card = shareable short card (Playground v4 style)
 
-Critical bug fixes (no functional changes to scoring or copy):
-
-JS initialization:
-- Add initDoctor() with document.readyState guard (handles defer/async/cache timing)
-- bindDoctorEvents() for stable data-action delegation
-- bindConnectionParser() for auto-parse on paste with 300ms debounce
-- tryParseConnectionInfo() for manual parse button
-
-Button stability:
-- Add data-action attributes to all key buttons
-- Centralized event delegation in test.js (no more scattered onclick=)
-- Even if one onclick throws, others still work via delegation
-
-Parse & Fill:
-- Add Parse & Fill button (data-action="parse-connection") below textarea
-- Enhanced parseConnectionInfo to support url/key/baseUrl/apiKey fields
-- Auto-adds /v1 suffix to extracted Base URLs
-- Shows green success or yellow failure hints
-
-Validation:
-- Doctor.run() now validates API Key (was missing)
-- All await operations in try/catch/finally
-- finally always restores button state
-
-Other:
-- Add favicon icon links to both index.html and en/index.html
-- Fix inline init block to use safeInit() with readyState guard
-- en/index.html gets same fixes as index.html
+- New calcShareableCard() with dynamic verdict algorithm
+  Priority: Output > Billing > Token Details > Streaming > Model > Connection
+- New renderCard() unified rendering for both quick and full modes
+- Dark header section: grade badge + large score + dynamic verdict
+- 6 scoring bars with pass/fail/warn/skip color coding
+- Verdict is no longer "diluted" for all C grades
+  Dynamic verdicts: Empty-Run Fraud / Empty Response / Model Shrinkage / Solid
+- saveDiagnosticImage exports short card (540px, 2x pixel ratio)
+- Removed old renderFullReport long template
+- "展开技术详情" collapsible, excluded from image export
+- Billing judgment strict: no "空跑扣费" without balance evidence
+- CSS/HTML compact: desktop 540px max, mobile 100% width
+- English version synced

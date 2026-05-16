@@ -420,29 +420,190 @@ window.ManualReport = {
     const model = get('manual-model');
     if (!baseUrl) { window.showToast && window.showToast('请填写 Base URL'); return; }
     if (!model) { window.showToast && window.showToast('请填写 Model ID'); return; }
+
+    const lang = document.documentElement.lang;
+    const zh = lang !== 'en';
+
     const httpStatus = num('manual-http-status');
     const pt = num('manual-prompt-tokens');
     const ct = num('manual-completion-tokens');
     const tt = num('manual-total-tokens');
-    const timestamp = new Date().toLocaleString('zh-CN', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
-    const usageOk = pt && ct && tt;
-    const hasOutput = ct > 0;
-    const ok = httpStatus >= 200 && httpStatus < 400 && hasOutput;
-    const bg = ok ? '#dcfce7' : httpStatus >= 400 ? '#fee2e2' : '#fef3c7';
-    const color = ok ? '#16a34a' : httpStatus >= 400 ? '#dc2626' : '#d97706';
-    const label = ok ? '正常' : httpStatus >= 400 ? '异常' : '需复查';
-    const sub = ok ? '联通正常' : httpStatus >= 400 ? '联通失败' : '请核实扣费';
+    const cached = num('manual-cached-tokens');
+    const provider = get('manual-provider') || (() => {
+      try {
+        const urlStr = baseUrl.startsWith('http') ? baseUrl : 'https://' + baseUrl;
+        return new URL(urlStr).hostname.split(':')[0];
+      } catch { return 'Unknown'; }
+    })();
+    const interfaceType = f('manual-interface')?.value || 'OpenAI Chat';
+    const timestamp = new Date().toLocaleString(zh ? 'zh-CN' : 'en-US', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
 
-    f('result-card').innerHTML = '<div style="text-align:center;padding:32px 16px;color:#94a3b8;font-size:13px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;min-height:80px;display:flex;align-items:center;justify-content:center">' + (zh?'填写 Base URL、API Key 和 Model ID 后开始检测。':'Fill in Base URL, API Key and Model ID to start.') + '</div>';
+    // ── Assess status ──
+    const hasOutput = ct > 0;
+    const usageComplete = pt > 0 && ct > 0 && tt > 0;
+    const ok = httpStatus >= 200 && httpStatus < 400 && hasOutput;
+
+    let statusLabel, statusColor, statusBg, statusIcon;
+    if (ok) {
+      statusLabel = zh ? '正常' : 'OK';
+      statusColor = '#16a34a';
+      statusBg = '#dcfce7';
+      statusIcon = '✓';
+    } else if (httpStatus >= 400) {
+      statusLabel = zh ? '异常' : 'Error';
+      statusColor = '#dc2626';
+      statusBg = '#fee2e2';
+      statusIcon = '✕';
+    } else {
+      statusLabel = zh ? '需复查' : 'Review';
+      statusColor = '#d97706';
+      statusBg = '#fef3c7';
+      statusIcon = '!';
+    }
+
+    // ── Score calculation ──
+    let score = 0;
+    let grade = 'U';
+    if (httpStatus >= 200 && httpStatus < 300) {
+      score = 35;
+      if (hasOutput) score += 25;
+      if (usageComplete) score += 20;
+      if (pt > 0 || ct > 0) score += 10; // at least some usage
+      grade = score >= 90 ? 'A' : score >= 75 ? 'B' : score >= 60 ? 'C' : 'D';
+    } else if (httpStatus >= 400 && httpStatus < 500) {
+      score = 35; grade = 'F';
+    } else if (httpStatus >= 500) {
+      score = 45; grade = 'D';
+    } else if (httpStatus > 0) {
+      score = 20; grade = 'F';
+    }
+
+    // ── Build verdict ──
+    let verdict, chips, conclusion;
+    if (!hasOutput && httpStatus >= 200 && httpStatus < 300) {
+      verdict = zh ? '疑似空跑' : 'Suspected Empty Run';
+      grade = 'D';
+      chips = [zh ? '没产物' : 'No Output', zh ? '需复查' : 'Needs Review'];
+      conclusion = zh ? 'HTTP 200 但无有效输出，请核实扣费。' : 'HTTP 200 but no valid output. Verify billing.';
+    } else if (httpStatus >= 400) {
+      verdict = zh ? '联通失败' : 'Connection Failed';
+      grade = 'F';
+      chips = [zh ? 'HTTP ' + httpStatus : 'HTTP ' + httpStatus];
+      conclusion = zh ? 'HTTP ' + httpStatus + '，请求失败。' : 'HTTP ' + httpStatus + ', request failed.';
+    } else if (!usageComplete && hasOutput) {
+      verdict = zh ? '账单不完整' : 'Incomplete Usage';
+      grade = 'C';
+      chips = [zh ? 'usage 不全' : 'Incomplete usage', zh ? '需复查' : 'Needs Review'];
+      conclusion = zh ? '有输出但 usage 字段不完整。' : 'Output present but usage fields incomplete.';
+    } else if (ok) {
+      verdict = zh ? '联通正常' : 'Connected';
+      grade = score >= 90 ? 'A' : score >= 75 ? 'B' : 'C';
+      chips = [zh ? '有产物' : 'Has Output', zh ? '账单完整' : 'Tokens OK'];
+      conclusion = zh ? '模型联通正常，usage 明细完整。' : 'Model connected, usage data complete.';
+    } else {
+      verdict = zh ? '需复查' : 'Needs Review';
+      conclusion = zh ? '请核实各项数值后重新生成报告。' : 'Verify values and regenerate report.';
+    }
+
+    const gradeColor = { A: '#16a34a', B: '#3b82f6', C: '#f59e0b', D: '#f97316', F: '#dc2626', U: '#64748b' }[grade] || '#94a3b8';
+    const gradeBg = { A: '#dcfce7', B: '#eff6ff', C: '#fef9c3', D: '#ffedd5', F: '#fee2e2', U: '#f1f5f9' }[grade] || '#f1f5f9';
+
+    // ── Render ──
+    f('result-card').innerHTML =
+      '<div style="max-width:540px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',\'PingFang SC\',\'Microsoft YaHei\',sans-serif">' +
+      '<div style="background:#0f172a;border-radius:20px;padding:16px 18px 14px;margin-bottom:10px">' +
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">' +
+          '<div><div style="font-size:15px;font-weight:800;color:#fff;letter-spacing:-0.2px">API Doctor</div><div style="font-size:10px;color:#94a3b8;margin-top:1px">' + (zh ? '手动生成报告' : 'Manual Report') + '</div></div>' +
+          '<div style="background:' + gradeBg + ';border-radius:8px;padding:4px 10px;text-align:center;flex-shrink:0">' +
+            '<div style="font-size:22px;font-weight:900;color:' + gradeColor + ';line-height:1">' + grade + '</div>' +
+            '<div style="font-size:8px;color:' + gradeColor + ';font-weight:600;margin-top:1px">' + (zh ? '档' : 'Grade') + '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div style="text-align:center;margin-bottom:8px">' +
+          '<div style="font-size:56px;font-weight:900;color:' + gradeColor + ';line-height:1">' + score + '</div>' +
+          '<div style="font-size:13px;font-weight:700;color:' + gradeColor + ';margin-top:3px">' + verdict + '</div>' +
+        '</div>' +
+        '<div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:center;margin-bottom:4px">' +
+          chips.map(c => '<span style="background:' + gradeBg + ';color:' + gradeColor + ';font-size:10px;font-weight:700;padding:2px 9px;border-radius:20px;white-space:nowrap">' + esc(c) + '</span>').join('') +
+        '</div>' +
+        '<div style="font-size:11px;color:#94a3b8;text-align:center;margin-top:6px;line-height:1.4">' + esc(conclusion) + '</div>' +
+      '</div>' +
+
+      '<div style="background:#fff;border-radius:16px;padding:12px 14px;margin-bottom:10px">' +
+        '<div style="font-size:10px;font-weight:700;color:#0f172a;margin-bottom:8px">' + (zh ? '手动报告 — 需人工确认数值准确性' : 'Manual Report — Verify values manually') + '</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">' +
+          '<div style="background:#f8fafc;border-radius:6px;padding:8px"><div style="font-size:8px;color:#64748b;font-weight:600;text-transform:uppercase;margin-bottom:3px">HTTP</div><div style="font-size:13px;font-weight:700;font-family:monospace;color:' + (httpStatus >= 400 ? '#dc2626' : '#16a34a') + '">' + (httpStatus || '—') + '</div></div>' +
+          '<div style="background:#f8fafc;border-radius:6px;padding:8px"><div style="font-size:8px;color:#64748b;font-weight:600;text-transform:uppercase;margin-bottom:3px">Status</div><div style="font-size:11px;font-weight:700;color:' + statusColor + '">' + statusIcon + ' ' + statusLabel + '</div></div>' +
+          '<div style="background:#f8fafc;border-radius:6px;padding:8px"><div style="font-size:8px;color:#64748b;font-weight:600;text-transform:uppercase;margin-bottom:3px">prompt_tokens</div><div style="font-size:13px;font-weight:700;font-family:monospace;color:#0f172a">' + (pt || '—') + '</div></div>' +
+          '<div style="background:#f8fafc;border-radius:6px;padding:8px"><div style="font-size:8px;color:#64748b;font-weight:600;text-transform:uppercase;margin-bottom:3px">completion_tokens</div><div style="font-size:13px;font-weight:700;font-family:monospace;color:#0f172a">' + (ct || '—') + '</div></div>' +
+          '<div style="background:#f8fafc;border-radius:6px;padding:8px"><div style="font-size:8px;color:#64748b;font-weight:600;text-transform:uppercase;margin-bottom:3px">total_tokens</div><div style="font-size:13px;font-weight:700;font-family:monospace;color:#0f172a">' + (tt || '—') + '</div></div>' +
+          '<div style="background:#f8fafc;border-radius:6px;padding:8px"><div style="font-size:8px;color:#64748b;font-weight:600;text-transform:uppercase;margin-bottom:3px">cached_tokens</div><div style="font-size:13px;font-weight:700;font-family:monospace;color:#0f172a">' + (cached || '—') + '</div></div>' +
+          '<div style="background:#f8fafc;border-radius:6px;padding:8px;grid-column:1/-1"><div style="font-size:8px;color:#64748b;font-weight:600;text-transform:uppercase;margin-bottom:3px">Model</div><div style="font-size:11px;font-weight:600;font-family:monospace;color:#0f172a;word-break:break-all">' + esc(model) + '</div></div>' +
+        '</div>' +
+      '</div>' +
+
+      '<div style="text-align:center;font-size:11px;color:#94a3b8;padding:4px 0 6px">' +
+        (zh ? '服务商' : 'Provider') + ': ' + esc(provider) + ' &nbsp;|&nbsp; ' + (zh ? '接口' : 'Interface') + ': ' + esc(interfaceType) + ' &nbsp;|&nbsp; ' + timestamp +
+      '</div>' +
+      '<div style="display:flex;gap:6px;margin-top:6px">' +
+        '<button onclick="ManualReport.copyText()" style="flex:1;padding:8px 10px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">' + (zh ? '复制报告' : 'Copy Report') + '</button>' +
+      '</div>' +
+      '<div style="font-size:9px;color:#94a3b8;text-align:center;padding:6px 0 4px;line-height:1.4">' +
+        (zh ? '手动报告仅供参考，数值需人工核实。' : 'Manual report is for reference only — verify values manually.') +
+      '</div>' +
+    '</div>';
   },
+
+  copyText() {
+    const f = id => document.getElementById(id);
+    const get = (id, fb = '') => f(id)?.value?.trim() || fb;
+    const num = id => parseFloat(f(id)?.value) || 0;
+    const lang = document.documentElement.lang;
+    const zh = lang !== 'en';
+
+    const baseUrl = get('manual-base-url');
+    const model = get('manual-model');
+    const httpStatus = num('manual-http-status');
+    const pt = num('manual-prompt-tokens');
+    const ct = num('manual-completion-tokens');
+    const tt = num('manual-total-tokens');
+    const cached = num('manual-cached-tokens');
+    const provider = get('manual-provider') || 'Unknown';
+    const interfaceType = f('manual-interface')?.value || 'OpenAI Chat';
+    const timestamp = new Date().toLocaleString(zh ? 'zh-CN' : 'en-US', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+
+    const text = [
+      'AI API Doctor ' + (zh ? '手动报告' : 'Manual Report'),
+      '',
+      'Base URL: ' + baseUrl,
+      'Model: ' + model,
+      'Interface: ' + interfaceType,
+      'HTTP Status: ' + (httpStatus || '—'),
+      'prompt_tokens: ' + (pt || '—'),
+      'completion_tokens: ' + (ct || '—'),
+      'total_tokens: ' + (tt || '—'),
+      'cached_tokens: ' + (cached || '—'),
+      'Provider: ' + provider,
+      'Time: ' + timestamp,
+      '',
+      'https://aiapidoctor.com/'
+    ].join('\n');
+
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(() => showToast && showToast(zh ? '报告已复制' : 'Report copied')).catch(() => showToast && showToast(zh ? '复制失败' : 'Copy failed'));
+    } else {
+      showToast && showToast(zh ? '复制失败' : 'Copy failed');
+    }
+  },
+
   clear() {
     ['manual-provider','manual-base-url','manual-model','manual-http-status','manual-prompt-tokens','manual-completion-tokens','manual-total-tokens','manual-cached-tokens'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.value = '';
     });
     const card = document.getElementById('result-card');
-    if (card) card.outerHTML = '<div id="result-card" class="result-empty-state">填写 Base URL、API Key 和 Model ID 后开始检测。</div>';
-    window.showToast && window.showToast('已清空');
+    if (card) card.outerHTML = '<div id="result-card" class="result-empty-state">' + (document.documentElement.lang !== 'en' ? '填写 Base URL、API Key 和 Model ID 后开始检测。' : 'Enter Base URL, API Key, and Model ID to start.') + '</div>';
+    window.showToast && window.showToast(document.documentElement.lang !== 'en' ? '已清空' : 'Cleared');
   }
 };
 

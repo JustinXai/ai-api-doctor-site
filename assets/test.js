@@ -696,7 +696,6 @@ function newCalcScore(result) {
     modelSanity:  { state: result.modelSanity?.state,   score: null },
   };
 
-  dims.billing.state = result.billing?.state ?? 'skipped';
   const bv = result.billing?.verdict;
   if (bv === 'failed_request_not_charged' || bv === 'precharge_refunded') {
     dims.billing.state = 'pass'; dims.billing.score = 100;
@@ -2273,13 +2272,23 @@ function buildShortCardHTML(result, formData) {
   const barUsage = { label: zh ? '账单明细' : 'Token Details', state: hasUsage ? 'pass' : 'fail', score: hasUsage ? 100 : 0, detail: hasUsage ? (zh ? '有 token' : 'Has tokens') : (zh ? '无账单明细' : 'No token data') };
   const barStream = { label: zh ? '流式会不会炸' : 'Streaming', state: 'skipped', score: 0, detail: zh ? '需完整验货' : 'Needs full check' };
   const barModel = result.modelSanity && result.modelSanity.overallScore !== null ? (function(){ var ms=result.modelSanity.overallScore; return { label: zh ? '模型有没有缩水' : 'Model Shrinkage', state: ms>=70?'pass':ms>=50?'warn':'fail', score: ms, detail: zh?(result.modelSanity.label||'正常'):(result.modelSanity.labelEn||'OK') }; })() : { label: zh ? '模型有没有缩水' : 'Model Shrinkage', state: 'skipped', score: 0, detail: zh ? '需完整验货' : 'Needs full check' };
-  const barConn = (function(){ var st=scored?.dims?.connectivity?.state??'skipped'; var s=conn.status; if(st==='blocked') return { label: zh?'能否连上':'Connection', state:'warn', score: scored?.dims?.connectivity?.score??0, detail: zh?'CORS 限制':'CORS Blocked' }; if(!s) return { label: zh?'能否连上':'Connection', state:'fail', score:0, detail: zh?'无响应':'No response' }; if(s>=200&&s<300) return { label: zh?'能否连上':'Connection', state:'pass', score:100, detail:'HTTP 200' }; return { label: zh?'能否连上':'Connection', state:'fail', score:0, detail:'HTTP '+s }; })();
+  const barConn = (function(){
+    var st=scored?.dims?.connectivity?.state??'skipped';
+    var s=conn.status;
+    var err=conn.error;
+    // In quick mode, scored is null — check conn.error directly
+    if(st==='blocked'||err==='cors_or_network'||err==='timeout') return { label: zh?'能否连上':'Connection', state:'blocked', score:0, detail: zh?'CORS 限制':'CORS Blocked' };
+    if(!s) return { label: zh?'能否连上':'Connection', state:'fail', score:0, detail: zh?'无响应':'No response' };
+    if(s>=200&&s<300) return { label: zh?'能否连上':'Connection', state:'pass', score:100, detail:'HTTP 200' };
+    return { label: zh?'能否连上':'Connection', state:'fail', score:0, detail:'HTTP '+s };
+  })();
   var bars = [barOutput, barBilling, barUsage, barStream, barModel, barConn];
   var verdict, grade, chips, conclusion;
-  if(!hasOutput&&balanceReduced){verdict=zh?'空跑扣费':'Empty-Run Fraud';grade='F';chips=[zh?'没产物':'No Output',zh?'已扣钱':'Charged',zh?'高危':'High Risk'];conclusion=zh?'没拿到东西，钱却扣了，请仔细核查。':'No output, but charged. Verify carefully.';}
+  // U grade (CORS/timeout) must be checked FIRST — before !hasOutput conditions
+  if(barConn.state==='blocked'){verdict=zh?'连不上':'Cannot Connect';grade='U';chips=[zh?'浏览器拦截':'Browser Blocked'];conclusion=zh?'浏览器跨域限制，无法完成检测。':'Browser CORS restriction blocks the check.';}
+  else if(!hasOutput&&balanceReduced){verdict=zh?'空跑扣费':'Empty-Run Fraud';grade='F';chips=[zh?'没产物':'No Output',zh?'已扣钱':'Charged',zh?'高危':'High Risk'];conclusion=zh?'没拿到东西，钱却扣了，请仔细核查。':'No output, but charged. Verify carefully.';}
   else if(!hasOutput&&hasUsage){verdict=zh?'返回废包':'Empty Response';grade='D';chips=[zh?'没产物':'No Output',zh?'有账单':'Has Tokens',zh?'扣钱没验':'Charge Unverified'];conclusion=zh?'返回无效内容，账单明细无法核验。':'Invalid content returned, charges unverified.';}
   else if(!hasOutput&&!hasUsage){verdict=zh?'疑似空跑':'Suspected Empty Run';grade='D';chips=[zh?'没产物':'No Output',zh?'没账单':'No Tokens',zh?'扣钱没验':'Charge Unverified'];conclusion=zh?'返回无效内容，无账单明细，扣费无法核验。':'Invalid content, no tokens, charges unverified.';}
-  else if(barConn.state==='blocked'){verdict=zh?'连不上':'Cannot Connect';grade='U';chips=[zh?'浏览器拦截':'Browser Blocked'];conclusion=zh?'浏览器跨域限制，无法完成检测。':'Browser CORS restriction blocks the check.';}
   else if(barModel.state==='fail'){verdict=zh?'模型缩水':'Model Shrinkage';grade='C';chips=[zh?'表现不对':'Perf. Anomaly',zh?'需复查':'Needs Review'];conclusion=zh?'模型输出异常，表现与标称不符。':'Model output anomaly detected.';}
   else if(barModel.state==='warn'){verdict=zh?'模型存疑':'Model Uncertain';grade='C';chips=[zh?'指令不稳':'Unstable',zh?'需复查':'Needs Review'];conclusion=zh?'模型输出不太稳定，建议复查。':'Model output is unstable, recommend review.';}
   else if(barBilling.state==='fail'){verdict=zh?'扣费异常':'Billing Anomaly';grade='D';chips=[zh?'已扣钱':'Charged',zh?'需复查':'Needs Review'];conclusion=zh?'扣费证据显示异常，请核查账单。':'Billing evidence shows anomaly.';}
@@ -2288,7 +2297,7 @@ function buildShortCardHTML(result, formData) {
   else if(barBilling.state==='pass'){verdict=zh?'硬货':'Solid';grade=barConn.state==='pass'&&barOutput.state==='pass'&&barUsage.state==='pass'?'A':'B';chips=[zh?'有产物':'Has Output',zh?'账单完整':'Tokens OK',zh?'能对账':'Verified'];conclusion=zh?'有产物、有账单明细，扣钱也能对上。':'Has output and tokens, charges verified.';}
   else{verdict=zh?'能用':'Usable';grade=barConn.state==='pass'?'B':'C';chips=[zh?'有产物':'Has Output',zh?'账单完整':'Tokens OK'];conclusion=zh?'有产物，基础功能可用。':'Has output, basic functions work.';}
   var activeBars = bars.filter(function(b){return b.state!=='skipped';});
-  var totalScore = activeBars.length>0?Math.round(activeBars.reduce(function(s,b){return s+(b.score||0);},0)/activeBars.length):(qs?qs.score:0);
+  var totalScore = activeBars.length>0?Math.round(activeBars.reduce(function(acc,bar){return acc+(bar.score||0);},0)/activeBars.length):(qs?qs.score:0);
   var gradeColor={A:'#16a34a',B:'#3b82f6',C:'#f59e0b',D:'#f97316',F:'#dc2626',U:'#64748b'}[grade]||'#94a3b8';
   var gradeBg={A:'#dcfce7',B:'#eff6ff',C:'#fef9c3',D:'#ffedd5',F:'#fee2e2',U:'#f1f5f9'}[grade]||'#f1f5f9';
   function barColor(s){return s==='pass'?'#16a34a':s==='fail'?'#dc2626':s==='warn'?'#f59e0b':'#94a3b8';}

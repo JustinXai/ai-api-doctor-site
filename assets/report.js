@@ -12,7 +12,6 @@
 
 /* ── Constants ─────────────────────────────────────────── */
 const STORAGE_KEY = 'aiapidoctor_report_form';
-const LS_KEY = 'aiapidoctor_report_form';
 
 /* ── Result metadata ─────────────────────────────────── */
 const RESULT_META = {
@@ -375,26 +374,26 @@ function resetForm() {
     const el = document.getElementById(id);
     if (el) el.value = defaults[id] || '';
   });
-  localStorage.removeItem(LS_KEY);
+  localStorage.removeItem(STORAGE_KEY);
   renderReport();
   showToast('表单已重置');
 }
 
 function clearLocalForm() {
-  localStorage.removeItem(LS_KEY);
+  localStorage.removeItem(STORAGE_KEY);
   showToast('本地表单数据已清除');
 }
 
 /* ── LocalStorage ────────────────────────────────────────── */
 function saveFormToLocalStorage(data) {
   try {
-    localStorage.setItem(LS_KEY, JSON.stringify(data));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch (_) {}
 }
 
 function restoreFormFromLocalStorage() {
   try {
-    const saved = localStorage.getItem(LS_KEY);
+    const saved = localStorage.getItem(STORAGE_KEY);
     if (!saved) return;
     const data = JSON.parse(saved);
     if (!data || typeof data !== 'object') return;
