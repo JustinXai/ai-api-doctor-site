@@ -1094,32 +1094,26 @@ window.Doctor = {
       interfaceType
     };
 
-    this._formData = {
-      baseUrl: normalizedUrl,
-      model,
-      interfaceType
-    };
-
     try {
       const signal = this._controller.signal;
 
       const check1 = await check1_Output(normalizedUrl, apiKey, model, interfaceType, signal);
-      this.updateProgress(0, zh ? '1/6 有无产物' : '1/6 Output Check');
+      this.updateProgress(0, zh ? '1/7 有无产物' : '1/7 Output Check');
 
       const check2 = await check2_BillDetails(normalizedUrl, apiKey, model, interfaceType, signal);
-      this.updateProgress(1, zh ? '2/6 账单明细' : '2/6 Bill Details');
+      this.updateProgress(1, zh ? '2/7 账单明细' : '2/7 Bill Details');
 
       const check3 = await check3_TokenOvercount(normalizedUrl, apiKey, model, interfaceType, signal);
-      this.updateProgress(2, zh ? '3/6 用量虚高' : '3/6 Token Overcount');
+      this.updateProgress(2, zh ? '3/7 用量虚高' : '3/7 Token Overcount');
 
       const check4 = await check4_StreamingBillLoss(normalizedUrl, apiKey, model, interfaceType, signal);
-      this.updateProgress(3, zh ? '4/6 流式丢账' : '4/6 Streaming Bill');
+      this.updateProgress(3, zh ? '4/7 流式丢账' : '4/7 Streaming Bill');
 
       const check5 = await check5_Cache(normalizedUrl, apiKey, model, interfaceType, signal);
-      this.updateProgress(4, zh ? '5/6 缓存有没有透' : '5/6 Cache Check');
+      this.updateProgress(4, zh ? '5/7 缓存有没有透' : '5/7 Cache Check');
 
       const check6 = await check6_ModelShrinkage(normalizedUrl, apiKey, model, interfaceType, signal);
-      this.updateProgress(5, zh ? '6/6 模型缩水风险' : '6/6 Model Shrinkage');
+      this.updateProgress(5, zh ? '6/7 模型缩水风险' : '6/7 Model Shrinkage');
 
       const checks = [check1, check2, check3, check4, check5, check6];
 
