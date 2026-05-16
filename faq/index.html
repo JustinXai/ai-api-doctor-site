@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AI API Doctor FAQ｜API Key、Base URL、模型权限与 Token 用量核对常见问题</title>
-  <meta name="description" content="了解 AI API Doctor 如何诊断 API Key、Base URL、模型权限、403 分组错误、Token 用量返回和客户端配置。默认本地存储 API Key，不做模型真假鉴定，不证明服务商故意多扣费。" />
+  <title>AI API Doctor 常见问题｜常见问题</title>
+  <meta name="description" content="了解 AI API Doctor 工具能力边界和检测逻辑。" />
   <meta name="robots" content="index, follow" />
   <link rel="canonical" href="https://aiapidoctor.com/faq" />
   <link rel="alternate" hreflang="zh-CN" href="https://aiapidoctor.com/faq" />
@@ -14,8 +14,8 @@
 
   <!-- Open Graph -->
   <meta property="og:type" content="website" />
-  <meta property="og:title" content="AI API Doctor FAQ｜常见问题" />
-  <meta property="og:description" content="了解 AI API Doctor 如何诊断 API Key、Base URL、模型权限、403 分组错误和 Token 用量核对。" />
+  <meta property="og:title" content="AI API Doctor 常见问题" />
+  <meta property="og:description" content="了解工具能力边界和检测逻辑。" />
   <meta property="og:url" content="https://aiapidoctor.com/faq" />
 
   <!-- JSON-LD: FAQPage -->
@@ -26,178 +26,66 @@
     "mainEntity": [
       {
         "@type": "Question",
-        "name": "AI API Doctor 是什么？",
+        "name": "API Doctor 到底测什么？",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "AI API Doctor 是一个面向 OpenAI-compatible API 用户的本地优先中转站黑盒验货工具。别信面板，先验货。帮助检查 API Key、Base URL、模型权限、分组配置、模型列表接口、对话接口、Token 用量返回和客户端配置是否正常。生成 A/B/C/D/F/U 档验货分，适合 API Key 明明填了但客户端无法使用、Base URL 不确定是否正确、报错 401/403/404/429、空跑和 usage 消失等场景。AI API Doctor 不是模型真假鉴定工具，也不是法律意义上的审计工具。"
+          "text": "它不是看宣传页，也不是看面板余额。它会直接发请求，看这个中转站有没有真实返回内容、有没有给账单明细、有没有把用量报大、流式请求会不会丢账、缓存有没有透传、模型表现有没有缩水。测完后生成一张可截图分享的验货分。"
         }
       },
       {
         "@type": "Question",
-        "name": "AI API Doctor 会上传或保存我的 API Key 吗？",
+        "name": "什么叫账单明细？",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "API Key 保存在浏览器本地，不会主动上传到任何第三方服务器。诊断请求只会发送到你当前选择的 Base URL。建议使用测试专用 API Key，不要使用生产环境主 Key。"
+          "text": "就是这次请求用了多少额度的明细。一般包括你输入消耗了多少、模型输出消耗了多少、总共消耗了多少。没有账单明细，后面就不好对账。"
         }
       },
       {
         "@type": "Question",
-        "name": "诊断会消耗 API 额度吗？",
+        "name": "什么叫返回废包？",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "会。AI API Doctor 会发送少量真实 API 请求来确认 Base URL、API Key、模型权限和 chat/completions 是否正常。基础快速验货通常只需要 1 次请求，完整验货约 3–6 次，消耗较少。为了安全，建议使用测试专用 Key、设置较低额度、不要使用生产主 Key，验货后对比服务商后台账单。"
+          "text": "请求看起来成功了，也给了账单明细，但你没有拿到有效内容。简单说，就是有账单，没产物。"
         }
       },
       {
         "@type": "Question",
-        "name": "AI API Doctor 能判断模型真假吗？",
+        "name": "什么叫用量虚高？",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "当前版本不做模型真假鉴定。AI API Doctor 关注配置是否正确、Key 是否可用、模型权限是否正常、分组配置是否正确、真实请求是否能完成、响应里是否返回 usage、客户端配置是否能导出。它不会给出“这个一定是真模型”或“这个一定是假模型”的结论。模型来源、渠道指纹、签名机制和真实模型鉴定属于更复杂的检测范围。"
+          "text": "你明明只发了一点内容，它却报出明显偏大的用量，这就是风险。API Doctor 只能提示疑似虚标，不能直接证明造假。"
         }
       },
       {
         "@type": "Question",
-        "name": "为什么有些检测网站说不是真模型，但实际使用效果正常？",
+        "name": "什么叫流式丢账？",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "不同检测工具的判断依据不同。部分模型鉴定工具会依赖签名、协议细节、响应指纹、身份回答、多轮测试题或特定行为特征。如果中转站做了兼容处理、签名屏蔽、渠道保护、响应包装或安全策略调整，某些指纹型检测可能出现误判。AI API Doctor 不根据单一指纹判断模型真假，而是关注实际使用中的配置、权限和请求问题。如果你需要判断模型来源，请结合多个检测方法、实际使用效果和服务商说明综合判断。"
+          "text": "很多编程工具是一边生成一边返回内容。正常情况下，最后也应该给这次请求的账单明细。如果普通请求有账单，流式请求没账单，就叫流式丢账。"
         }
       },
       {
         "@type": "Question",
-        "name": "AI API Doctor 能判断服务商是否多扣费吗？",
+        "name": "什么叫缓存没透？",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "AI API Doctor 可以帮助你核对本次请求的 usage 信息，但不能证明某个服务商故意多扣费。它能检查响应里是否返回 usage 字段、prompt_tokens/completion_tokens/total_tokens 是否存在、total_tokens 是否异常偏高、短期请求是否出现明显异常的 token 消耗。但最终余额、扣费和账单由服务商后台控制。如果你怀疑消耗异常，建议使用短 prompt 测试、记录验货报告、对比服务商后台余额变化、联系站长或客服核对。"
+          "text": "重复的大段内容本来可能走缓存，成本会更低。如果检测时看不到缓存抵扣，就说明这个中转站可能没把缓存明细透出来。"
         }
       },
       {
         "@type": "Question",
-        "name": "为什么 /v1/models 失败，但 API 仍然可能可用？",
+        "name": "什么叫模型缩水风险？",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "部分中转站并不开放 /v1/models，或者模型列表接口不完全兼容 OpenAI 标准格式。所以 /v1/models 失败不一定代表 API 不可用。你可以手动输入模型 ID（如 gpt-4o、deepseek-chat、claude-3-5-sonnet）然后运行快速验货。真正有参考价值的是：指定模型能否完成真实请求，并返回有效输出和 usage。"
+          "text": "你选的是高级模型，但它的基础表现、格式遵守、返回结构明显不像这个档位。API Doctor 不说它一定偷换模型，只提示模型缩水风险。"
         }
       },
       {
         "@type": "Question",
-        "name": "什么是“无权访问 GPT 官方分组”？",
+        "name": "网页能不能看真实扣费？",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "这类错误通常表示 Base URL 是可达的、API Key 可能也是有效的，但当前 Key 没有访问某个模型或模型分组的权限。常见原因包括：Key 没有加入正确分组、分组没有包含当前模型、模型没有绑定可用渠道、渠道不支持当前模型、模型别名配置错误。可以检查中转站后台：Key 属于哪个分组、分组是否包含当前模型、模型是否绑定了可用渠道、渠道是否支持该模型、模型别名是否正确。这类错误不一定是 Key 错了，也不一定是 Base URL 错了。"
-        }
-      },
-      {
-        "@type": "Question",
-        "name": "401、403、404、429 分别代表什么？",
-        "acceptedAnswer": {
-          "@type": "Answer",
-          "text": "401：API Key 错误、为空、过期，或者复制时多了空格。403：权限不足，可能是 Key 没有模型权限、分组权限不足、IP 白名单限制，或者模型未加入分组。404：接口地址可能错误，常见情况是 Base URL 少了 /v1、多了 /v1，或者填成了官网地址。429：请求过快、并发超限、额度耗尽，或者服务商限流。HTML 响应：服务端返回了网页而不是 API JSON，可能是填成了网站首页、登录页、Cloudflare 页面，或者服务商不兼容该接口。No usage：响应中没有返回 usage 字段，因此无法从本次响应核对 Token 消耗。"
-        }
-      },
-      {
-        "@type": "Question",
-        "name": "AI API Doctor 推荐中转站吗？",
-        "acceptedAnswer": {
-          "@type": "Answer",
-          "text": "不会。AI API Doctor 是中立检测工具，不推荐、不排名任何中转站。报告只展示本次测试中的可复现信号，不证明服务商主观故意。"
-        }
-      },
-      {
-        "@type": "Question",
-        "name": "默认内置 Provider 和 AI API Doctor 是什么关系？",
-        "acceptedAnswer": {
-          "@type": "Answer",
-          "text": "AI API Doctor 是中立检测工具，支持任意 OpenAI-compatible API 服务商，诊断逻辑对所有 Provider 一致。界面中使用「默认内置」标注，不使用「推荐」「最佳中转」等措辞。"
-        }
-      },
-      {
-        "@type": "Question",
-        "name": "诊断报告可以发给站长或客服吗？",
-        "acceptedAnswer": {
-          "@type": "Answer",
-          "text": "可以。AI API Doctor 生成的诊断报告会自动隐藏完整 API Key，只保留脱敏格式（如 sk-****abcd）。你可以把报告发给站长或客服，用来说明 Base URL、模型 ID、错误码、服务商返回信息、失败步骤和 usage 情况。但请注意：不要手动把完整 API Key、账户密码或余额截图发给陌生人。"
-        }
-      },
-      {
-        "@type": "Question",
-        "name": "我应该使用生产 API Key 还是测试 API Key？",
-        "acceptedAnswer": {
-          "@type": "Answer",
-          "text": "建议使用测试专用 API Key。原因是：诊断会发送真实请求、可能产生少量 token 消耗、测试过程中可能暴露错误信息、测试 Key 更容易控制额度和风险。如果你的服务商支持额度限制、分组限制或临时 Key，建议单独创建一个测试 Key。"
-        }
-      },
-      {
-        "@type": "Question",
-        "name": "AI API Doctor 是否开源？",
-        "acceptedAnswer": {
-          "@type": "Answer",
-          "text": "插件端计划开源，方便用户检查 API Key 的存储方式、请求逻辑和诊断过程。API Key 默认保存在浏览器本地，不会主动上传到任何第三方服务器。官网，品牌、服务端统计和商业服务可能不完全开源。"
-        }
-      },
-      {
-        "@type": "Question",
-        "name": "AI API Doctor 和模型鉴定网站有什么不同？",
-        "acceptedAnswer": {
-          "@type": "Answer",
-          "text": "AI API Doctor 不以「模型真假鉴定」为主要目标。它更关注实际使用中的问题：Key 能不能用、Base URL 对不对、模型有没有权限、分组有没有配置、chat/completions 能不能跑、usage 有没有返回、客户端配置能不能导出。如果你需要判断模型来源、渠道签名、官方原版或逆向渠道，那属于更专业的模型鉴定范畴，不是 AI API Doctor 当前版本的核心结论。两类工具可以互补。"
-        }
-      },
-      {
-        "@type": "Question",
-        "name": "诊断报告包含哪些内容？",
-        "acceptedAnswer": {
-          "@type": "Answer",
-          "text": "AI API Doctor 生成的报告包含：Provider 名称、Base URL（已脱敏的 API Key 格式如 sk-****abcd）、模型 ID、诊断时间、诊断结果摘要（通过项数和总项数）、各步骤状态和延迟、失败步骤详情（错误码、服务商原始信息和排错建议），以及 usage 摘要（如果有返回）。报告以纯文本格式展示，方便复制、截图或发给客服。"
-        }
-      },
-      {
-        "@type": "Question",
-        "name": "项目发起者是谁？",
-        "acceptedAnswer": {
-          "@type": "Answer",
-          "text": "AI API Doctor 由 @norike0718 发起并公开构建。作者是一名长期构建 SaaS 和 AI 工具的独立开发者，关注内容工作流、AI API 配置、自动化生产线和开发者工具体验。AI API Doctor 的目标不是给中转站做「真假审判」，而是帮助用户在真实使用场景中诊断 API Key、Base URL、模型权限、Token 用量和客户端配置问题。项目会尽量保持诊断逻辑透明、边界清晰，并优先避免误伤正常服务商。"
-        }
-      },
-      {
-        "@type": "Question",
-        "name": "网页版为什么有时不能直接检测 Base URL？",
-        "acceptedAnswer": {
-          "@type": "Answer",
-          "text": "浏览器的跨域（CORS）安全策略会阻止网页直接请求第三方 API 的响应。当 Base URL 与网页的域名不同时，浏览器会拒绝读取响应内容。这不代表 API 不可用。解决方法：使用 Chrome 插件读取 raw quota、切换到手动报告模式、或联系站长允许跨域调试接口。"
-        }
-      },
-      {
-        "@type": "Question",
-        "name": "缓存命中检测会消耗额度吗？",
-        "acceptedAnswer": {
-          "@type": "Answer",
-          "text": "会。缓存命中检测会发送两次较长的测试请求（1200-1500 tokens 的固定文本），用于观察第二次请求是否命中缓存。建议只在需要核对缓存计费时开启，并使用测试专用 API Key。"
-        }
-      },
-      {
-        "@type": "Question",
-        "name": "cached_tokens 是什么？",
-        "acceptedAnswer": {
-          "@type": "Answer",
-          "text": "cached_tokens（或 cache_read_input_tokens）表示本次请求中有多少输入 token 命中了缓存。命中缓存通常意味着更低延迟和更低输入成本。不同服务商对缓存字段的支持和折扣规则不同，具体计费以服务商公示为准。"
-        }
-      },
-      {
-        "@type": "Question",
-        "name": "usage 完整性为什么重要？",
-        "acceptedAnswer": {
-          "@type": "Answer",
-          "text": "如果响应不返回 prompt_tokens、completion_tokens、total_tokens 或缓存字段，用户很难核对理论成本和实际扣费是否匹配。usage 完整性检查验证响应是否包含这些字段，如果缺失或不全会标记为不完整，建议联系站长核对。"
-        }
-      },
-      {
-        "@type": "Question",
-        "name": "这个报告能证明服务商故意多扣费吗？",
-        "acceptedAnswer": {
-          "@type": "Answer",
-          "text": "不能。报告只展示可复现的技术信号，适合用于和站长或客服沟通排查。最终余额、扣费和账单由服务商后台控制，AI API Doctor 无法直接访问所有服务商的真实账单系统。报告的结论应理解为用量信号核对，不是法律意义上的财务审计。"
+          "text": "不能。网页不能读取中转站控制台的原始额度，也不能跨站读取余额。真实扣费以后由 Chrome 插件检测。"
         }
       }
     ]
@@ -344,16 +232,6 @@
       padding: 40px 24px 80px;
     }
 
-    /* ── Group Title ─────────────────────────────────────── */
-    .faq-group-title {
-      font-size: 13px;
-      font-weight: 700;
-      color: var(--accent);
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      margin: 0 0 12px 4px;
-    }
-
     /* ── FAQ Card ────────────────────────────────────────── */
     .faq-card {
       background: var(--surface);
@@ -421,182 +299,6 @@
       font-size: 13px;
     }
 
-    /* ── Comparison Table ────────────────────────────────── */
-    .comparison-section {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 28px;
-      margin: 40px 0;
-      box-shadow: var(--shadow);
-    }
-    .comparison-section h2 {
-      font-size: 18px;
-      font-weight: 700;
-      margin-bottom: 20px;
-      color: var(--text);
-    }
-    .comparison-table-wrap { overflow-x: auto; }
-    .comparison-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 14px;
-    }
-    .comparison-table th {
-      text-align: left;
-      padding: 10px 14px;
-      background: var(--bg);
-      font-weight: 600;
-      font-size: 13px;
-      border-bottom: 2px solid var(--border);
-      color: var(--text);
-      white-space: nowrap;
-    }
-    .comparison-table td {
-      padding: 10px 14px;
-      border-bottom: 1px solid var(--border);
-      vertical-align: top;
-      color: #374151;
-    }
-    .comparison-table tr:last-child td { border-bottom: none; }
-    .comparison-table td:first-child { font-weight: 600; color: var(--text); white-space: nowrap; }
-    .comparison-table td.col-doctor { background: #eff6ff; }
-    .comparison-table td.col-other { background: #f9fafb; }
-    .comparison-note {
-      margin-top: 16px;
-      padding: 12px 14px;
-      background: #f9fafb;
-      border-left: 3px solid var(--accent);
-      border-radius: 0 6px 6px 0;
-      font-size: 14px;
-      color: #374151;
-      line-height: 1.7;
-    }
-
-    /* ── Report Example ──────────────────────────────────── */
-    .report-section {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 28px;
-      margin-top: 24px;
-      box-shadow: var(--shadow);
-    }
-    .report-section h2 {
-      font-size: 18px;
-      font-weight: 700;
-      margin-bottom: 8px;
-    }
-    .report-section > p {
-      color: var(--text-muted);
-      font-size: 14px;
-      margin-bottom: 16px;
-    }
-    .report-block {
-      background: #0f172a;
-      color: #e2e8f0;
-      border-radius: 8px;
-      padding: 20px 22px;
-      font-family: 'SF Mono', 'Cascadia Code', Consolas, monospace;
-      font-size: 12.5px;
-      line-height: 1.8;
-      white-space: pre-wrap;
-      word-break: break-all;
-    }
-    .report-block .report-title {
-      color: #60a5fa;
-      font-weight: 700;
-      margin-bottom: 4px;
-    }
-    .report-block .report-success { color: #4ade80; }
-    .report-block .report-fail { color: #f87171; }
-    .report-block .report-label { color: #94a3b8; }
-
-    /* ── Initiator ────────────────────────────────────────── */
-    .initiator-section {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 28px;
-      margin-top: 24px;
-      box-shadow: var(--shadow);
-    }
-    .initiator-section h2 {
-      font-size: 18px;
-      font-weight: 700;
-      margin-bottom: 14px;
-      color: var(--text);
-    }
-    .initiator-section p {
-      color: #374151;
-      font-size: 14.5px;
-      line-height: 1.8;
-      margin-bottom: 10px;
-    }
-    .initiator-section p:last-child { margin-bottom: 0; }
-    .initiator-handle {
-      display: inline-block;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 2px 10px;
-      font-family: 'SF Mono', Consolas, monospace;
-      font-size: 13px;
-      color: var(--accent);
-      font-weight: 600;
-    }
-
-    /* ── CTA ─────────────────────────────────────────────── */
-    .cta-section {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 32px 28px;
-      margin-top: 48px;
-      text-align: center;
-    }
-    .cta-section h2 {
-      font-size: 20px;
-      font-weight: 700;
-      margin-bottom: 8px;
-    }
-    .cta-section > p {
-      color: var(--text-muted);
-      font-size: 15px;
-      margin-bottom: 24px;
-    }
-    .cta-buttons {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      justify-content: center;
-    }
-    .cta-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 12px 22px;
-      border-radius: 8px;
-      font-size: 15px;
-      font-weight: 600;
-      cursor: pointer;
-      border: none;
-      font-family: inherit;
-      text-decoration: none;
-      transition: opacity 0.15s;
-    }
-    .cta-btn:hover { opacity: 0.85; text-decoration: none; }
-    .cta-btn svg { width: 16px; height: 16px; }
-    .cta-btn-primary {
-      background: var(--accent);
-      color: #fff;
-    }
-    .cta-btn-secondary {
-      background: var(--bg);
-      color: var(--text);
-      border: 1px solid var(--border);
-    }
-
     /* ── Footer ─────────────────────────────────────────── */
     .site-footer {
       background: var(--surface);
@@ -618,11 +320,6 @@
       .content-wrap { padding: 28px 16px 60px; }
       .faq-question { padding: 16px; font-size: 14px; }
       .faq-answer-inner { padding: 0 16px 16px; font-size: 14px; }
-      .comparison-section { padding: 20px; }
-      .report-section { padding: 20px; }
-      .initiator-section { padding: 20px; }
-      .cta-buttons { flex-direction: column; }
-      .cta-btn { justify-content: center; }
     }
   </style>
 </head>
@@ -630,43 +327,39 @@
 
   <!-- Header -->
   <header class="site-header">
-    <div class="container site-header__inner">
-      <a href="/" class="site-logo">
-        <div class="site-logo__icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
-          </svg>
-        </div>
-        AI API Doctor
-      </a>
-      <button class="nav-toggle" aria-label="菜单" onclick="document.querySelector('.site-nav').classList.toggle('open')">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-      </button>
-      <nav class="site-nav">
-        <a href="/">首页</a>
-        <a href="/faq/" class="active">FAQ</a>
-        <a href="/privacy/">隐私</a>
-        <a href="/support/">支持</a>
-        <span class="lang-switcher">
-          <span class="lang-switcher__current">中文</span>
-          <span class="lang-switcher__sep">|</span>
-          <a href="/en/faq/" class="lang-switcher__link">English</a>
-        </span>
-      </nav>
-    </div>
+    <a href="/" class="site-logo">
+      <div class="site-logo-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+        </svg>
+      </div>
+      AI API Doctor
+    </a>
+    <nav class="header-nav">
+      <a href="/">体检台</a>
+      <a href="/faq/" class="active">FAQ</a>
+      <a href="/guides/billing-anomaly/">原理</a>
+      <a href="/privacy/">隐私</a>
+      <a href="/support/">支持</a>
+      <span class="lang-switcher">
+        <span class="lang-switcher__current">中文</span>
+        <span class="lang-switcher__sep">|</span>
+        <a href="/en/faq/" class="lang-switcher__link">English</a>
+      </span>
+    </nav>
   </header>
 
   <!-- Hero -->
   <section class="page-hero">
     <div class="page-hero-badge">常见问题</div>
     <h1>AI API Doctor 常见问题</h1>
-    <p>了解工具能力边界、隐私说明、诊断逻辑和 Token 用量核对的工作方式。</p>
+    <p>了解工具能力边界和检测逻辑。</p>
 
     <!-- Trust Badges -->
     <div class="trust-badges">
       <span class="trust-badge ok">
         <svg class="ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-        API Key 本地存储
+        API Key 本地使用
       </span>
       <span class="trust-badge ok">
         <svg class="ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
@@ -686,784 +379,99 @@
   <!-- Main Content -->
   <main class="content-wrap">
 
-    <!-- Section: 迁移内容 -->
-    <div class="faq-group-title">为什么需要这个工具</div>
-
     <div class="faq-card">
       <button class="faq-question" onclick="toggle(this)">
-        <span>为什么需要 AI API Doctor？</span>
+        <span>Q: API Doctor 到底测什么？</span>
         <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
       </button>
       <div class="faq-answer">
         <div class="faq-answer-inner">
-          <p>很多 AI API 中转站采用预扣费机制。请求失败、空回复、上游 503、超时、缓存命中等情况，都可能让用户难以判断实际扣费是否合理。</p>
-          <p>AI API Doctor 通过可复现信号帮助用户和站长沟通：</p>
-          <ul>
-            <li>检测失败请求是否最终扣费</li>
-            <li>检测空回复是否扣费</li>
-            <li>检测 usage 完整性</li>
-            <li>检测缓存是否正常计费</li>
-            <li>检测模型表现是否正常</li>
-          </ul>
-          <p>目标不是给任何站点定罪，而是把扣费、usage、缓存和模型表现变成一张可复现的验货单。</p>
+          <p>它不是看宣传页，也不是看面板余额。它会直接发请求，看这个中转站有没有真实返回内容、有没有给账单明细、有没有把用量报大、流式请求会不会丢账、缓存有没有透传、模型表现有没有缩水。测完后生成一张可截图分享的验货分。</p>
         </div>
       </div>
     </div>
 
     <div class="faq-card">
       <button class="faq-question" onclick="toggle(this)">
-        <span>什么是预扣费？</span>
+        <span>Q: 什么叫账单明细？</span>
         <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
       </button>
       <div class="faq-answer">
         <div class="faq-answer-inner">
-          <p>部分 AI API 中转站会在请求开始时先按模型、上下文、max_tokens 或本地估算 token 预扣额度。请求结束后，再根据真实 usage 结算并返还差额。</p>
-          <p>这套机制本身没问题，但如果失败请求、空回复、上游 503、无效模型、缓存命中等场景处理不好，用户可能会遇到"没有拿到有效回答，但额度发生变化"的情况。</p>
+          <p>就是这次请求用了多少额度的明细。一般包括你输入消耗了多少、模型输出消耗了多少、总共消耗了多少。没有账单明细，后面就不好对账。</p>
         </div>
       </div>
     </div>
 
     <div class="faq-card">
       <button class="faq-question" onclick="toggle(this)">
-        <span>什么是失败请求扣费？</span>
+        <span>Q: 什么叫返回废包？</span>
         <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
       </button>
       <div class="faq-answer">
         <div class="faq-answer-inner">
-          <p>满足以下条件，则属于失败请求扣费异常信号：</p>
-          <ul>
-            <li>HTTP 状态码 ≥ 400，或上游返回 503 / 502 / 504 / timeout</li>
-            <li>没有有效输出（completion_tokens = 0 或缺失）</li>
-            <li>10 秒后 raw quota 仍然减少</li>
-          </ul>
-          <p>这种情况属于失败请求扣费异常信号。</p>
-          <p><strong>说明：</strong>10 秒等待是为了区分"临时预扣"和"最终扣费"。如果 10 秒后额度恢复，则更可能是预扣已返还。</p>
+          <p>请求看起来成功了，也给了账单明细，但你没有拿到有效内容。简单说，就是有账单，没产物。</p>
         </div>
       </div>
     </div>
 
     <div class="faq-card">
       <button class="faq-question" onclick="toggle(this)">
-        <span>什么是空回复扣费？</span>
+        <span>Q: 什么叫用量虚高？</span>
         <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
       </button>
       <div class="faq-answer">
         <div class="faq-answer-inner">
-          <p>满足以下条件，则属于空回复扣费异常信号：</p>
-          <ul>
-            <li>HTTP 状态码为 200</li>
-            <li>可见输出为空（visible output 为空）</li>
-            <li>completion_tokens = 0 或缺失</li>
-            <li>没有 tool call / image / audio / search 等有效产物</li>
-            <li>10 秒后 raw quota 仍然减少</li>
-          </ul>
-          <p>这种情况属于空回复扣费异常信号。</p>
+          <p>你明明只发了一点内容，它却报出明显偏大的用量，这就是风险。API Doctor 只能提示疑似虚标，不能直接证明造假。</p>
         </div>
       </div>
     </div>
 
     <div class="faq-card">
       <button class="faq-question" onclick="toggle(this)">
-        <span>为什么 usage 完整性重要？</span>
+        <span>Q: 什么叫流式丢账？</span>
         <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
       </button>
       <div class="faq-answer">
         <div class="faq-answer-inner">
-          <p>如果响应不返回 <code>prompt_tokens</code>、<code>completion_tokens</code>、<code>total_tokens</code> 或缓存字段，用户很难核对理论成本和实际扣费是否匹配。</p>
-          <p>usage 完整性检查会验证响应中是否包含：</p>
-          <ul>
-            <li><code>prompt_tokens</code>（输入 token 数）</li>
-            <li><code>completion_tokens</code> / <code>output_tokens</code>（输出 token 数）</li>
-            <li><code>total_tokens</code>（总 token 数）</li>
-            <li><code>prompt_tokens_details.cached_tokens</code>（缓存命中数）</li>
-          </ul>
-          <p>如果这些字段缺失或不全，AI API Doctor 会标记为"usage 不完整"，建议联系站长核对。</p>
+          <p>很多编程工具是一边生成一边返回内容。正常情况下，最后也应该给这次请求的账单明细。如果普通请求有账单，流式请求没账单，就叫流式丢账。</p>
         </div>
       </div>
     </div>
 
     <div class="faq-card">
       <button class="faq-question" onclick="toggle(this)">
-        <span>cached_tokens 是什么？</span>
+        <span>Q: 什么叫缓存没透？</span>
         <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
       </button>
       <div class="faq-answer">
         <div class="faq-answer-inner">
-          <p><code>cached_tokens</code>（或 <code>cache_read_input_tokens</code>）表示本次请求中有多少输入 token 命中了缓存。</p>
-          <p>命中缓存通常意味着：</p>
-          <ul>
-            <li>更低的延迟（从缓存读取而非重新计算）</li>
-            <li>更低的输入成本（部分服务商对缓存读取收取折扣价格）</li>
-          </ul>
-          <p>不同服务商对缓存字段的支持和折扣规则不同，具体计费以服务商公示为准。</p>
+          <p>重复的大段内容本来可能走缓存，成本会更低。如果检测时看不到缓存抵扣，就说明这个中转站可能没把缓存明细透出来。</p>
         </div>
       </div>
     </div>
 
     <div class="faq-card">
       <button class="faq-question" onclick="toggle(this)">
-        <span>模型表现检测是什么？</span>
+        <span>Q: 什么叫模型缩水风险？</span>
         <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
       </button>
       <div class="faq-answer">
         <div class="faq-answer-inner">
-          <p>模型表现检测是一个轻量的模型能力测试，包含 5 个维度：</p>
-          <ul>
-            <li>指令遵守</li>
-            <li>基础推理</li>
-            <li>数字陷阱（如 9.11 和 9.9 哪个大）</li>
-            <li>代码理解</li>
-            <li>上下文保持</li>
-          </ul>
-          <p>它不是官方 IQ 测试，也不能证明模型真假，只用于发现明显降智或能力异常。</p>
-          <p>结果仅作为模型表现分的一部分，不作为唯一判断标准。</p>
+          <p>你选的是高级模型，但它的基础表现、格式遵守、返回结构明显不像这个档位。API Doctor 不说它一定偷换模型，只提示模型缩水风险。</p>
         </div>
       </div>
     </div>
 
     <div class="faq-card">
       <button class="faq-question" onclick="toggle(this)">
-        <span>网页版和 Chrome 插件有什么区别？</span>
+        <span>Q: 网页能不能看真实扣费？</span>
         <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
       </button>
       <div class="faq-answer">
         <div class="faq-answer-inner">
-          <p><strong>网页版：</strong></p>
-          <ul>
-            <li>适合快速验货</li>
-            <li>不需要输入 API Key 在网站上</li>
-            <li>支持手动报告模式，可填写 raw quota 数据生成报告</li>
-            <li>适合手机分享和客服沟通</li>
-          </ul>
-          <p><strong>Chrome 插件（审核中）：</strong></p>
-          <ul>
-            <li>可自动读取 New API / One API raw quota，无需手动填写</li>
-            <li>适合桌面端精确检测</li>
-            <li>API Key 保存在浏览器本地，不上传到第三方</li>
-            <li>审核通过后会放出下载链接</li>
-          </ul>
+          <p>不能。网页不能读取中转站控制台的原始额度，也不能跨站读取余额。真实扣费以后由 Chrome 插件检测。</p>
         </div>
-      </div>
-    </div>
-
-    <div class="faq-card">
-      <button class="faq-question" onclick="toggle(this)">
-        <span>AI API Doctor 会推荐中转站吗？</span>
-        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
-      </button>
-      <div class="faq-answer">
-        <div class="faq-answer-inner">
-          <p>不会。</p>
-          <p>AI API Doctor 不推荐、不排名任何中转站。</p>
-          <p>报告只展示本次测试中的可复现信号，不证明服务商主观故意。</p>
-        </div>
-      </div>
-    </div>
-
-    <div class="faq-card">
-      <button class="faq-question" onclick="toggle(this)">
-        <span>报告是否证明服务商故意多扣费？</span>
-        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
-      </button>
-      <div class="faq-answer">
-        <div class="faq-answer-inner">
-          <p><strong>不能。</strong></p>
-          <p>AI API Doctor 可以帮助排查：</p>
-          <ul>
-            <li>响应是否返回完整的 usage 信息</li>
-            <li>失败请求是否最终扣费</li>
-            <li>空回复是否扣费</li>
-            <li>缓存是否正常计费</li>
-          </ul>
-          <p>但最终余额、扣费和账单由服务商后台控制，AI API Doctor 无法直接访问所有服务商的真实账单系统。</p>
-          <p>报告的结论应理解为"用量信号核对"，不是法律意义上的财务审计。</p>
-          <p>AI API Doctor 不推荐、不排名任何中转站。报告只展示本次测试中的可复现信号，不证明服务商主观故意，也不证明模型真假。</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Section 1: 基础介绍 -->
-    <div class="faq-group-title">基础介绍</div>
-
-    <div class="faq-card">
-      <button class="faq-question" onclick="toggle(this)">
-        <span>AI API Doctor 是什么？</span>
-        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
-      </button>
-      <div class="faq-answer">
-        <div class="faq-answer-inner">
-          <p>AI API Doctor 是一个面向 OpenAI-compatible API 用户的本地优先诊断工具。</p>
-          <p>它可以帮助你检查 API Key、Base URL、模型权限、分组配置、模型列表接口、对话接口、Token 用量返回和客户端配置是否正常。</p>
-          <p>它适合以下场景：</p>
-          <ul>
-            <li>API Key 明明填了，但客户端无法使用</li>
-            <li>Base URL 不确定是否正确</li>
-            <li>模型列表能看到，但实际请求失败</li>
-            <li>报错 401 / 403 / 404 / 429</li>
-            <li>中转站提示“无权访问某个分组”</li>
-            <li>想核对本次请求是否返回 usage</li>
-            <li>想导出 Cline / Continue / Cherry Studio 配置</li>
-          </ul>
-          <p>AI API Doctor 不是模型真假鉴定工具，也不是法律意义上的审计工具。</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Section 2: 隐私与 API Key 安全 -->
-    <div class="faq-group-title">隐私与 API Key 安全</div>
-
-    <div class="faq-card">
-      <button class="faq-question" onclick="toggle(this)">
-        <span>AI API Doctor 会上传或保存我的 API Key 吗？</span>
-        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
-      </button>
-      <div class="faq-answer">
-        <div class="faq-answer-inner">
-          <p>Chrome 扩展版默认将 API Key 保存在你的浏览器本地 <code>chrome.storage.local</code> 中。</p>
-          <p>AI API Doctor 不会主动把你的 API Key 上传到任何第三方服务器。</p>
-          <p>诊断请求只会发送到你当前选择的 Base URL。例如你选择了某个自定义中转站，诊断请求就会发送到该中转站的 API 地址。</p>
-          <p><strong>建议你使用专门用于测试的 API Key，不要使用生产环境主 Key。</strong></p>
-        </div>
-      </div>
-    </div>
-
-    <div class="faq-card">
-      <button class="faq-question" onclick="toggle(this)">
-        <span>诊断会消耗 API 额度吗？</span>
-        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
-      </button>
-      <div class="faq-answer">
-        <div class="faq-answer-inner">
-          <p>会。</p>
-          <p>AI API Doctor 会发送少量真实 API 请求，用来确认你的 Base URL、API Key、模型权限和 chat/completions 是否能正常工作。</p>
-          <p>基础诊断通常只需要 1 到 3 次请求，消耗较少。具体消耗取决于你的服务商计费方式、模型价格和是否开启更多诊断项。</p>
-          <p>为了安全，建议你：</p>
-          <ul>
-            <li>使用测试专用 Key</li>
-            <li>设置较低额度</li>
-            <li>不要使用生产主 Key</li>
-            <li>诊断后对比服务商后台账单</li>
-          </ul>
-        </div>
-      </div>
-    </div>
-
-    <div class="faq-card">
-      <button class="faq-question" onclick="toggle(this)">
-        <span>我应该使用生产 API Key 还是测试 API Key？</span>
-        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
-      </button>
-      <div class="faq-answer">
-        <div class="faq-answer-inner">
-          <p>建议使用测试专用 API Key。</p>
-          <p>原因是：</p>
-          <ul>
-            <li>诊断会发送真实请求</li>
-            <li>可能产生少量 token 消耗</li>
-            <li>测试过程中可能暴露错误信息</li>
-            <li>测试 Key 更容易控制额度和风险</li>
-          </ul>
-          <p>如果你的服务商支持额度限制、分组限制或临时 Key，建议单独创建一个测试 Key。</p>
-        </div>
-      </div>
-    </div>
-
-    <div class="faq-card">
-      <button class="faq-question" onclick="toggle(this)">
-        <span>诊断报告可以发给站长或客服吗？</span>
-        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
-      </button>
-      <div class="faq-answer">
-        <div class="faq-answer-inner">
-          <p>可以。</p>
-          <p>AI API Doctor 生成的诊断报告会自动隐藏完整 API Key，只保留脱敏格式，例如：</p>
-          <p><code>sk-****abcd</code></p>
-          <p>你可以把报告发给站长或客服，用来说明：</p>
-          <ul>
-            <li>Base URL</li>
-            <li>模型 ID</li>
-            <li>错误码</li>
-            <li>服务商返回信息</li>
-            <li>失败步骤</li>
-            <li>usage 情况</li>
-          </ul>
-          <p><strong>但请注意：不要手动把完整 API Key、账户密码或余额截图发给陌生人。</strong></p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Section 3: 诊断消耗与 Token 用量 -->
-    <div class="faq-group-title">诊断消耗与 Token 用量</div>
-
-    <div class="faq-card">
-      <button class="faq-question" onclick="toggle(this)">
-        <span>AI API Doctor 能判断服务商是否多扣费吗？</span>
-        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
-      </button>
-      <div class="faq-answer">
-        <div class="faq-answer-inner">
-          <p>AI API Doctor 可以帮助你核对本次请求的 usage 信息，但不能证明某个服务商故意多扣费。</p>
-          <p>它能检查：</p>
-          <ul>
-            <li>响应里是否返回 usage 字段</li>
-            <li>prompt_tokens 是否存在</li>
-            <li>completion_tokens 是否存在</li>
-            <li>total_tokens 是否异常偏高</li>
-            <li>短请求是否出现明显异常的 token 消耗</li>
-          </ul>
-          <p>但最终余额、扣费和账单由服务商后台控制。AI API Doctor 无法直接读取所有服务商的真实账单系统。</p>
-          <p>如果你怀疑消耗异常，建议：</p>
-          <ul>
-            <li>使用短 prompt 测试</li>
-            <li>记录诊断报告</li>
-            <li>对比服务商后台余额变化</li>
-            <li>联系站长或客服核对</li>
-          </ul>
-          <p>AI API Doctor 的结论应理解为"用量信号核对"，不是法律意义上的财务审计。</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Section 4: 常见错误码 -->
-    <div class="faq-group-title">常见错误码</div>
-
-    <div class="faq-card">
-      <button class="faq-question" onclick="toggle(this)">
-        <span>为什么 /v1/models 失败，但 API 仍然可能可用？</span>
-        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
-      </button>
-      <div class="faq-answer">
-        <div class="faq-answer-inner">
-          <p>部分中转站并不开放 <code>/v1/models</code>，或者模型列表接口不完全兼容 OpenAI 标准格式。</p>
-          <p>所以 <code>/v1/models</code> 失败不一定代表 API 不可用。</p>
-          <p>你可以手动输入模型 ID，例如：</p>
-          <ul>
-            <li><code>gpt-4o</code></li>
-            <li><code>deepseek-chat</code></li>
-            <li><code>claude-3-5-sonnet</code></li>
-            <li><code>gemini-2.5-pro</code></li>
-          </ul>
-          <p>然后运行 chat/completions 诊断。</p>
-          <p>真正更有参考价值的是：指定模型能否完成真实请求。</p>
-        </div>
-      </div>
-    </div>
-
-    <div class="faq-card">
-      <button class="faq-question" onclick="toggle(this)">
-        <span>什么是"无权访问 GPT 官方分组"？</span>
-        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
-      </button>
-      <div class="faq-answer">
-        <div class="faq-answer-inner">
-          <p>这类错误通常表示：</p>
-          <ul>
-            <li>Base URL 是可达的</li>
-            <li>API Key 可能也是有效的</li>
-            <li>但当前 Key 没有访问某个模型或模型分组的权限</li>
-          </ul>
-          <p>常见原因包括：</p>
-          <ul>
-            <li>Key 没有加入正确分组</li>
-            <li>Key 所属分组没有包含当前模型</li>
-            <li>模型没有绑定可用渠道</li>
-            <li>渠道不支持当前模型</li>
-            <li>模型别名配置错误</li>
-          </ul>
-          <p>你可以检查中转站后台：</p>
-          <ul>
-            <li>Key 属于哪个分组</li>
-            <li>分组是否包含当前模型</li>
-            <li>模型是否绑定了可用渠道</li>
-            <li>渠道是否支持该模型</li>
-            <li>模型别名是否正确</li>
-          </ul>
-          <p>这类错误不一定是 Key 错了，也不一定是 Base URL 错了。</p>
-        </div>
-      </div>
-    </div>
-
-    <div class="faq-card">
-      <button class="faq-question" onclick="toggle(this)">
-        <span>401、403、404、429 分别代表什么？</span>
-        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
-      </button>
-      <div class="faq-answer">
-        <div class="faq-answer-inner">
-          <p><strong>401：</strong>API Key 错误、为空、过期，或者复制时多了空格。</p>
-          <p><strong>403：</strong>权限不足。可能是 Key 没有模型权限、分组权限不足、IP 白名单限制，或者模型未加入分组。</p>
-          <p><strong>404：</strong>接口地址可能错误。常见情况是 Base URL 少了 <code>/v1</code>、多了 <code>/v1</code>，或者填成了官网地址。</p>
-          <p><strong>429：</strong>请求过快、并发超限、额度耗尽，或者服务商限流。</p>
-          <p><strong>HTML 响应：</strong>服务端返回了网页，而不是 API JSON。可能是填成了网站首页、登录页、Cloudflare 页面，或者服务商不兼容该接口。</p>
-          <p><strong>No usage：</strong>响应中没有返回 usage 字段，因此无法从本次响应核对 Token 消耗。</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Section 4b: 网页版与工具使用 -->
-    <div class="faq-group-title">网页版与工具使用</div>
-
-    <div class="faq-card">
-      <button class="faq-question" onclick="toggle(this)">
-        <span>网页版为什么有时不能直接检测 Base URL？</span>
-        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
-      </button>
-      <div class="faq-answer">
-        <div class="faq-answer-inner">
-          <p>浏览器的跨域（CORS）安全策略会阻止网页直接请求第三方 API 的响应。当你的 Base URL 与网页的域名不同时，浏览器会拒绝读取响应内容。</p>
-          <p>这不代表 API 不可用。常见解决方法：</p>
-          <ul>
-            <li>使用 Chrome 插件读取 New API / One API raw quota</li>
-            <li>切换到手动报告模式，填写 raw quota 数据生成报告</li>
-            <li>联系站长允许跨域调试接口</li>
-          </ul>
-        </div>
-      </div>
-    </div>
-
-    <div class="faq-card">
-      <button class="faq-question" onclick="toggle(this)">
-        <span>缓存命中检测会消耗额度吗？</span>
-        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
-      </button>
-      <div class="faq-answer">
-        <div class="faq-answer-inner">
-          <p>会。缓存命中检测会发送两次较长的测试请求（1200-1500 tokens 的固定文本），用于观察第二次请求是否命中缓存。</p>
-          <p>建议只在需要核对缓存计费时开启。开启前请确认：</p>
-          <ul>
-            <li>使用测试专用 API Key</li>
-            <li>设置了较低额度限制</li>
-            <li>已了解该服务商的缓存计费规则</li>
-          </ul>
-        </div>
-      </div>
-    </div>
-
-    <div class="faq-card">
-      <button class="faq-question" onclick="toggle(this)">
-        <span>cached_tokens 是什么？</span>
-        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
-      </button>
-      <div class="faq-answer">
-        <div class="faq-answer-inner">
-          <p><code>cached_tokens</code>（或 <code>cache_read_input_tokens</code>）表示本次请求中有多少输入 token 命中了缓存。</p>
-          <p>命中缓存通常意味着：</p>
-          <ul>
-            <li>更低的延迟（从缓存读取而非重新计算）</li>
-            <li>更低的输入成本（部分服务商对缓存读取收取折扣价格）</li>
-          </ul>
-          <p>不同服务商对缓存字段的支持和折扣规则不同，具体计费以服务商公示为准。</p>
-        </div>
-      </div>
-    </div>
-
-    <div class="faq-card">
-      <button class="faq-question" onclick="toggle(this)">
-        <span>usage 完整性为什么重要？</span>
-        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
-      </button>
-      <div class="faq-answer">
-        <div class="faq-answer-inner">
-          <p>如果响应不返回 <code>prompt_tokens</code>、<code>completion_tokens</code>、<code>total_tokens</code> 或缓存字段，用户很难核对理论成本和实际扣费是否匹配。</p>
-          <p>usage 完整性检查会验证响应中是否包含：</p>
-          <ul>
-            <li><code>prompt_tokens</code>（输入 token 数）</li>
-            <li><code>completion_tokens</code> / <code>output_tokens</code>（输出 token 数）</li>
-            <li><code>total_tokens</code>（总 token 数）</li>
-            <li><code>prompt_tokens_details.cached_tokens</code>（缓存命中数）</li>
-          </ul>
-          <p>如果这些字段缺失或不全，AI API Doctor 会标记为"usage 不完整"，建议联系站长核对。</p>
-        </div>
-      </div>
-    </div>
-
-    <div class="faq-card">
-      <button class="faq-question" onclick="toggle(this)">
-        <span>这个报告能证明服务商故意多扣费吗？</span>
-        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
-      </button>
-      <div class="faq-answer">
-        <div class="faq-answer-inner">
-          <p><strong>不能。</strong>报告只展示可复现的技术信号，适合用于和站长或客服沟通排查。</p>
-          <p>AI API Doctor 可以帮助排查：</p>
-          <ul>
-            <li>响应是否返回完整的 usage 信息</li>
-            <li>失败请求是否最终扣费</li>
-            <li>空回复是否扣费</li>
-            <li>缓存是否正常计费</li>
-          </ul>
-          <p>但最终余额、扣费和账单由服务商后台控制，AI API Doctor 无法直接访问所有服务商的真实账单系统。报告的结论应理解为"用量信号核对"，不是法律意义上的财务审计。</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Section 5: 模型鉴定与检测边界 -->
-    <div class="faq-group-title">模型鉴定与检测边界</div>
-
-    <div class="faq-card">
-      <button class="faq-question" onclick="toggle(this)">
-        <span>AI API Doctor 能判断模型真假吗？</span>
-        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
-      </button>
-      <div class="faq-answer">
-        <div class="faq-answer-inner">
-          <p>当前版本不做模型真假鉴定。</p>
-          <p>AI API Doctor 关注的是：</p>
-          <ul>
-            <li>配置是否正确</li>
-            <li>Key 是否可用</li>
-            <li>模型权限是否正常</li>
-            <li>分组配置是否正确</li>
-            <li>真实请求是否能完成</li>
-            <li>响应里是否返回 usage</li>
-            <li>客户端配置是否能导出</li>
-          </ul>
-          <p>它不会给出"这个一定是真模型"或"这个一定是假模型"的结论。</p>
-          <p>模型来源、渠道指纹、签名机制和真实模型鉴定属于更复杂的检测范围，不作为当前版本的判断结论。</p>
-        </div>
-      </div>
-    </div>
-
-    <div class="faq-card">
-      <button class="faq-question" onclick="toggle(this)">
-        <span>为什么有些检测网站说不是真模型，但实际使用效果正常？</span>
-        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
-      </button>
-      <div class="faq-answer">
-        <div class="faq-answer-inner">
-          <p>不同检测工具的判断依据不同。</p>
-          <p>部分模型鉴定工具会依赖签名、协议细节、响应指纹、身份回答、多轮测试题或特定行为特征。如果中转站对协议做了兼容处理、签名屏蔽、渠道保护、响应包装或安全策略调整，某些指纹型检测可能出现误判。</p>
-          <p>这并不代表所有检测工具都不准确，也不代表某个模型一定真实或一定不真实。</p>
-          <p>AI API Doctor 不根据单一指纹判断模型真假，而是关注实际使用中的几个问题：</p>
-          <ul>
-            <li>这个 Base URL 能不能连通</li>
-            <li>这个 API Key 有没有权限</li>
-            <li>这个模型 ID 能不能完成真实请求</li>
-            <li>response.usage 是否返回</li>
-            <li>Token 用量是否明显异常</li>
-            <li>客户端配置能不能正常工作</li>
-          </ul>
-          <p>如果你需要判断模型来源、官方原版渠道或签名指纹，请结合多个检测方法、实际使用效果和服务商说明综合判断。</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Comparison Table (standalone section, not accordion) -->
-    <div class="comparison-section">
-      <h2>AI API Doctor 与模型鉴定网站的对比</h2>
-      <div class="comparison-table-wrap">
-        <table class="comparison-table">
-          <thead>
-            <tr>
-              <th>对比项</th>
-              <th class="col-doctor">AI API Doctor</th>
-              <th class="col-other">模型鉴定网站</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>核心目标</td>
-              <td class="col-doctor">配置诊断、用量核对、客户端配置</td>
-              <td class="col-other">模型来源、渠道指纹、身份一致性</td>
-            </tr>
-            <tr>
-              <td>是否判断真假</td>
-              <td class="col-doctor">不做真假定性</td>
-              <td class="col-other">可能给出真假判断</td>
-            </tr>
-            <tr>
-              <td>主要依据</td>
-              <td class="col-doctor">真实请求、错误码、usage、模型权限</td>
-              <td class="col-other">指纹、签名、协议结构、行为测试</td>
-            </tr>
-            <tr>
-              <td>适合场景</td>
-              <td class="col-doctor">配置排错、站长客服、客户端接入</td>
-              <td class="col-other">购买前模型来源参考</td>
-            </tr>
-            <tr>
-              <td>风险边界</td>
-              <td class="col-doctor">更克制，避免误判定性</td>
-              <td class="col-other">容易因协议包装或指纹屏蔽产生争议</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <div class="comparison-note">
-        两类工具可以互补。AI API Doctor 不根据单一指纹判断模型真假，而是关注 API 在真实使用场景中的可用性、权限、用量和配置问题。
-      </div>
-    </div>
-
-    <!-- Section 6: 中立声明与默认 Provider -->
-    <div class="faq-group-title">中立声明</div>
-
-    <div class="faq-card">
-      <button class="faq-question" onclick="toggle(this)">
-        <span>AI API Doctor 推荐中转站吗？</span>
-        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
-      </button>
-      <div class="faq-answer">
-        <div class="faq-answer-inner">
-          <p>不会。AI API Doctor 是中立检测工具，不推荐、不排名任何中转站。</p>
-          <p>报告只展示本次测试中的可复现信号，不证明服务商主观故意。</p>
-        </div>
-      </div>
-    </div>
-
-    <div class="faq-card">
-      <button class="faq-question" onclick="toggle(this)">
-        <span>默认内置 Provider 和 AI API Doctor 是什么关系？</span>
-        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
-      </button>
-      <div class="faq-answer">
-        <div class="faq-answer-inner">
-          <p>AI API Doctor 是中立检测工具，支持任意 OpenAI-compatible API 服务商，诊断逻辑对所有 Provider 一致。</p>
-          <p>界面中使用「默认内置」标注，不使用「推荐」「最佳中转」等措辞。</p>
-        </div>
-      </div>
-    </div>
-
-    <div class="faq-card">
-      <button class="faq-question" onclick="toggle(this)">
-        <span>为什么要讲预扣费？</span>
-        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
-      </button>
-      <div class="faq-answer">
-        <div class="faq-answer-inner">
-          <p>很多 AI API 服务会在请求开始时预扣额度，结束后再结算返还。</p>
-          <p>如果失败请求、空回复、上游错误等场景处理不好，就可能出现用户难以察觉的扣费异常。</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Section 7: 开源与诊断报告 -->
-    <div class="faq-group-title">开源与诊断报告</div>
-
-    <div class="faq-card">
-      <button class="faq-question" onclick="toggle(this)">
-        <span>AI API Doctor 是否开源？</span>
-        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
-      </button>
-      <div class="faq-answer">
-        <div class="faq-answer-inner">
-          <p>插件端计划开源，方便用户检查 API Key 的存储方式、请求逻辑和诊断过程。</p>
-          <p>API Key 默认保存在浏览器本地，不会主动上传到任何第三方服务器。</p>
-          <p>官网、品牌、服务端统计和商业服务可能不完全开源。</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- 诊断报告样例 -->
-    <div class="report-section">
-      <h2>诊断报告样例</h2>
-      <p>AI API Doctor 生成的报告适合发给站长或客服排查问题。报告会自动隐藏完整 API Key。</p>
-      <div class="report-block"><span class="report-title">AI API Doctor Report</span>
-<span class="report-label">────────────────────────────────</span>
-<span class="report-label">Provider:</span> <span class="report-value">(已脱敏)</span>
-<span class="report-label">Base URL:</span> https://api.example.com/v1
-<span class="report-label">API Key:</span> sk-****abcd
-<span class="report-label">Model:</span> claude-opus-4.7
-<span class="report-label">Time:</span> 2026-05-11 10:30
-
-<span class="report-label">Result:</span>
-  <span class="report-success">5 / 7 checks passed</span>
-
-<span class="report-label">Failed Step:</span>
-  <span class="report-fail">Chat Completion</span>
-  HTTP Status: 403
-  <span class="report-label">Provider:</span> 无权访问 GPT 官方分组
-  <span class="report-label">Suggestion:</span> 请检查 Key 分组、模型分组和渠道权限。
-
-<span class="report-label">────────────────────────────────</span>
-<span class="report-label">Note:</span> This report does not prove intentional overbilling.
-  It only shows configuration and usage signals from this test request.</div>
-    </div>
-
-    <!-- 项目发起者 -->
-    <div class="initiator-section">
-      <h2>关于项目发起者</h2>
-      <p>AI API Doctor 由 <span class="initiator-handle">@norike0718</span> 发起并公开构建。</p>
-      <p>作者是一名长期构建 SaaS 和 AI 工具的独立开发者，关注内容工作流、AI API 配置、自动化生产线和开发者工具体验。</p>
-      <p>AI API Doctor 的目标不是给中转站做"真假审判"，而是帮助用户在真实使用场景中诊断 API Key、Base URL、模型权限、Token 用量和客户端配置问题。</p>
-      <p>项目会尽量保持诊断逻辑透明、边界清晰，并优先避免误伤正常服务商。</p>
-    </div>
-
-    <!-- Section 8: 模型智商检测 -->
-    <div class="faq-group-title">模型智商检测</div>
-
-    <div class="faq-card">
-      <button class="faq-question" onclick="toggle(this)">
-        <span>模型智商检测是什么意思？</span>
-        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
-      </button>
-      <div class="faq-answer">
-        <div class="faq-answer-inner">
-          <p>它是一个轻量的模型表现测试，包含指令遵守、基础推理、数字陷阱、代码理解和上下文保持。</p>
-          <p>它不是官方 IQ，也不能证明模型真假，只用于发现明显降智或能力异常。</p>
-          <p>开启方式：在验货台高级设置中勾选"加测模型智商 / 降智检测"。</p>
-        </div>
-      </div>
-    </div>
-
-    <div class="faq-card">
-      <button class="faq-question" onclick="toggle(this)">
-        <span>为什么 9.11 和 9.9 这种题有争议？</span>
-        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
-      </button>
-      <div class="faq-answer">
-        <div class="faq-answer-inner">
-          <p>这类题容易引发讨论，也能暴露部分模型的数字推理问题。</p>
-          <p>但单题不能代表模型整体能力，所以 AI API Doctor 会把它作为模型表现分的一部分，而不是唯一判断标准。</p>
-          <p>模型表现分由 5 个测试综合计算：指令遵守、基础推理、数字陷阱、代码理解和上下文保持。</p>
-        </div>
-      </div>
-    </div>
-
-    <div class="faq-card">
-      <button class="faq-question" onclick="toggle(this)">
-        <span>需要公开中转站名称吗？</span>
-        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
-      </button>
-      <div class="faq-answer">
-        <div class="faq-answer-inner">
-          <p>不需要。</p>
-          <p>AI API Doctor 是中立工具，不要求你公开服务商名称，也不推荐或排名任何中转站。</p>
-          <p>晒分时只需要报告验货分、模型表现分和一句话发现，不需要透露任何关于服务商的信息。</p>
-        </div>
-      </div>
-    </div>
-
-    <div class="faq-card">
-      <button class="faq-question" onclick="toggle(this)">
-        <span>这是要求好评或安装插件吗？</span>
-        <span class="faq-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
-      </button>
-      <div class="faq-answer">
-        <div class="faq-answer-inner">
-          <p>不是。</p>
-          <p>你可以只使用网页版，不需要安装插件，不需要给 Chrome 商店好评，也不需要强制在社交媒体分享。</p>
-          <p>只需要在需要时生成中转站验货单，有需要时贴出一行晒分即可。</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- CTA Section -->
-    <div class="cta-section">
-      <h2>开始诊断</h2>
-      <p>下载 Chrome 扩展，用自己的 API Key 快速测试配置是否正常。</p>
-      <div class="cta-buttons">
-        <a href="https://aiapidoctor.com" class="cta-btn cta-btn-primary">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          下载 Chrome 扩展
-        </a>
-        <a href="https://aiapidoctor.com/errors/403-model-group" class="cta-btn cta-btn-secondary">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-          查看 403 分组错误解决方法
-        </a>
-        <a href="https://aiapidoctor.com/guides/token-usage-audit" class="cta-btn cta-btn-secondary">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-          查看 Token 用量核对说明
-        </a>
       </div>
     </div>
 
@@ -1471,14 +479,18 @@
 
   <!-- Footer -->
   <footer class="site-footer">
-    <div class="site-footer__links">
+    <div>
       <a href="/">首页</a>
+      &middot;
       <a href="/faq/">FAQ</a>
+      &middot;
+      <a href="/guides/billing-anomaly/">原理</a>
+      &middot;
       <a href="/privacy/">隐私</a>
+      &middot;
       <a href="/support/">支持</a>
-      <a href="/guides/billing-anomaly/">检测原理</a>
     </div>
-    <p style="color:#9ca3af; font-size:12px; margin-top:8px">© 2026 AI API Doctor &middot; aiapidoctor.com</p>
+    <p style="color:#9ca3af; font-size:12px; margin-top:8px">&copy; 2026 AI API Doctor &middot; aiapidoctor.com</p>
   </footer>
 
   <script>

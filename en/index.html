@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AI API Doctor: Relay API Black-box Check Tool</title>
-  <meta name="description" content="Relay API Black-box Check. Do not trust the dashboard. Check it. Detect empty runs, missing usage, cache waste, and model shrinkage. Generate a shareable A/B/C/D/F/U scorecard. API keys stay local." />
+  <title>API Doctor: AI API Gateway Trust Scanner</title>
+  <meta name="description" content="AI API Gateway Trust Scanner. Check whether an AI API gateway has hidden issues before you top up. Generate a shareable scorecard." />
   <meta name="robots" content="index, follow" />
   <link rel="canonical" href="https://aiapidoctor.com/en/" />
   <link rel="alternate" hreflang="zh-CN" href="https://aiapidoctor.com/" />
@@ -14,8 +14,8 @@
   <link rel="icon" href="/assets/icons/icon-128.png">
   <link rel="stylesheet" href="/assets/site.css" />
   <meta property="og:type" content="website" />
-  <meta property="og:title" content="API Doctor: The Ultimate Relay API Mirror" />
-  <meta property="og:description" content="Test before you pay. Check for empty-run charges, model swaps, and usage disappearance. Uncover whether the relay provider is trustworthy. Generate a shareable scorecard." />
+  <meta property="og:title" content="API Doctor: AI API Gateway Trust Scanner" />
+  <meta property="og:description" content="Check whether an AI API gateway has hidden issues before you top up. Generate a shareable scorecard." />
   <meta property="og:url" content="https://aiapidoctor.com/en/" />
   <meta property="og:locale" content="en_US" />
   <script type="application/ld+json">
@@ -25,7 +25,7 @@
     "name": "AI API Doctor",
     "applicationCategory": "DeveloperApplication",
     "operatingSystem": "Web, Chrome",
-    "description": "Relay API Black-box check tool. Checks API connectivity, empty runs, usage integrity, cache waste, and model shrinkage. Generates shareable scorecards. API keys stay local.",
+    "description": "AI API Gateway Trust Scanner. Check for hidden issues before you top up. Generate a shareable scorecard. API keys stay local.",
     "url": "https://aiapidoctor.com/en/",
     "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
   }
@@ -54,7 +54,7 @@
       <a href="/en/privacy/">Privacy</a>
       <a href="/en/support/">Support</a>
       <span class="lang-switcher">
-        <a href="/" class="lang-switcher__link">中文</a>
+        <a href="/" class="lang-switcher__link">??</a>
         <span class="lang-switcher__sep">|</span>
         <span class="lang-switcher__current">English</span>
       </span>
@@ -68,8 +68,8 @@
   <!-- Hero -->
   <section class="tool-hero">
     <h1>API Doctor</h1>
-    <p class="tool-hero__tagline">The Ultimate Relay API Mirror</p>
-    <p class="tool-hero__desc">Test before you pay. Check for empty-run charges, model swaps, and usage disappearance. Uncover whether the relay provider is trustworthy. Generate a shareable scorecard.</p>
+    <p class="tool-hero__tagline">AI API Gateway Trust Scanner</p>
+    <p class="tool-hero__desc">Check whether an AI API gateway has hidden issues before you top up. Generate a shareable scorecard.</p>
     <div class="hero-badges">
       <span class="hero-badge hero-badge--green">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
@@ -93,10 +93,9 @@
       <!-- Card Header -->
       <div class="doctor-card__header">
         <span class="doctor-card__title">Start Check</span>
-        <button class="btn btn--link btn--sm" type="button" onclick="switchTab('manual')">Manual Report</button>
       </div>
 
-      <!-- ── LOCAL TEST ── -->
+      <!-- Form -->
       <div id="panel-local">
 
         <!-- Base URL -->
@@ -108,7 +107,7 @@
             placeholder="https://api.example.com/v1"
             oninput="Doctor.normalizeBaseUrl(this)"
           />
-          <div class="form-hint" id="base-url-hint" style="display:none;color:var(--warning)">Base URL seems to be missing <code>/v1</code> �?auto-corrected.</div>
+          <div class="form-hint" id="base-url-hint" style="display:none;color:var(--warning)">Base URL seems to be missing <code>/v1</code> - auto-corrected.</div>
         </div>
 
         <!-- API Key -->
@@ -127,42 +126,19 @@
         <!-- Model ID -->
         <div class="form-field">
           <label class="form-label" for="doctor-model">Model ID</label>
-          <div class="input-with-btn">
-            <input id="doctor-model" class="form-input" placeholder="Enter model name, e.g. gpt-5.5" />
-            <button class="btn btn--sm btn--secondary" type="button" id="read-models-btn" data-action="fetch-models" onclick="Doctor.readModelList()">Fetch Models</button>
-          </div>
-          <div class="form-hint">Don't know the model ID? Try "Fetch Models" first.</div>
-          <div id="model-fetch-results" style="display:none"></div>
+          <input id="doctor-model" class="form-input" placeholder="e.g. gpt-4o, claude-sonnet-4-20250514" />
         </div>
 
-        <!-- Interface -->
-        <div class="form-field">
-          <label class="form-label">Interface Type</label>
-          <div class="interface-toggle">
-            <button class="interface-btn active" data-type="OpenAI Chat" onclick="Doctor.setInterface('OpenAI Chat')">OpenAI Chat</button>
-            <button class="interface-btn" data-type="OpenAI Responses" onclick="Doctor.setInterface('OpenAI Responses')">OpenAI Responses</button>
-            <button class="interface-btn" data-type="Claude Messages" onclick="Doctor.setInterface('Claude Messages')">Claude Messages</button>
-          </div>
-          <input type="hidden" id="doctor-interface" value="OpenAI Chat" />
-        </div>
-
-        <!-- Mode + Cost row -->
-        <div class="mode-cost-row">
-          <div class="mode-selector">
-            <button class="mode-btn active" data-mode="quick" data-action="set-quick-check" onclick="Doctor.setMode('quick')">Quick Check</button>
-            <button class="mode-btn" data-mode="full" data-action="set-full-check" onclick="Doctor.setMode('full')">Full Check</button>
-          </div>
-          <div class="cost-hint" id="cost-hint">Quick Check: about 1 request, very low cost</div>
-        </div>
-
-        <!-- Actions �?primary CTA -->
+        <!-- Run Check Button -->
         <div class="tool-actions">
-          <button id="doctor-run-btn" class="btn btn--primary btn--run" data-action="run-check" onclick="Doctor.run()">
+          <button id="doctor-run-btn" class="btn btn--primary run-check-button" data-action="run-check" onclick="Doctor.run()">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-            Start Check
+            Run Check
           </button>
-          <button id="doctor-clear-btn" class="btn btn--secondary" data-action="clear-form" onclick="Doctor.clear()">Clear</button>
         </div>
+
+        <!-- Cost hint -->
+        <div class="cost-hint" id="cost-hint">Estimated cost is usually under $0.05</div>
 
         <!-- Collapsible: Paste connection info -->
         <div class="collapse-section">
@@ -175,7 +151,7 @@
               <textarea
                 id="doctor-conn-info"
                 class="form-textarea"
-                placeholder='Paste New API connection info, Base URL, API Key or cURL'
+                placeholder="Paste connection info, Base URL, API Key or cURL"
                 rows="2"
                 oninput="Doctor.onConnectionInfoInput(this)"
               ></textarea>
@@ -185,163 +161,13 @@
           </div>
         </div>
 
-        <!-- Collapsible: Report display options -->
-        <div class="collapse-section">
-          <button class="collapse-toggle" type="button" onclick="toggleCollapse('collapse-report', this)">
-            <svg class="collapse-toggle__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-            Report display options
-          </button>
-          <div class="collapse-panel" id="collapse-report">
-            <div class="form-field form-field--compact">
-              <label class="form-label">Provider Name <span class="form-label-opt">(optional)</span></label>
-              <input id="doctor-provider" class="form-input" placeholder="Provider name" />
-            </div>
-          </div>
-        </div>
-
-        <!-- Collapsible: Advanced options -->
-        <div class="collapse-section">
-          <button class="collapse-toggle" type="button" onclick="toggleCollapse('collapse-adv', this)">
-            <svg class="collapse-toggle__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-            Full Check &amp; Advanced Options
-          </button>
-          <div class="collapse-panel" id="collapse-adv">
-            <div class="form-field form-field--compact">
-              <label class="form-label">Model Expected Tier <span class="form-label-opt">(optional)</span></label>
-              <div class="tier-toggle">
-                <button class="tier-btn active" data-tier="uncertain" onclick="Doctor.setTier('uncertain')">Uncertain</button>
-                <button class="tier-btn" data-tier="light" onclick="Doctor.setTier('light')">Light</button>
-                <button class="tier-btn" data-tier="standard" onclick="Doctor.setTier('standard')">Standard</button>
-                <button class="tier-btn" data-tier="advanced" onclick="Doctor.setTier('advanced')">Advanced</button>
-              </div>
-              <input type="hidden" id="doctor-tier" value="uncertain" />
-            </div>
-
-            <div class="advanced-check-row">
-              <label class="advanced-check">
-                <input type="checkbox" id="cache-test-toggle" onchange="Doctor.toggleCache(this)" />
-                <span>Cache Hit Check</span>
-                <span class="form-hint" style="margin:0">Sends two longer test requests, may consume a small amount of credits.</span>
-              </label>
-            </div>
-
-            <div class="advanced-check-row">
-              <label class="advanced-check">
-                <input type="checkbox" id="sanity-test-toggle" onchange="Doctor.toggleSanity(this)" />
-                <span>Model Sanity Test</span>
-                <span class="form-hint" style="margin:0">5 extra lightweight tests for possible degradation detection.</span>
-              </label>
-            </div>
-
-            <div class="advanced-check-row">
-              <label class="advanced-check">
-                <input type="checkbox" id="price-test-toggle" onchange="Doctor.togglePrice(this)" />
-                <span>Price Audit</span>
-              </label>
-              <div class="price-row-4" style="margin-top:8px">
-                <div>
-                  <div class="form-label" style="font-size:11px">input / 1M</div>
-                  <input id="price-input" class="form-input" placeholder="0.5" type="number" step="0.001" />
-                </div>
-                <div>
-                  <div class="form-label" style="font-size:11px">output / 1M</div>
-                  <input id="price-output" class="form-input" placeholder="1.5" type="number" step="0.001" />
-                </div>
-                <div>
-                  <div class="form-label" style="font-size:11px">cached read / 1M</div>
-                  <input id="price-cached-read" class="form-input" placeholder="default" type="number" step="0.001" />
-                </div>
-                <div>
-                  <div class="form-label" style="font-size:11px">cached write / 1M</div>
-                  <input id="price-cached-write" class="form-input" placeholder="default" type="number" step="0.001" />
-                </div>
-                <div>
-                  <div class="form-label" style="font-size:11px">actual cost</div>
-                  <input id="price-actual" class="form-input" placeholder="USD" type="number" step="0.000001" />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
       </div><!-- /panel-local -->
-
-      <!-- ── MANUAL REPORT ── -->
-      <div id="panel-manual" style="display:none">
-
-        <div class="form-row">
-          <div class="form-field">
-            <label class="form-label" for="manual-provider">Provider Name <span class="form-label-opt">(optional)</span></label>
-            <input id="manual-provider" class="form-input" placeholder="Provider name" />
-          </div>
-          <div class="form-field">
-            <label class="form-label" for="manual-base-url">Base URL</label>
-            <input id="manual-base-url" class="form-input" placeholder="https://api.example.com/v1" />
-          </div>
-        </div>
-
-        <div class="form-field">
-            <label class="form-label" for="manual-model">Model ID</label>
-          <input id="manual-model" class="form-input" placeholder="Enter model name, e.g. gpt-5.5" />
-        </div>
-
-        <div class="form-row">
-          <div class="form-field">
-            <label class="form-label" for="manual-interface">Interface</label>
-            <select id="manual-interface" class="form-select">
-              <option>OpenAI Chat</option>
-              <option>OpenAI Responses</option>
-              <option>Claude Messages</option>
-            </select>
-          </div>
-          <div class="form-field">
-            <label class="form-label" for="manual-http-status">HTTP Status</label>
-            <input id="manual-http-status" class="form-input" placeholder="200" type="number" />
-          </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-field">
-            <label class="form-label" for="manual-prompt-tokens">prompt_tokens</label>
-            <input id="manual-prompt-tokens" class="form-input" placeholder="0" type="number" />
-          </div>
-          <div class="form-field">
-            <label class="form-label" for="manual-completion-tokens">completion_tokens</label>
-            <input id="manual-completion-tokens" class="form-input" placeholder="0" type="number" />
-          </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-field">
-            <label class="form-label" for="manual-total-tokens">total_tokens</label>
-            <input id="manual-total-tokens" class="form-input" placeholder="0" type="number" />
-          </div>
-          <div class="form-field">
-            <label class="form-label" for="manual-cached-tokens">cached_tokens</label>
-            <input id="manual-cached-tokens" class="form-input" placeholder="0" type="number" />
-          </div>
-        </div>
-
-        <div class="tool-actions">
-          <button class="btn btn--primary btn--run" onclick="ManualReport.generate()">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-            Generate Report
-          </button>
-          <button class="btn btn--secondary" onclick="ManualReport.clear()">Clear</button>
-        </div>
-
-        <div style="margin-top:10px">
-          <button class="btn btn--link btn--sm" type="button" onclick="switchTab('local')">Back to Auto Test</button>
-        </div>
-
-      </div><!-- /panel-manual -->
 
       <!-- Progress -->
       <div id="diag-progress"></div>
 
       <!-- Result -->
-      <!-- Result -->
-      <div id="result-card" style="margin-top:14px">
+      <div id="result-card" style="margin-top:14px"></div>
 
     </div><!-- /doctor-card -->
   </section>
@@ -349,9 +175,13 @@
   <!-- Bottom links -->
   <section class="tool-bottom-links">
     <a href="/en/faq/">FAQ</a>
-    <span>·</span>
+    <span>�</span>
     <a href="/en/guides/billing-anomaly/">How It Works</a>
-    <span>·</span>
+    <span>�</span>
+    <a href="/en/privacy/">Privacy</a>
+    <span>�</span>
+    <a href="/en/support/">Support</a>
+    <span>�</span>
     <span class="bottom-note">Chrome extension under review</span>
   </section>
 
@@ -375,7 +205,7 @@
 <script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.min.js"></script>
 <script src="/assets/test.js"></script>
 <script>
-/* ── Collapse toggle ── */
+/* ?? Collapse toggle ?? */
 function toggleCollapse(id, btn) {
   const panel = document.getElementById(id);
   if (!panel) return;
@@ -383,46 +213,16 @@ function toggleCollapse(id, btn) {
   if (btn) btn.classList.toggle('open', open);
 }
 
-/* ── Tab switcher ── */
-function switchTab(tab) {
-  document.getElementById('panel-local').style.display = tab === 'local' ? 'block' : 'none';
-  document.getElementById('panel-manual').style.display = tab === 'manual' ? 'block' : 'none';
-}
-
-/* ── Cost hint (inline) ── */
-function updateCostHint() {
-  const hint = document.getElementById('cost-hint');
-  if (!hint) return;
-  const mode = window.Doctor ? window.Doctor._mode : 'quick';
-  const cacheEnabled = document.getElementById('cache-test-toggle')?.checked || false;
-  const sanityEnabled = document.getElementById('sanity-test-toggle')?.checked || false;
-
-  if (mode === 'quick') {
-    if (cacheEnabled) {
-      hint.textContent = 'Quick Check: about 3 requests, cache hit test may consume a small amount of credits';
-    } else {
-      hint.textContent = 'Quick Check: about 1 request, very low cost';
-    }
-  } else {
-    let text = 'Full Check: about 3�? requests, may generate small costs';
-    if (cacheEnabled) text += ' · includes cache test';
-    if (sanityEnabled) text += ' · includes model test';
-    hint.textContent = text;
-  }
-}
-
-/* ── Manual Report ── */
-
+/* ?? Manual Report ?? */
 function esc(str) {
   if (!str && str !== 0) return '';
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-/* ── Init ── */
+/* ?? Init ?? */
 function safeInit() {
   if (window.Doctor) {
     window.Doctor.init();
-    window.Doctor.setMode('quick');
   }
 }
 if (document.readyState === 'loading') {
@@ -430,12 +230,10 @@ if (document.readyState === 'loading') {
 } else {
   safeInit();
 }
-if (typeof updateCostHint === 'function') updateCostHint();
-if (typeof updateCostEstimate === 'function') updateCostEstimate();
 </script>
 
 <!-- Chrome Extension corner link -->
-<a href="https://chromewebstore.google.com" target="_blank" rel="noopener" class="ext-float-link" title="Chrome Extension">
+<a href="/extension/" class="ext-float-link" title="Chrome Extension">
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
   Chrome Extension
 </a>
@@ -447,4 +245,3 @@ if (typeof updateCostEstimate === 'function') updateCostEstimate();
 
 </body>
 </html>
-

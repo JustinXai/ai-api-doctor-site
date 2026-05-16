@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AI API 空回复扣费和失败请求扣费怎么验货？｜AI API Doctor</title>
-  <meta name="description" content="解释 New API / One API 中转站中的预扣费、raw quota、失败请求扣费、空回复扣费，以及如何用 AI API Doctor 生成中转站黑盒验货报告。" />
+  <title>检测原理：API Doctor 怎么照出中转站有没有坑｜AI API Doctor</title>
+  <meta name="description" content="解释 AI API Doctor 如何通过直接发请求、看结果来判断中转站是否存在扣费异常、缓存透传、模型缩水等问题。" />
   <meta name="robots" content="index, follow" />
   <link rel="canonical" href="https://aiapidoctor.com/guides/billing-anomaly/" />
   <link rel="alternate" hreflang="zh-CN" href="https://aiapidoctor.com/guides/billing-anomaly/" />
@@ -15,31 +15,22 @@
 
   <!-- Open Graph -->
   <meta property="og:type" content="article" />
-    <meta property="og:title" content="AI API 空回复扣费和失败请求扣费怎么验货？｜AI API Doctor" />
-    <meta property="og:description" content="解释 New API / One API 中转站中的预扣费、raw quota、失败请求扣费、空回复扣费，以及如何用 AI API Doctor 生成中转站黑盒验货报告。" />
+    <meta property="og:title" content="检测原理：API Doctor 怎么照出中转站有没有坑" />
+    <meta property="og:description" content="解释 AI API Doctor 如何通过直接发请求、看结果来判断中转站是否存在扣费异常、缓存透传、模型缩水等问题。" />
   <meta property="og:url" content="https://aiapidoctor.com/guides/billing-anomaly/" />
 
-  <!-- JSON-LD: Article + HowTo + FAQPage -->
+  <!-- JSON-LD: Article -->
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
-    "@type": ["Article", "HowTo"],
-    "headline": "AI API 空回复扣费和失败请求扣费怎么验货？",
-    "description": "解释 New API / One API 中转站中的预扣费、raw quota、失败请求扣费、空回复扣费，以及如何用 AI API Doctor 生成中转站黑盒验货报告。",
+    "@type": "Article",
+    "headline": "检测原理：API Doctor 怎么照出中转站有没有坑",
+    "description": "解释 AI API Doctor 如何通过直接发请求、看结果来判断中转站是否存在扣费异常、缓存透传、模型缩水等问题。",
     "author": { "@type": "Organization", "name": "AI API Doctor" },
     "datePublished": "2026-05-13",
-    "dateModified": "2026-05-13",
+    "dateModified": "2026-05-16",
     "publisher": { "@type": "Organization", "name": "AI API Doctor", "url": "https://aiapidoctor.com" },
-    "url": "https://aiapidoctor.com/guides/billing-anomaly/",
-    "name": "如何检测 AI API 失败请求扣费",
-    "step": [
-      { "@type": "HowToStep", "name": "记录检测前 raw quota", "text": "在发送 API 请求之前，记录当时的 raw quota 数值。" },
-      { "@type": "HowToStep", "name": "发送测试请求", "text": "发送一个预期的失败请求或空回复请求，例如请求一个不存在的模型或触发 503 错误。" },
-      { "@type": "HowToStep", "name": "等待 10 秒", "text": "等待至少 10 秒，让中转站完成预扣费和最终结算。" },
-      { "@type": "HowToStep", "name": "记录 10 秒后 raw quota", "text": "等待 10 秒后，再次记录 raw quota 数值。" },
-      { "@type": "HowToStep", "name": "对比额度变化", "text": "用检测前 raw quota 减去 10 秒后 raw quota，得出最终变化量。若为正则表示扣费，若为 0 则表示未扣费。" }
-    ],
-    "mainEntityOfPage": { "@type": "WebPage", "@id": "https://aiapidoctor.com/guides/billing-anomaly/" }
+    "url": "https://aiapidoctor.com/guides/billing-anomaly/"
   }
   </script>
 </head>
@@ -77,10 +68,8 @@
 <!-- Hero -->
 <section class="hero" style="padding:56px 0 48px">
   <div class="container">
-    <h1 class="hero__title" style="font-size:clamp(22px,4vw,34px)">AI API 空回复扣费和失败请求扣费怎么验货？</h1>
-    <p class="hero__sub" style="font-size:15px">
-      可以通过读取 New API / One API 的 raw quota，在请求前、请求后 3 秒、请求后 10 秒分别记录原始额度，再对比失败请求或空回复是否导致最终额度减少。
-    </p>
+    <h1 class="hero__title" style="font-size:clamp(22px,4vw,34px)">检测原理：API Doctor 怎么照出中转站有没有坑</h1>
+    <p class="hero__sub" style="font-size:15px">直接发请求，看结果，照出有没有坑。</p>
   </div>
 </section>
 
@@ -90,106 +79,46 @@
     <div class="container container--narrow">
       <article class="article">
 
-        <h2>1. 什么是预扣费？</h2>
-        <p>部分 AI API 中转站会在请求开始时先按模型、上下文、max_tokens 或本地估算 token 预扣额度。请求结束后，再根据真实 usage 结算并返还差额。</p>
+        <h2>它怎么测？</h2>
+        <p>直接向你填写的中转站地址发请求，然后看返回结果有没有异常。</p>
 
-        <h2>2. 什么是 raw quota？</h2>
-        <p>raw quota 是后台记录的原始额度，通常比前台余额显示更细。前台余额可能只显示两位小数，而 raw quota 可以观察到更小的额度变化。</p>
+        <hr class="divider" />
 
-        <h2>3. 为什么前台余额看不出来？</h2>
-        <p>一次失败请求可能只变化 $0.0001 级别，前台显示 $0.25 可能完全看不出变化。raw quota 可以避免只靠页面余额判断。</p>
+        <h2>它看哪些东西？</h2>
+        <ul>
+          <li>有没有内容</li>
+          <li>有没有账单明细</li>
+          <li>用量有没有明显偏高</li>
+          <li>流式请求有没有丢账</li>
+          <li>缓存有没有透传</li>
+          <li>模型表现有没有缩水</li>
+        </ul>
+
+        <hr class="divider" />
+
+        <h2>它不看哪些东西？</h2>
+        <ul>
+          <li>不看宣传页</li>
+          <li>不看站长承诺</li>
+          <li>不读取你的后台余额</li>
+          <li>不保存你的 API Key</li>
+          <li>不证明谁一定造假</li>
+        </ul>
 
         <div class="callout callout--info">
           <svg class="callout__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-          <span>Chrome 插件可以自动读取 New API / One API 的 raw quota，网页版则需要手动填写。</span>
+          <span>AI API Doctor 只展示本次测试中的可复现信号，报告更适合用于排查、客服沟通和站长修复。</span>
         </div>
 
-        <h2>4. 失败请求扣费怎么判断？</h2>
-        <p>如果满足以下条件，则属于失败请求扣费异常信号：</p>
-        <ul>
-          <li>HTTP 状态码 ≥ 400，或上游返回 503 / 502 / 504 / timeout</li>
-          <li>没有有效输出（completion_tokens = 0 或缺失）</li>
-          <li>10 秒后 raw quota 减少</li>
-        </ul>
-        <p>这种情况属于失败请求扣费异常信号。</p>
+        <hr class="divider" />
 
-        <h2>5. 空回复扣费怎么判断？</h2>
-        <p>如果满足以下条件，则属于空回复扣费异常信号：</p>
-        <ul>
-          <li>HTTP 状态码为 200</li>
-          <li>可见输出为空（visible output 为空）</li>
-          <li>completion_tokens = 0 或缺失</li>
-          <li>没有 tool call / image / audio / search 等有效产物</li>
-          <li>10 秒后 raw quota 减少</li>
-        </ul>
-        <p>这种情况属于空回复扣费异常信号。</p>
-
-        <h2>6. 为什么要等 10 秒？</h2>
-        <p>一些站点会先预扣额度，随后再返还。等待 10 秒可以区分"临时预扣"和"最终扣费"。如果 10 秒后 raw quota 恢复，则更可能是预扣已返还。</p>
+        <h2>为什么不能测真实扣费？</h2>
+        <p>网页不能读取中转站控制台的原始额度。真实扣费后续由 Chrome 插件在控制台页面读取请求前后的额度变化。</p>
 
         <div class="callout callout--warn">
           <svg class="callout__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-          <span>部分站点结算时间可能更长。如果 10 秒后额度仍未完全恢复，建议等待更长时间后再记录最终 raw quota。</span>
+          <span>如有疑问，建议记录多次测试报告，对比结果一致性，并联系站长或客服核对后台数据。</span>
         </div>
-
-        <h2>7. 如何解读 AI API Doctor 的报告？</h2>
-        <p>AI API Doctor 报告有五种结果：</p>
-        <div class="result-cards" style="margin:16px 0">
-          <div class="result-card result-card--ok">
-            <div class="result-card__status">✓ 正常</div>
-            <div class="result-card__title">失败请求未扣费</div>
-            <div class="result-card__desc">请求失败，但 10 秒后原始额度未减少。</div>
-          </div>
-          <div class="result-card result-card--ok">
-            <div class="result-card__status">✓ 正常</div>
-            <div class="result-card__title">预扣已返还</div>
-            <div class="result-card__desc">请求后曾预扣额度，但 10 秒内已返还。</div>
-          </div>
-          <div class="result-card result-card--warning">
-            <div class="result-card__status">⚠ 风险</div>
-            <div class="result-card__title">无法读取原始余额</div>
-            <div class="result-card__desc">raw quota 不可用，报告只能作为风险参考。</div>
-          </div>
-          <div class="result-card result-card--danger">
-            <div class="result-card__status">✕ 异常</div>
-            <div class="result-card__title">失败请求扣费异常</div>
-            <div class="result-card__desc">请求失败且无有效输出，但 10 秒后 raw quota 减少。</div>
-          </div>
-          <div class="result-card result-card--danger">
-            <div class="result-card__status">✕ 异常</div>
-            <div class="result-card__title">空回复扣费异常</div>
-            <div class="result-card__desc">请求无有效输出，但 10 秒后 raw quota 减少。</div>
-          </div>
-        </div>
-
-        <h2>8. 插件版和网页版有什么区别？</h2>
-        <p><strong>插件版（审核中）</strong>：可自动读取 raw quota，适合桌面端精确检测。审核通过后会放出下载链接。</p>
-        <p><strong>网页版</strong>：不需要输入 API Key，适合手动生成报告、手机分享和客服沟通。手动填写 raw quota 数据即可生成报告。</p>
-
-        <h2>9. 站长侧修复建议</h2>
-        <p>失败请求、无效模型、上游 503、超时、无可用通道等无有效产物请求不应最终扣费。如果已预扣，应在最终结算阶段返还。</p>
-        <p>以下是一个参考实现逻辑：</p>
-        <div class="code-block">if (completion_tokens == 0
-    &amp;&amp; visible_output == ""
-    &amp;&amp; !has_tool_call
-    &amp;&amp; !has_image
-    &amp;&amp; !has_audio
-    &amp;&amp; !has_search) {
-  // This request produced no valid output
-  actual_quota = 0
-  refund_precharge()
-  log("empty_response_no_charge")
-}</div>
-
-        <h2>10. 安全边界</h2>
-        <p>AI API Doctor 只展示本次测试中的可复现信号，不证明服务商故意多扣费。报告更适合用于排查、客服沟通和站长修复。</p>
-        <p>如有疑问，建议：</p>
-        <ul>
-          <li>使用短 prompt 测试，减少单次测试金额</li>
-          <li>记录多次测试报告，对比结果一致性</li>
-          <li>联系站长或客服核对后台数据</li>
-          <li>对比服务商官方账单</li>
-        </ul>
 
         <hr class="divider" />
 
