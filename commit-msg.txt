@@ -1,0 +1,11 @@
+feat: add stability as 7th check, 7-item progress, detailed report
+
+- New 7-item scoring: output(20)+bill(18)+overcount(12)+stream(12)+cache(8)+shrinkage(15)+stability(15)=100pts
+- check7_Stability: 3 pings, latency+token variance, 15/8/0 pts
+- Cap rules: no-content+has-bill=65max, no-content+no-bill=55max, has-content+no-bill=75max
+- 7-item per-row progress bar with pass/warn/fail icons + detail text
+- Auto-detect model button next to Model ID input
+- Report card shows ptsEarned/pts + detail per item (not just "Pass")
+- Finding judgment: unstable/usable/all-pass variants per warning
+- Sanitized Chinese strings: no usage/cached_tokens/raw quota terms
+- API Key never in localStorage/console/URL/image/copy text

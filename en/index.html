@@ -101,8 +101,11 @@ OPENAI_API_KEY=sk-..."
       </div>
 
       <!-- Model ID -->
-      <div class="form-group">
-        <label for="doctor-model">Model ID</label>
+      <div class="form-group form-group--with-btn">
+        <div class="form-group__row">
+          <label for="doctor-model">Model ID</label>
+          <button type="button" id="find-models-btn" class="btn-ghost btn-sm" onclick="Doctor.findModels()">Auto-detect</button>
+        </div>
         <input id="doctor-model" type="text" placeholder="gpt-5.5" autocomplete="off" />
         <p class="field-help">Not sure? Fill in the model ID you are currently using.</p>
       </div>
@@ -111,7 +114,10 @@ OPENAI_API_KEY=sk-..."
       <button id="doctor-run-btn" class="run-check-button btn-primary" onclick="Doctor.run()">
         Run Check
       </button>
-      <p class="cost-hint">Estimated cost is usually under $0.05.</p>
+      <p class="cost-hint">Cost under $0.05</p>
+
+      <!-- Progress -->
+      <div id="diag-progress"></div>
 
       <!-- Result -->
       <div id="result-card" class="doctor-result">

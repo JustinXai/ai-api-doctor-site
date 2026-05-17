@@ -1298,6 +1298,41 @@ button.primary,
   line-height: 1.55;
 }
 
+/* Model ID row with inline auto-detect button */
+.form-group--with-btn .form-group__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.form-group--with-btn label {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+/* Ghost button for auxiliary actions */
+.btn-ghost {
+  border: none;
+  background: none;
+  color: var(--info);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--font);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+.btn-ghost:hover { background: var(--soft); }
+.btn-ghost:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Doctor card layout */
+.doctor-card > .form-group + .form-group--with-btn,
+.doctor-card > .form-group--with-btn {
+  margin-top: 0;
+}
+
 .config-paste {
   border-top: 1px solid var(--border);
   padding-top: 8px;
