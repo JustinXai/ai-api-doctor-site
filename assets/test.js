@@ -1061,9 +1061,12 @@ window.Doctor = {
     if (btn) { btn.disabled = true; btn.textContent = zh ? '识别中...' : 'Detecting...'; }
 
     try {
-      // Strip trailing slash and ensure /v1 prefix
-      const clean = baseUrl.replace(/\/$/, '').replace(/\/v1$/, '') + '/v1';
-      const endpoints = [clean + '/models', clean.replace('/v1', '') + '/models'];
+      // Remove trailing slash, then strip the /v1/xxx path to get the root
+      const root = baseUrl.replace(/\/$/, '').replace(/\/v1\/[^/]+(\/.*)?$/, '');
+      const endpoints = [
+        root + '/v1/models',
+        root + '/models',
+      ];
 
       let models = [];
       let lastErr = '';
