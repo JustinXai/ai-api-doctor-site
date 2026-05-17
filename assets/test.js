@@ -1061,9 +1061,12 @@ window.Doctor = {
     if (btn) { btn.disabled = true; btn.textContent = zh ? '识别中...' : 'Detecting...'; }
 
     try {
-      const normalized = baseUrl.replace(/\/$/, '');
+      // Strip trailing slash and ensure /v1 prefix
+      const clean = baseUrl.replace(/\/$/, '').replace(/\/v1$/, '') + '/v1';
+      const endpoints = [clean + '/models', clean.replace('/v1', '') + '/models'];
+
       let models = [];
-      const endpoints = [normalized + '/models', normalized + '/v1/models'];
+      let lastErr = '';
 
       for (const endpoint of endpoints) {
         try {
@@ -1071,14 +1074,33 @@ window.Doctor = {
             method: 'GET',
             headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' }
           });
-          if (resp.status === 401 || resp.status === 403) { showToast(zh ? 'API Key无效' : 'Invalid API Key'); break; }
-          if (!resp.ok) continue;
+
+          if (resp.status === 401 || resp.status === 403) {
+            lastErr = zh ? 'API Key无效' : 'Invalid API Key';
+            break;
+          }
+          if (resp.status === 404) {
+            lastErr = zh ? '接口不存在' : 'Endpoint not found';
+            continue;
+          }
+          if (!resp.ok) {
+            lastErr = 'HTTP ' + resp.status;
+            continue;
+          }
+
           const data = await resp.json();
-          if (Array.isArray(data.data)) models = data.data.map(m => m.id || '').filter(Boolean);
-          else if (Array.isArray(data.models)) models = data.models.map(m => typeof m === 'string' ? m : m.id || '').filter(Boolean);
-          else if (Array.isArray(data)) models = data.map(m => typeof m === 'string' ? m : m.id || '').filter(Boolean);
+          if (Array.isArray(data.data)) {
+            models = data.data.map(m => m.id || '').filter(Boolean);
+          } else if (Array.isArray(data.models)) {
+            models = data.models.map(m => typeof m === 'string' ? m : m.id || '').filter(Boolean);
+          } else if (Array.isArray(data)) {
+            models = data.map(m => typeof m === 'string' ? m : m.id || '').filter(Boolean);
+          }
+
           if (models.length > 0) break;
-        } catch (_) {}
+        } catch (e) {
+          lastErr = e.message;
+        }
       }
 
       if (models.length > 0) {

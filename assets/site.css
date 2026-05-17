@@ -1311,6 +1311,11 @@ button.primary,
 }
 
 /* Ghost button for auxiliary actions */
+.btn-sm {
+  padding: 4px 10px;
+  font-size: 12px;
+  min-height: 28px;
+}
 .btn-ghost {
   border: none;
   background: none;
