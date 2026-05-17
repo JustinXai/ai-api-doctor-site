@@ -1,13 +1,15 @@
 /**
- * AI API Doctor — Diagnostic Engine v3 (Fine-Grained Scoring)
+ * AI API Doctor — Diagnostic Engine v3 (Fine-Grained Scoring + Unified Grades)
  * website/assets/test.js
  *
  * Core principles:
  * 1. No simple pass=full / fail=0 scoring — every check has multiple sub-items
  * 2. finalTestModelId is determined once and used for ALL core tests
- * 3. Every sub-item has a clear deduction reason
- * 4. Hard caps enforce realistic maximum scores for known failure modes
- * 5. Reports explain WHY a score was given, not just WHAT the score is
+ * 3. modelSource tracks how the model was selected: user_input | auto_detected
+ * 4. All model comparisons use normalizeModelId() for case-insensitive matching
+ * 5. getScoreGrade() is the single source of truth for all grade/color/tier lookups
+ * 6. getCheckStatus() determines individual check status from score ratios
+ * 7. Reports explain WHY a score was given, not just WHAT the score is
  *
  * Security: API Key NEVER in localStorage/console/URL/report images/copy text
  */
@@ -40,19 +42,28 @@ const WEIGHT = {
 WEIGHT.total = Object.values(WEIGHT).reduce((a, b) => a + b, 0); // 100
 
 /* ═══════════════════════════════════════════════════════
-   Grade table (6 levels)
+   Model ID Normalization
+   All model comparisons MUST use this function.
+   ═══════════════════════════════════════════════════════ */
+function normalizeModelId(id) {
+  if (!id) return '';
+  return String(id).trim().toLowerCase();
+}
+
+/* ═══════════════════════════════════════════════════════
+   Grade table (6 levels) — unified for all components
    ═══════════════════════════════════════════════════════ */
 const GRADES = [
   { min: 95, grade: 'A', label: 'Excellent', labelZh: '优秀',   color: '#16a34a', bg: '#dcfce7',
     desc: 'Compatibility, stability and usage audit are all excellent',
     descZh: '兼容性、稳定性和用量审计表现优秀' },
-  { min: 90, grade: 'B', label: 'Good',      labelZh: '良好',   color: '#3b82f6', bg: '#eff6ff',
+  { min: 90, grade: 'B', label: 'Good',      labelZh: '良好',   color: '#0891b2', bg: '#ecfeff',
     desc: 'Core functions available with minor limitations',
     descZh: '核心功能可用，存在少量限制' },
-  { min: 80, grade: 'C', label: 'Fair',     labelZh: '一般',   color: '#f59e0b', bg: '#fef9c3',
+  { min: 80, grade: 'C', label: 'Fair',     labelZh: '可用',   color: '#d97706', bg: '#fef9c3',
     desc: 'Usable, but some items need attention',
     descZh: '可用，但部分项目需要注意' },
-  { min: 65, grade: 'D', label: 'Limited',  labelZh: '受限',   color: '#f97316', bg: '#ffedd5',
+  { min: 65, grade: 'D', label: 'Limited',  labelZh: '受限',   color: '#ea580c', bg: '#ffedd5',
     desc: 'Partial compatibility with significant limitations',
     descZh: '部分兼容，存在明显限制' },
   { min: 40, grade: 'E', label: 'Poor',     labelZh: '较差',   color: '#dc2626', bg: '#fee2e2',
@@ -63,12 +74,20 @@ const GRADES = [
     descZh: '当前配置不可用' },
 ];
 
-function getGrade(score) {
+/**
+ * Unified grade lookup — used by ALL components (report card, badge, copy text, image export)
+ * @param {number} score
+ * @returns {object} grade object
+ */
+function getScoreGrade(score) {
   for (const g of GRADES) {
     if (score >= g.min) return g;
   }
   return GRADES[GRADES.length - 1];
 }
+
+// Backward-compatible alias
+const getGrade = getScoreGrade;
 
 /* ═══════════════════════════════════════════════════════
    Status helpers
@@ -82,14 +101,25 @@ const STATUS_CONFIG = {
   inconsistent:{ zh: '矛盾', en: 'Inconsistent',  color: '#7c3aed', bg: '#ede9fe', pill: 'warn' },
 };
 
-function computeCheckStatus(maxScore, earned, forced) {
+/**
+ * Unified check status based on score ratio.
+ * @param {number} earned
+ * @param {number} maxScore
+ * @param {string|null} forced
+ * @returns {string} status
+ */
+function getCheckStatus(earned, maxScore, forced) {
   if (forced) return forced;
   const ratio = maxScore > 0 ? earned / maxScore : 0;
   if (ratio >= 0.95) return 'excellent';
   if (ratio >= 0.80) return 'good';
   if (ratio >= 0.50) return 'warning';
+  if (ratio > 0)     return 'poor';   // partial credit but below warning threshold
   return 'failed';
 }
+
+// Backward-compatible alias
+const computeCheckStatus = getCheckStatus;
 
 function statusLabel(status, zh) {
   const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.warning;
@@ -335,25 +365,36 @@ function baseOrigin(url) {
 }
 
 /* ═══════════════════════════════════════════════════════
-   DETECT finalTestModelId
-   Priority: userModel > autoModel > firstInList
-   Returns { finalTestModelId, userModel, autoModel, modelFromList, allModels }
+   DETECT finalTestModelId + modelSource
+   modelSource: 'user_input' | 'auto_detected' | 'models_fallback'
+   Returns { finalTestModelId, userModel, autoModel, modelFromList,
+             allModels, modelSource, isFinalModelInModelList }
    ═══════════════════════════════════════════════════════ */
 function determineFinalTestModelId(userModel, modelListResult) {
   const userModelTrim = (userModel || '').trim();
   const allModels = extractModels(modelListResult?.data);
+  const normalizedModels = allModels.map(normalizeModelId);
+
   let autoModel = '';
   let modelFromList = '';
+  let modelSource = 'auto_detected';
 
   if (userModelTrim) {
+    // User manually filled in — treat as user_input
     autoModel = userModelTrim;
     modelFromList = userModelTrim;
+    modelSource = 'user_input';
   } else if (allModels.length > 0) {
     // Prefer chat/completions-capable lightweight models
     const chatModels = allModels.filter(m => !/(embedding|embed|vision|audio|tts|speech|whisper|dalle|image)/i.test(m));
     autoModel = chatModels[0] || allModels[0];
     modelFromList = autoModel;
+    modelSource = 'auto_detected';
   }
+
+  // isFinalModelInModelList: normalized comparison
+  const normalizedFinal = normalizeModelId(autoModel);
+  const isFinalModelInModelList = normalizedFinal !== '' && normalizedModels.includes(normalizedFinal);
 
   return {
     finalTestModelId: autoModel || '',
@@ -361,6 +402,8 @@ function determineFinalTestModelId(userModel, modelListResult) {
     autoModel: autoModel,
     modelFromList: modelFromList,
     allModels,
+    modelSource,               // 'user_input' | 'auto_detected' | 'models_fallback'
+    isFinalModelInModelList,   // true if finalTestModelId is in normalized model list
   };
 }
 
@@ -877,10 +920,13 @@ async function checkC_ModelList(baseUrl, apiKey, signal, userModel) {
   }
 
   // L5: Contains user model
+  // Only penalize if user manually filled in AND it's not in the list
   const userTrim = (userModel || '').trim();
+  const normalizedModels = models.map(normalizeModelId);
+  const normalizedUser = normalizeModelId(userTrim);
   if (userTrim) {
-    const found = models.some(m => m.toLowerCase() === userTrim.toLowerCase());
-    const fuzzyFound = models.some(m => m.toLowerCase().includes(userTrim.toLowerCase()) || userTrim.toLowerCase().includes(m.toLowerCase()));
+    const found = normalizedModels.includes(normalizedUser);
+    const fuzzyFound = normalizedModels.some(m => m.includes(normalizedUser) || normalizedUser.includes(m));
     if (found) {
       l5 = 2;
     } else if (fuzzyFound) {
@@ -891,9 +937,8 @@ async function checkC_ModelList(baseUrl, apiKey, signal, userModel) {
       details.push(zh ? `用户填写模型 ${userTrim} 不在模型列表` : `User model ${userTrim} not in list`);
     }
   } else {
-    // No user model specified — score as if "not present but expected"
-    l5 = 0;
-    details.push(zh ? '用户未填写模型，列表模型数仅供参考' : 'No user model provided; list model count for reference only');
+    // No user model specified — full credit
+    l5 = 2;
   }
 
   // L6: List stability (we only do one request here, so assume stable if successful)
@@ -955,7 +1000,11 @@ async function checkD_AutoModel(baseUrl, apiKey, modelIdInfo, authResult, signal
   const evidence = {};
   const zh = getDocLang() !== 'en';
 
-  const { userModel, autoModel, modelFromList, allModels } = modelIdInfo;
+  const { userModel, autoModel, modelFromList, allModels, modelSource, isFinalModelInModelList } = modelIdInfo;
+  const normalizedAllModels = allModels.map(normalizeModelId);
+  const normalizedAuto = normalizeModelId(autoModel);
+  const normalizedUser = normalizeModelId(userModel);
+
   let m1 = 2, m2 = 2, m3 = 2, m4 = 3, m5 = 1;
   let status = 'excellent';
 
@@ -975,13 +1024,12 @@ async function checkD_AutoModel(baseUrl, apiKey, modelIdInfo, authResult, signal
   // M2: Recommendation explainable
   if (!autoModel) {
     m2 = 0;
-  } else if (userModel && userModel === autoModel) {
+  } else if (normalizedUser && normalizedUser === normalizedAuto) {
     m2 = 2;
     details.push(zh ? '使用用户填写模型' : 'Using user-provided model');
   } else if (autoModel) {
-    // Is it a lightweight chat model?
     const isChatModel = !/(embedding|embed|vision|audio|tts|speech|whisper|dalle|image)/i.test(autoModel);
-    const isFirst = autoModel === allModels[0];
+    const isFirst = normalizedAuto === normalizeModelId(allModels[0]);
     if (isChatModel) {
       m2 = 2;
       details.push(zh ? `自动识别推荐：${autoModel}（chat 模型优先）` : `Auto-detected: ${autoModel} (chat model prioritized)`);
@@ -1004,9 +1052,9 @@ async function checkD_AutoModel(baseUrl, apiKey, modelIdInfo, authResult, signal
   } else if (userModel && !autoModel) {
     m3 = 0;
     deductions.push(zh ? '用户填写模型不存在' : 'User-provided model does not exist');
-  } else if (userModel === autoModel) {
+  } else if (normalizedUser === normalizedAuto) {
     m3 = 2;
-  } else if (allModels.includes(autoModel) && !allModels.includes(userModel)) {
+  } else if (normalizedAllModels.includes(normalizedAuto) && !normalizedAllModels.includes(normalizedUser)) {
     m3 = 1;
     details.push(zh ? `用户模型与推荐不一致：填 ${userModel}，用 ${autoModel}` : `User model mismatch: filled ${userModel}, used ${autoModel}`);
   } else {
@@ -1055,7 +1103,7 @@ async function checkD_AutoModel(baseUrl, apiKey, modelIdInfo, authResult, signal
   }
 
   // M5: Risk prompt
-  if (userModel && userModel !== autoModel) {
+  if (userModel && normalizeModelId(userModel) !== normalizeModelId(autoModel)) {
     m5 = 1;
     details.push(zh ? '推荐模型仅代表可测模型，不代表所有模型' : 'Recommended model is for testing only, not representative of all models');
   } else if (!userModel && autoModel) {
@@ -1084,7 +1132,12 @@ async function checkD_AutoModel(baseUrl, apiKey, modelIdInfo, authResult, signal
     summary: autoModel ? (zh ? `使用：${autoModel}` : `Using: ${autoModel}`) : (zh ? '无可用模型' : 'No model available'),
     details,
     deductions,
-    evidence,
+    evidence: {
+      ...evidence,
+      modelSource,                   // 'user_input' | 'auto_detected'
+      isFinalModelInModelList,       // normalized comparison result
+      normalizedAutoModel: normalizedAuto,
+    },
   });
 }
 
@@ -1848,9 +1901,12 @@ function applyCaps(rawScore, checks, modelIdInfo) {
   }
 
   // R8: User model not in /models list, but model works → 70-88
-  const userModel = modelIdInfo?.userModel || '';
-  const allModels = modelIdInfo?.allModels || [];
-  const userModelNotInList = userModel && !allModels.includes(userModel);
+  // Only applies when modelSource === 'user_input' and the model is NOT in the list
+  const { userModel, allModels, modelSource, isFinalModelInModelList } = modelIdInfo || {};
+  const normalizedAll = (allModels || []).map(normalizeModelId);
+  const userModelNotInList = modelSource === 'user_input' &&
+    userModel &&
+    !normalizedAll.includes(normalizeModelId(userModel));
   if (userModelNotInList && targetWorks) {
     cap = Math.min(cap, 88);
     floor = Math.max(floor, 70);
@@ -1917,24 +1973,19 @@ function applyCaps(rawScore, checks, modelIdInfo) {
 /* ═══════════════════════════════════════════════════════
    Judgment & Finding
    ═══════════════════════════════════════════════════════ */
+/**
+ * Judgment text (zh/en) — uses unified grade tiers.
+ * Kept for backward compatibility; prefers getScoreGrade().labelZh
+ */
 function getJudgment(score, checks) {
-  const zh = getDocLang() !== 'en';
-  if (score >= 95) return zh ? '优秀' : 'Excellent';
-  if (score >= 90) return zh ? '良好' : 'Good';
-  if (score >= 80) return zh ? '一般' : 'Fair';
-  if (score >= 65) return zh ? '受限' : 'Limited';
-  if (score >= 40) return zh ? '较差' : 'Poor';
-  return zh ? '失败' : 'Failed';
+  return getScoreGrade(score).labelZh;
 }
 
+/**
+ * One-line finding text — uses unified grade tiers.
+ */
 function getOneLineFinding(score, checks) {
-  const zh = getDocLang() !== 'en';
-  if (score >= 95) return zh ? '兼容性、稳定性和用量审计表现优秀' : 'Compatibility, stability and usage audit are all excellent';
-  if (score >= 90) return zh ? '核心功能可用，存在少量限制' : 'Core functions available, minor limitations';
-  if (score >= 80) return zh ? '可用，但部分项目需要注意' : 'Usable, some items need attention';
-  if (score >= 65) return zh ? '部分兼容，存在明显限制' : 'Partial compatibility, significant limitations';
-  if (score >= 40) return zh ? '存在严重兼容问题' : 'Serious compatibility issues';
-  return zh ? '当前配置不可用' : 'Current config unavailable';
+  return getScoreGrade(score).descZh;
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -1971,13 +2022,21 @@ function generateSuggestions(checks, score, modelIdInfo) {
     );
   }
 
-  // 3. User model not in /models list
-  const userModel = modelIdInfo?.userModel || '';
-  const allModels = modelIdInfo?.allModels || [];
-  if (userModel && !allModels.includes(userModel)) {
+  // 3. modelSource === 'user_input' AND final model not in list
+  const { modelSource, isFinalModelInModelList } = modelIdInfo || {};
+  const modelListSucceeded = (checks.modelList?.score || 0) >= 3 && (checks.modelList?.evidence?.modelCount || 0) > 0;
+  if (modelSource === 'user_input' && !isFinalModelInModelList && modelListSucceeded) {
     add('model_not_in_list',
       '模型列表中未发现当前 Model ID，可能是别名模型、隐藏模型或填写错误。',
       'Current Model ID not found in the model list. It may be an alias, hidden model, or a typo.'
+    );
+  }
+
+  // 3b. modelSource === 'auto_detected' — no model-not-found message, just positive feedback
+  if (modelSource === 'auto_detected' && isFinalModelInModelList) {
+    add('auto_detected_ok',
+      '系统已从模型列表中自动选择可测试模型。',
+      'System auto-selected a testable model from the model list.'
     );
   }
 
@@ -1992,10 +2051,19 @@ function generateSuggestions(checks, score, modelIdInfo) {
 
   // 5. High average latency
   const avgLat = checks.stability?.evidence?.avgLatency || 0;
-  if (avgLat > 5000) {
+  if (avgLat > 8000) {
     add('high_latency',
       `平均响应延迟较高（${Math.round(avgLat)}ms），可能影响 Cline、Continue 等客户端体验。`,
       `Average response latency is high (${Math.round(avgLat)}ms), which may affect Cline, Continue and other client experiences.`
+    );
+  }
+
+  // 5b. High latency jitter
+  const jitter = checks.stability?.evidence?.latencyJitter || 0;
+  if (jitter > 8000) {
+    add('latency_jitter',
+      '延迟波动较大，建议在真实客户端中继续观察稳定性。',
+      'Latency jitter is high. Recommend observing stability in a real client environment.'
     );
   }
 
@@ -2210,20 +2278,31 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
     </div>`;
   }
 
-  // Model ID info
+  // Model ID info — show source badge
   const finalModel = modelIdInfo?.finalTestModelId || '';
+  const { modelSource, isFinalModelInModelList } = modelIdInfo || {};
   const modelDisplay = [];
   if (modelIdInfo?.userModel) {
     modelDisplay.push(`<div><span style="font-weight:600;color:#374151">${zh ? '用户填写模型' : 'User-filled Model'}:</span> ${escH(modelIdInfo.userModel)}</div>`);
   }
-  if (modelIdInfo?.autoModel && modelIdInfo.autoModel !== modelIdInfo?.userModel) {
+  if (modelIdInfo?.autoModel && normalizeModelId(modelIdInfo.autoModel) !== normalizeModelId(modelIdInfo?.userModel)) {
     modelDisplay.push(`<div><span style="font-weight:600;color:#374151">${zh ? '自动识别模型' : 'Auto-detected Model'}:</span> ${escH(modelIdInfo.autoModel)}</div>`);
   }
   modelDisplay.push(`<div><span style="font-weight:600;color:#374151">${zh ? '实际测试模型' : 'Actual Test Model'}:</span> ${escH(finalModel)}</div>`);
+  if (modelSource) {
+    const sourceLabel = modelSource === 'user_input'
+      ? (zh ? '用户填写' : 'User-filled')
+      : modelSource === 'auto_detected'
+      ? (zh ? '自动识别' : 'Auto-detected')
+      : (zh ? '列表回退' : 'List fallback');
+    const sourceColor = modelSource === 'auto_detected' ? '#16a34a' : modelSource === 'user_input' ? '#3b82f6' : '#94a3b8';
+    modelDisplay.push(`<div style="font-size:10px;color:${sourceColor}">${zh ? '来源：' : 'Source: '}${sourceLabel}${isFinalModelInModelList ? (zh ? ' ✓' : ' ✓') : (zh ? ' ✗' : ' ✗')}</div>`);
+  }
 
-  // Model mismatch warning
+  // Model mismatch warning (normalized comparison)
   let modelMismatchWarning = '';
-  if (modelIdInfo?.userModel && modelIdInfo?.autoModel && modelIdInfo.userModel !== modelIdInfo.autoModel) {
+  if (modelIdInfo?.userModel && modelIdInfo?.autoModel &&
+      normalizeModelId(modelIdInfo.userModel) !== normalizeModelId(modelIdInfo.autoModel)) {
     modelMismatchWarning = `<div style="background:#fef9c3;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:11px;color:#92400e">
       ${zh ? '当前实际测试模型与用户填写模型不一致，评分仅代表实际测试模型，不代表用户填写模型。' : 'The actual test model differs from the user-filled model. Scores only represent the actual test model, not the user-filled model.'}
     </div>`;
@@ -2237,7 +2316,7 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
   // Cap badge if raw !== final
   let capNote = '';
   if (rawScore > score) {
-    capNote = `<div style="font-size:10px;color:#94a3b8;text-align:center;margin-top:2px">${zh ? '（已应用上限封顶）' : '(cap applied)'} ${rawScore} → ${score}</div>`;
+    capNote = `<div style="font-size:10px;color:#94a3b8;text-align:center;margin-top:2px">${zh ? '已应用封顶：' : 'Cap applied: '} ${rawScore} → ${score}</div>`;
   }
 
   return `<div style="max-width:560px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;background:#f8fafc;padding:28px;box-sizing:border-box">
@@ -2566,50 +2645,53 @@ window.Doctor = {
       this._refreshProgress(0, 'running');
       this._refreshProgress(1, 'running');
       this._refreshProgress(2, 'running');
+      this._refreshProgress(3, 'running');
 
-      const [reachResult, authResult, modelListResult] = await Promise.all([
+      // ── Phase 1: Reachability + Auth (parallel) ──
+      const [reachResult, authResult] = await Promise.all([
         checkA_Reachability(normalizedUrl, apiKey, signal),
         checkB_Auth(normalizedUrl, apiKey, signal),
-        checkC_ModelList(normalizedUrl, apiKey, signal, model),
       ]);
 
       this._refreshProgress(0, reachResult.state, reachResult.summary);
       this._refreshProgress(1, authResult.state, authResult.summary);
+
+      // ── Phase 2: Model list (needed for modelIdInfo) ──
+      const modelListResult = await checkC_ModelList(normalizedUrl, apiKey, signal, model);
       this._refreshProgress(2, modelListResult.state, modelListResult.summary);
 
-      // ── Determine finalTestModelId ──
-      this._refreshProgress(3, 'running');
+      // ── Determine finalTestModelId + modelSource ──
       const modelIdInfo = determineFinalTestModelId(model, modelListResult);
       this._modelIdInfo = modelIdInfo;
 
-      // ── Phase 2: Auto-model detection (uses the model ID info) ──
+      // ── Phase 3: Auto-model detection (needs modelIdInfo for modelSource) ──
       const autoModelResult = await checkD_AutoModel(
         normalizedUrl, apiKey, modelIdInfo, authResult, signal, this._interfaceType
       );
       this._refreshProgress(3, autoModelResult.state, autoModelResult.summary);
 
-      // ── Phase 3: Target model call (uses finalTestModelId) ──
+      // ── Phase 4: Target model call (uses finalTestModelId) ──
       this._refreshProgress(4, 'running');
       const targetCallResult = await checkE_TargetCall(
         normalizedUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal
       );
       this._refreshProgress(4, targetCallResult.state, targetCallResult.summary);
 
-      // ── Phase 4: Stability sampling (uses finalTestModelId) ──
+      // ── Phase 5: Stability sampling (uses finalTestModelId) ──
       this._refreshProgress(5, 'running');
       const stabilityResult = await checkG_Stability(
         normalizedUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult
       );
       this._refreshProgress(5, stabilityResult.state, stabilityResult.summary);
 
-      // ── Phase 5: Usage audit ──
+      // ── Phase 6: Usage audit ──
       this._refreshProgress(6, 'running');
       const usageResult = await checkH_UsageAudit(
         normalizedUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult
       );
       this._refreshProgress(6, usageResult.state, usageResult.summary);
 
-      // ── Phase 6: Client config ──
+      // ── Phase 7: Client config ──
       const clientResult = checkI_ClientConfig(
         normalizedUrl, apiKey, modelIdInfo.finalTestModelId, modelListResult, targetCallResult
       );
@@ -2631,7 +2713,7 @@ window.Doctor = {
 
       // Apply caps
       const finalScore = applyCaps(rawScore, checks, modelIdInfo);
-      const grade = getGrade(finalScore);
+      const grade = getScoreGrade(finalScore);
       const judgment = getJudgment(finalScore, checks);
       const finding = getOneLineFinding(finalScore, checks);
 
