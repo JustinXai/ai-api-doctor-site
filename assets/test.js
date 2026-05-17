@@ -1188,9 +1188,9 @@ window.Doctor = {
       }
     } catch (err) {
       showToast(zh ? '无法自动识别，请手动填写模型 ID' : 'Cannot auto-detect; fill in Model ID manually');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = zh ? '自动识别模型' : 'Auto-detect model'; }
     }
-
-    if (btn) { btn.disabled = false; btn.textContent = zh ? '自动识别模型' : 'Auto-detect model'; }
   },
 
   onConnectionInfoInput(textarea) {
