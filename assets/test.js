@@ -1036,6 +1036,8 @@ window.Doctor = {
 
   init() {
     this._interfaceType = 'OpenAI Chat';
+    const btn = document.getElementById('find-models-btn');
+    if (btn) btn.addEventListener('click', () => this.findModels());
   },
 
   normalizeBaseUrl(input) {
