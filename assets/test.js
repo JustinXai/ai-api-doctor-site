@@ -1102,7 +1102,7 @@ window.Doctor = {
 
           if (models.length > 0) break;
         } catch (e) {
-          lastErr = e.message;
+          lastErr = '解析失败';
         }
       }
 
