@@ -263,10 +263,12 @@ async function checkA_Reachability(baseUrl, apiKey, signal) {
     const url = baseUrl.replace(/\/$/, '');
     const resp = await fetch(url, { method: 'HEAD', signal, keepalive: false });
     const elapsed = Date.now() - start;
-    if (resp.status >= 200 && resp.status < 600) {
-      return { state: 'pass', pts: WEIGHT.reachability, ptsEarned: WEIGHT.reachability, detail: `${resp.status} (${elapsed}ms)`, reason: '' };
+    const zhFn = getDocLang() !== 'en';
+    if (resp.ok) {
+      return { state: 'pass', pts: WEIGHT.reachability, ptsEarned: WEIGHT.reachability, detail: `${zhFn ? '可达' : 'Reachable'} (${elapsed}ms)`, reason: '' };
     }
-    return { state: 'fail', pts: WEIGHT.reachability, ptsEarned: 0, detail: `HTTP ${resp.status}`, reason: 'Base URL returned non-2xx status' };
+    // Server responded but returned non-2xx — still reachable
+    return { state: 'pass', pts: WEIGHT.reachability, ptsEarned: WEIGHT.reachability, detail: `${zhFn ? '可达' : 'Reachable'} (${resp.status}, ${elapsed}ms)`, reason: resp.status === 404 ? (zhFn ? '根路径返回404，对部分API正常' : 'Root path 404 — normal for some OpenAI-compatible APIs') : '' };
   } catch (err) {
     if (err.name === 'AbortError') return { state: 'fail', pts: WEIGHT.reachability, ptsEarned: 0, detail: '超时', reason: 'Base URL request timed out' };
     return { state: 'fail', pts: WEIGHT.reachability, ptsEarned: 0, detail: '网络错误', reason: 'Base URL not reachable: ' + err.message };
@@ -808,25 +810,13 @@ function getOneLineFinding(score, result) {
   const fails = Object.values(checks).filter(c => c?.state === 'fail');
   const warns = Object.values(checks).filter(c => c?.state === 'warn');
 
-  if (fails.length === 0 && warns.length === 0) {
-    return zh ? '所有检测项通过' : 'All checks passed';
-  }
-
-  // Build human-readable summary of failures
-  if (fails.length > 0) {
-    const reasons = fails.map(f => f.reason || f.detail).filter(Boolean);
-    if (reasons.length > 0) {
-      return zh ? '异常：' + reasons[0] : 'Issue: ' + reasons[0];
-    }
-  }
-  if (warns.length > 0) {
-    const reasons = warns.map(f => f.reason || f.detail).filter(Boolean);
-    if (reasons.length > 0) {
-      return zh ? '注意：' + reasons[0] : 'Note: ' + reasons[0];
-    }
-  }
-
-  return zh ? '存在异常项' : 'Some items need attention';
+  // Score-based summary (takes precedence)
+  if (score >= 95) return zh ? '所有核心检测表现优秀' : 'All core checks excellent';
+  if (score >= 90) return zh ? '核心功能可用，存在少量限制' : 'Core functions available, minor limitations';
+  if (score >= 80) return zh ? '可用，但部分项目需要注意' : 'Usable, some items need attention';
+  if (score >= 65) return zh ? '部分兼容，存在明显限制' : 'Partial compatibility, significant limitations';
+  if (score >= 40) return zh ? '存在严重兼容问题' : 'Serious compatibility issues';
+  return zh ? '当前配置不可用' : 'Current config unavailable';
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -839,38 +829,65 @@ function buildReportCardHTML(result, formData, lang) {
 
   const escH = (s) => esc(String(s || ''));
 
-  function pill(state) {
+  function pillByScore(ptsEarned, pts) {
+    if (!pts) return '';
+    const ratio = ptsEarned / pts;
+    let state;
+    if (ratio >= 0.8) state = 'pass';
+    else if (ratio >= 0.4) state = 'warn';
+    else state = 'fail';
     const colors = { pass: { c: '#16a34a', bg: '#dcfce7' }, warn: { c: '#f59e0b', bg: '#fef9c3' }, fail: { c: '#dc2626', bg: '#fee2e2' } };
-    const { c, bg } = colors[state] || { c: '#94a3b8', bg: '#f1f5f9' };
+    const { c, bg } = colors[state];
     const texts = { pass: zh ? '通过' : 'Pass', warn: zh ? '警告' : 'Warn', fail: zh ? '失败' : 'Fail' };
     return `<span style="display:inline-block;padding:2px 7px;border-radius:12px;font-size:10px;font-weight:700;color:${c};background:${bg}">${texts[state]}</span>`;
   }
 
-  function itemRow(key, label, check, isSub) {
-    if (!check) return '';
-    const rowClass = isSub ? 'report-sub-row' : 'report-row';
-    const indent = isSub ? 'padding-left:20px;' : '';
-    const labelText = isSub ? '  ' + label : label;
-    return `<div class="${rowClass}" style="${indent}">
-      <div class="report-row-label">${escH(labelText)}</div>
+  // Sub-item labels
+  const stabSubLabels = {
+    success: { zh: '成功率', en: 'Success Rate' },
+    latency: { zh: '平均延迟', en: 'Avg Latency' },
+    jitter: { zh: '延迟波动', en: 'Latency Jitter' },
+    consistency: { zh: '返回一致性', en: 'Response Consistency' },
+    explain: { zh: '错误可读性', en: 'Error Explainability' },
+  };
+
+  let stabilityOpen = false;
+  function buildStabilitySection(check) {
+    if (!check?.sub) return '';
+    const subs = Object.entries(check.sub);
+    const toggleId = 'stab-toggle-' + reportId;
+    const contentId = 'stab-content-' + reportId;
+    const subsHtml = subs.map(([k, v]) => {
+      const lbl = stabSubLabels[k] ? stabSubLabels[k][zh ? 'zh' : 'en'] : (zh ? k : k);
+      return `<div class="report-sub-row" style="padding-left:20px">
+        <div class="report-row-label">${escH('  ' + lbl)}</div>
+        <div class="report-row-score">${v.ptsEarned}/${v.pts}</div>
+        <div class="report-row-pill">${pillByScore(v.ptsEarned, v.pts)}</div>
+        <div class="report-row-detail">${escH(v.detail || '')}</div>
+      </div>`;
+    }).join('');
+    return `<div class="report-row">
+      <div class="report-row-label">${escH(itemLabels.stability[zh ? 'zh' : 'en'])}</div>
       <div class="report-row-score">${check.ptsEarned}/${check.pts}</div>
-      <div class="report-row-pill">${pill(check.state)}</div>
-      <div class="report-row-detail">${escH(check.detail)}</div>
+      <div class="report-row-pill">${pillByScore(check.ptsEarned, check.pts)}</div>
+      <div class="report-row-detail">
+        ${escH(check.detail || '')}
+        <button onclick="(function(){var t=document.getElementById('${contentId}');var i=document.getElementById('${toggleId}');t.style.display=t.style.display=='none'?'block':'none';i.textContent=t.style.display=='none'?'[${zh?'展开':'Expand'}]':'[${zh?'收起':'Collapse'}]';})()" style="background:none;border:none;cursor:pointer;color:#2563eb;font-size:11px;padding:0 0 0 4px;font-family:inherit" id="${toggleId}">[${zh?'展开':'Expand'}]</button>
+      </div>
+    </div><div id="${contentId}" style="display:none">${subsHtml}</div>`;
+  }
+
+  function itemRow(key, label, check) {
+    if (!check) return '';
+    return `<div class="report-row">
+      <div class="report-row-label">${escH(label)}</div>
+      <div class="report-row-score">${check.ptsEarned}/${check.pts}</div>
+      <div class="report-row-pill">${pillByScore(check.ptsEarned, check.pts)}</div>
+      <div class="report-row-detail">${escH(check.detail || '')}</div>
     </div>`;
   }
 
-  function sectionRow(key, label, check, subItems) {
-    const rows = [itemRow(key, label, check, false)];
-    if (subItems) {
-      for (const [k, v] of Object.entries(subItems)) {
-        rows.push(itemRow(k, k, v, true));
-      }
-    }
-    return rows.join('');
-  }
-
   // Build all check rows
-  let rows = '';
   const itemLabels = {
     reachability: { zh: 'Base URL 可达性', en: 'Base URL Reachability' },
     auth: { zh: '鉴权 / Key 有效性', en: 'Auth / Key Validity' },
@@ -882,26 +899,15 @@ function buildReportCardHTML(result, formData, lang) {
     client: { zh: '客户端配置导出', en: 'Client Config Export' },
   };
 
-  rows += sectionRow('reachability', itemLabels.reachability[zh ? 'zh' : 'en'], checks.reachability);
-  rows += sectionRow('auth', itemLabels.auth[zh ? 'zh' : 'en'], checks.auth);
-  rows += sectionRow('modelList', itemLabels.modelList[zh ? 'zh' : 'en'], checks.modelList);
-  rows += sectionRow('autoModel', itemLabels.autoModel[zh ? 'zh' : 'en'], checks.autoModel);
-
-  // Target call with sub-items
-  if (checks.target) {
-    const t = checks.target;
-    const targetSubs = {};
-    if (t.sub) {
-      targetSubs['output'] = t.sub.output;
-      targetSubs['bill'] = t.sub.bill;
-      targetSubs['overcount'] = t.sub.overcount;
-    }
-    rows += sectionRow('target', itemLabels.target[zh ? 'zh' : 'en'], t.state ? { state: t.sub?.output?.state || t.state, pts: 22, ptsEarned: (t.sub?.output?.ptsEarned||0) + (t.sub?.bill?.ptsEarned||0) + (t.sub?.overcount?.ptsEarned||0), detail: '' } : null, targetSubs);
-  }
-
-  rows += sectionRow('stability', itemLabels.stability[zh ? 'zh' : 'en'], checks.stability, checks.stability?.sub);
-  rows += sectionRow('usage', itemLabels.usage[zh ? 'zh' : 'en'], checks.usage);
-  rows += sectionRow('client', itemLabels.client[zh ? 'zh' : 'en'], checks.client);
+  let rows = '';
+  rows += itemRow('reachability', itemLabels.reachability[zh ? 'zh' : 'en'], checks.reachability);
+  rows += itemRow('auth', itemLabels.auth[zh ? 'zh' : 'en'], checks.auth);
+  rows += itemRow('modelList', itemLabels.modelList[zh ? 'zh' : 'en'], checks.modelList);
+  rows += itemRow('autoModel', itemLabels.autoModel[zh ? 'zh' : 'en'], checks.autoModel);
+  rows += itemRow('target', itemLabels.target[zh ? 'zh' : 'en'], checks.target);
+  rows += buildStabilitySection(checks.stability);
+  rows += itemRow('usage', itemLabels.usage[zh ? 'zh' : 'en'], checks.usage);
+  rows += itemRow('client', itemLabels.client[zh ? 'zh' : 'en'], checks.client);
 
   // Reason section
   const failReasons = Object.values(checks)
@@ -921,26 +927,86 @@ function buildReportCardHTML(result, formData, lang) {
     </div>`;
   }
 
-  // Next step suggestions
+  // Next step suggestions (score-based)
   const suggestions = [];
   const failNames = Object.entries(checks).filter(([, c]) => c?.state === 'fail').map(([k]) => k);
+  const warnNames = Object.entries(checks).filter(([, c]) => c?.state === 'warn').map(([k]) => k);
+
   if (failNames.includes('reachability')) suggestions.push(zh ? '检查 Base URL 是否正确，端口是否开放' : 'Verify Base URL is correct and the port is open');
   if (failNames.includes('auth')) suggestions.push(zh ? '确认 API Key 有效且未过期' : 'Verify API Key is valid and not expired');
   if (failNames.includes('modelList')) suggestions.push(zh ? '该接口不支持模型列表查询，可手动填写模型 ID' : 'Model list not supported — fill in Model ID manually');
   if (failNames.includes('target')) suggestions.push(zh ? '确认填写的模型 ID 与中转站支持模型匹配' : 'Verify the model ID matches what this relay supports');
   if (failNames.includes('stability')) suggestions.push(zh ? '稳定性采样失败或波动较大，建议多次测试观察' : 'Stability issues detected — test multiple times to confirm');
   if (failNames.includes('usage')) suggestions.push(zh ? '该接口不返回用量数据，无法核验真实消耗' : 'No usage data — cannot audit actual token consumption');
-  if (suggestions.length === 0 && warnReasons.length > 0) {
-    suggestions.push(zh ? '存在警告项，建议留意使用体验' : 'Some warnings detected — monitor usage experience');
+  if (failNames.includes('autoModel')) suggestions.push(zh ? '自动识别失败，请手动填写模型 ID' : 'Auto-detect failed — fill in Model ID manually');
+  if (suggestions.length === 0 && warnNames.includes('target')) suggestions.push(zh ? '目标模型调用未获得完整得分，请检查模型兼容性' : 'Target model call did not score full points — check model compatibility');
+  if (suggestions.length === 0 && (warnNames.includes('stability') || warnNames.includes('usage'))) {
+    suggestions.push(zh ? '当前配置部分兼容，建议继续观察实际调用稳定性' : 'Partial compatibility — monitor actual call stability');
   }
-  if (suggestions.length === 0) {
-    suggestions.push(zh ? '各项检测通过，建议持续观察' : 'All checks passed — monitor usage over time');
+  if (suggestions.length === 0 && score >= 90) {
+    suggestions.push(zh ? '各项核心检测表现优秀，建议持续观察' : 'All core checks excellent — monitor usage over time');
+  } else if (suggestions.length === 0) {
+    suggestions.push(zh ? '各项核心检测通过，建议持续观察' : 'All checks passed — monitor usage over time');
   }
 
   let suggestionHtml = `<div class="report-section">
     <div class="report-section-title">${zh ? '建议' : 'Next Steps'}</div>
     <ul class="report-reason-list">${suggestions.map(s => `<li>${escH(s)}</li>`).join('')}</ul>
   </div>`;
+
+  // Safe baseUrl
+  let safeBaseUrl = '';
+  try { safeBaseUrl = new URL(formData.baseUrl).origin + new URL(formData.baseUrl).pathname.replace(/\/$/, ''); }
+  catch (_) { safeBaseUrl = formData.baseUrl; }
+
+  return `<div style="max-width:560px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;background:#f8fafc;padding:32px;box-sizing:border-box">
+
+    <div style="background:#0f172a;border-radius:20px;padding:18px 20px 16px;margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">
+        <div>
+          <div style="font-size:16px;font-weight:800;color:#fff;letter-spacing:-0.3px">API Doctor</div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:2px">${zh ? '中转站最强照妖镜' : 'Relay API Black-box Check'}</div>
+        </div>
+        <div style="background:${grade.bg};border-radius:10px;padding:6px 14px;text-align:center;flex-shrink:0">
+          <div style="font-size:24px;font-weight:900;color:${grade.color};line-height:1">${grade.grade}</div>
+          <div style="font-size:9px;color:${grade.color};font-weight:600;margin-top:2px">${zh ? grade.labelZh : grade.label}</div>
+        </div>
+      </div>
+      <div style="text-align:center;margin-bottom:10px">
+        <div style="font-size:64px;font-weight:900;color:${grade.color};line-height:1">${score}</div>
+        <div style="font-size:14px;font-weight:700;color:${grade.color};margin-top:4px">${escH(getJudgment(score, result))}</div>
+      </div>
+      <div style="font-size:12px;color:#94a3b8;text-align:center;margin-top:4px">${escH(getOneLineFinding(score, result))}</div>
+    </div>
+
+    <div style="background:#fff;border-radius:16px;padding:14px 16px;margin-bottom:12px">
+      <div style="font-size:11px;font-weight:700;color:#0f172a;margin-bottom:10px">8 ${zh ? '项检测结果' : 'Diagnostic Results'}</div>
+      ${rows}
+    </div>
+
+    ${reasonHtml}
+    ${suggestionHtml}
+
+    <div style="background:#fff;border-radius:12px;padding:12px 14px;margin-bottom:10px;font-size:11px;color:#64748b">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div><span style="font-weight:600;color:#374151">Base URL:</span> ${escH(safeBaseUrl)}</div>
+        <div><span style="font-weight:600;color:#374151">Model:</span> ${escH(formData.model)}</div>
+      </div>
+    </div>
+
+    <div style="text-align:center;font-size:11px;color:#94a3b8;padding:4px 0">
+      ${zh ? '报告 ID' : 'Report ID'}: ${reportId} &nbsp;|&nbsp; aiapidoctor.com
+    </div>
+    <div style="font-size:10px;color:#94a3b8;text-align:center;padding:6px 0 4px;line-height:1.4">
+      ${zh ? '本报告仅展示可复现信号，不构成法律结论。' : 'Report shows reproducible signals only, not a legal conclusion.'}
+    </div>
+
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button onclick="Doctor.saveImage()" style="flex:1;padding:10px;background:#2563eb;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">${zh ? '保存图片' : 'Save Image'}</button>
+      <button onclick="Doctor.copyScore()" style="flex:1;padding:10px;background:#f1f5f9;color:#0f172a;border:1px solid #e2e8f0;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">${zh ? '复制验货分' : 'Copy Score'}</button>
+    </div>
+  </div>`;
+}
 
   // Safe baseUrl
   let safeBaseUrl = '';
@@ -1009,12 +1075,17 @@ async function saveDiagnosticImage() {
     if (typeof htmlToImage === 'undefined') { showToast('请使用浏览器截图'); return; }
     const lang = getDocLang();
     const zh = lang !== 'en';
-    const clone = document.createElement('div');
-    clone.innerHTML = buildReportCardHTML(result, formData, lang);
-    clone.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:540px;background:#f8fafc;padding:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;box-sizing:border-box';
+
+    const sourceEl = document.getElementById('result-card');
+    if (!sourceEl) { showToast('报告未生成'); return; }
+
+    const clone = sourceEl.cloneNode(true);
+    clone.style.cssText = 'position:fixed;top:0;left:0;display:block;width:560px;background:#f8fafc;padding:0;box-sizing:border-box;pointer-events:none';
     document.body.appendChild(clone);
-    const dataUrl = await htmlToImage.toPng(clone, { pixelRatio: 2, cacheBust: true, backgroundColor: '#f8fafc', width: 540 });
+
+    const dataUrl = await htmlToImage.toPng(clone, { pixelRatio: 2, cacheBust: true, backgroundColor: '#f8fafc', width: 560 });
     document.body.removeChild(clone);
+
     const link = document.createElement('a');
     link.download = 'aiapidoctor-' + Date.now() + '.png';
     link.href = dataUrl;
@@ -1217,7 +1288,12 @@ window.Doctor = {
         auth: authResult,
         modelList: modelListResult,
         autoModel: autoModelResult,
-        target: { ...targetResult, state: targetState },
+        target: {
+          ...targetResult,
+          state: targetState,
+          pts: 22,
+          ptsEarned: (targetResult.sub?.output?.ptsEarned || 0) + (targetResult.sub?.bill?.ptsEarned || 0) + (targetResult.sub?.overcount?.ptsEarned || 0),
+        },
         stability: stabilityResult,
         usage: usageResult,
         client: clientResult,
