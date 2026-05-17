@@ -1,11 +1,32 @@
-feat: add stability as 7th check, 7-item progress, detailed report
+refactor: new 8-item quality scoring system with hard caps
 
-- New 7-item scoring: output(20)+bill(18)+overcount(12)+stream(12)+cache(8)+shrinkage(15)+stability(15)=100pts
-- check7_Stability: 3 pings, latency+token variance, 15/8/0 pts
-- Cap rules: no-content+has-bill=65max, no-content+no-bill=55max, has-content+no-bill=75max
-- 7-item per-row progress bar with pass/warn/fail icons + detail text
-- Auto-detect model button next to Model ID input
-- Report card shows ptsEarned/pts + detail per item (not just "Pass")
-- Finding judgment: unstable/usable/all-pass variants per warning
-- Sanitized Chinese strings: no usage/cached_tokens/raw quota terms
-- API Key never in localStorage/console/URL/image/copy text
+BREAKING: Score weights changed from 6-item to 8-item (total=100).
+New architecture: pre-flight(A+B+C) + model detection(D) + target(E+F) + stability(G) + usage(H) + client(I).
+
+New weights:
+- Base URL reachability: 12
+- Auth/Key validity: 14
+- Model list discovery: 12
+- Auto-detect model: 10
+- Target model call: 22 (output 10 + bill 7 + overcount 5)
+- Stability sampling: 18 (success 8 + latency 4 + jitter 3 + consistency 2 + explain 1)
+- Usage audit: 6
+- Client config export: 6
+
+Hard caps applied after raw score:
+- URL unreachable: max 25
+- Auth failed: max 40
+- No model list: max 55
+- Model unavailable: max 70
+- Target call fails: max 60
+- Not 3/3 stable: max 88
+- Usage missing: max 94
+
+New 6-tier grades: A(Excellent/95+), B(Good/90+), C(Fair/80+), D(Limited/65+), E(Poor/40+), F(Failed/<40)
+
+8-step progress bar with real-time pass/warn/fail icons.
+
+Report shows per-item ptsEarned/pts + reason + next step suggestions.
+
+Homepage copy: "一键照出中转站没有扣钱坑"
+Cost hint: "预计消耗低于 $0.05" / "Estimated cost below $0.05"

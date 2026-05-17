@@ -1,13 +1,13 @@
 /**
- * AI API Doctor — Diagnostic Engine
+ * AI API Doctor — Diagnostic Engine v2
  * website/assets/test.js
  *
- * Security rules:
- * - API Key NEVER uploaded to any server
- * - API Key NEVER written to localStorage/sessionStorage
- * - API Key NEVER logged to console
- * - API Key NEVER appears in report images or copied text
- * - Mask API Key as sk-****xxxx in all displays
+ * Architecture:
+ * 1. Pre-flight checks (parallel): reachability, auth, model list
+ * 2. Sequential diagnostic checks: target model call + stability
+ * 3. Raw score → cap rules → final score → grade
+ *
+ * Security: API Key NEVER in localStorage/console/URL/report images/copy text
  */
 'use strict';
 
@@ -20,7 +20,42 @@ const PROMPT_ARITHMETIC = 'What is 17 + 28? Reply with just the answer.';
 const PROMPT_FORMAT = 'Reply with just the word YES in uppercase, nothing else.';
 const PROMPT_CAPITAL = 'What is the capital of France? Reply with just the city name.';
 const PROMPT_LONG_CACHE = `The concept of RESTful API design emphasizes stateless communication between clients and servers, where each request from a client contains all information necessary to process that request. The server does not store any user state between requests, which improves scalability and simplifies server implementation. HTTP methods such as GET, POST, PUT, DELETE, and PATCH map directly to CRUD operations. A well-designed API uses consistent naming conventions, meaningful status codes, and proper error messages to help developers integrate quickly. Response formats should be predictable, typically using JSON with clear field names. Pagination mechanisms prevent clients from overwhelming servers with large result sets. Authentication and rate limiting protect resources from unauthorized access and abuse. This text is repeated to create a long prompt for cache testing purposes.`;
-const PROMPT_STABILITY = '请只输出 OK，不要解释。';
+const PROMPT_STABILITY = 'Reply with exactly: OK';
+
+/* ═══════════════════════════════════════════════════════
+   Score weights (total = 100)
+   ═══════════════════════════════════════════════════════ */
+const WEIGHT = {
+  reachability:   12,   // Base URL reachable
+  auth:           14,   // API Key valid
+  modelList:      12,   // /models or /v1/models accessible
+  autoModel:      10,   // Auto-detected a recommended model
+  targetCall:     22,   // Target model responds correctly
+  stability:      18,   // Stability sampling (5 sub-metrics)
+  usageAudit:      6,   // Usage/token data present
+  clientConfig:    6,   // Client config export friendly
+};
+// Derived
+WEIGHT.total = Object.values(WEIGHT).reduce((a, b) => a + b, 0); // 100
+
+/* ═══════════════════════════════════════════════════════
+   Grade table
+   ═══════════════════════════════════════════════════════ */
+const GRADES = [
+  { min: 95, grade: 'A', label: 'Excellent', labelZh: '优秀', color: '#16a34a', bg: '#dcfce7', desc: '兼容性和稳定性表现优秀', descZh: '兼容性和稳定性表现优秀' },
+  { min: 90, grade: 'B', label: 'Good',      labelZh: '良好', color: '#3b82f6', bg: '#eff6ff', desc: '可正常使用，但仍有少量限制', descZh: '可正常使用，但仍有少量限制' },
+  { min: 80, grade: 'C', label: 'Fair',     labelZh: '一般', color: '#f59e0b', bg: '#fef9c3', desc: '可以使用，但部分检测项需要注意', descZh: '可以使用，但部分检测项需要注意' },
+  { min: 65, grade: 'D', label: 'Limited',  labelZh: '受限', color: '#f97316', bg: '#ffedd5', desc: '部分兼容，可能影响实际使用', descZh: '部分兼容，可能影响实际使用' },
+  { min: 40, grade: 'E', label: 'Poor',     labelZh: '较差', color: '#dc2626', bg: '#fee2e2', desc: '存在明显兼容性问题', descZh: '存在明显兼容性问题' },
+  { min: 0,  grade: 'F', label: 'Failed',   labelZh: '失败', color: '#dc2626', bg: '#fee2e2', desc: '当前配置不可用', descZh: '当前配置不可用' },
+];
+
+function getGrade(score) {
+  for (const g of GRADES) {
+    if (score >= g.min) return g;
+  }
+  return GRADES[GRADES.length - 1];
+}
 
 /* ═══════════════════════════════════════════════════════
    Utilities
@@ -40,17 +75,13 @@ function maskKey(key) {
   return key.slice(0, 3) + '****' + key.slice(-4);
 }
 
-function fmtNum(n) {
-  return Number(n || 0).toLocaleString('en-US');
-}
-
 function showToast(msg) {
   const toast = document.getElementById('toast');
   if (!toast) return;
   toast.textContent = msg;
   toast.style.display = 'block';
   clearTimeout(toast._timer);
-  toast._timer = setTimeout(() => { toast.style.display = 'none'; }, 3000);
+  toast._timer = setTimeout(() => { toast.style.display = 'none'; }, 3500);
 }
 
 function copyToClipboard(text, msg) {
@@ -101,22 +132,15 @@ function buildRequest(baseUrl, apiKey, model, interfaceType, prompt, options = {
   let body;
   if (interfaceType === 'OpenAI Chat') {
     body = { model, messages: [{ role: 'user', content: prompt }], max_tokens: maxTokens, stream };
-    if (stream && streamOptions) {
-      body.stream_options = streamOptions;
-    }
+    if (stream && streamOptions) body.stream_options = streamOptions;
   } else if (interfaceType === 'OpenAI Responses') {
     body = { model, input: prompt, max_output_tokens: maxTokens, stream };
   } else {
     body = { model, messages: [{ role: 'user', content: prompt }], max_tokens: maxTokens, stream };
   }
 
-  const headers = {
-    'Authorization': 'Bearer ' + apiKey,
-    'Content-Type': 'application/json'
-  };
-  if (interfaceType === 'Claude Messages') {
-    headers['anthropic-version'] = '2023-06-01';
-  }
+  const headers = { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' };
+  if (interfaceType === 'Claude Messages') headers['anthropic-version'] = '2023-06-01';
 
   return { endpoint, body, headers };
 }
@@ -133,36 +157,23 @@ function extractVisibleOutput(data, interfaceType) {
     if (!choices || !Array.isArray(choices) || choices.length === 0) return EMPTY;
     const c0 = choices[0];
     if (!c0) return EMPTY;
-
     const mc = c0.message?.content;
-    if (typeof mc === 'string' && mc.trim()) {
-      return { text: mc.trim(), status: 'present' };
-    }
+    if (typeof mc === 'string' && mc.trim()) return { text: mc.trim(), status: 'present' };
     if (Array.isArray(mc)) {
       for (const part of mc) {
-        if (part?.type === 'text' && part?.text?.trim()) {
-          return { text: part.text.trim(), status: 'present' };
-        }
+        if (part?.type === 'text' && part?.text?.trim()) return { text: part.text.trim(), status: 'present' };
       }
     }
     if (c0.message?.reasoning_content && String(c0.message.reasoning_content).trim()) {
       return { text: String(c0.message.reasoning_content).trim(), status: 'present' };
     }
-    if (c0.message?.tool_calls && c0.message.tool_calls.length > 0) {
-      return { text: '[tool_calls]', status: 'present' };
-    }
+    if (c0.message?.tool_calls && c0.message.tool_calls.length > 0) return { text: '[tool_calls]', status: 'present' };
     const delta = c0.delta;
-    if (delta?.content && String(delta.content).trim()) {
-      return { text: String(delta.content).trim(), status: 'present' };
-    }
+    if (delta?.content && String(delta.content).trim()) return { text: String(delta.content).trim(), status: 'present' };
 
   } else if (interfaceType === 'OpenAI Responses') {
-    if (data.output_text && String(data.output_text).trim()) {
-      return { text: String(data.output_text).trim(), status: 'present' };
-    }
-    if (data.response?.output_text && String(data.response.output_text).trim()) {
-      return { text: String(data.response.output_text).trim(), status: 'present' };
-    }
+    if (data.output_text && String(data.output_text).trim()) return { text: String(data.output_text).trim(), status: 'present' };
+    if (data.response?.output_text && String(data.response.output_text).trim()) return { text: String(data.response.output_text).trim(), status: 'present' };
     const outputs = data.output || data.response?.output || [];
     if (Array.isArray(outputs)) {
       for (const out of outputs) {
@@ -180,17 +191,11 @@ function extractVisibleOutput(data, interfaceType) {
     const content = data.content;
     if (Array.isArray(content)) {
       for (const part of content) {
-        if (part?.type === 'text' && part?.text?.trim()) {
-          return { text: part.text.trim(), status: 'present' };
-        }
-        if (part?.type === 'tool_use') {
-          return { text: '[tool_use]', status: 'present' };
-        }
+        if (part?.type === 'text' && part?.text?.trim()) return { text: part.text.trim(), status: 'present' };
+        if (part?.type === 'tool_use') return { text: '[tool_use]', status: 'present' };
       }
     }
-    if (data.delta?.text && String(data.delta.text).trim()) {
-      return { text: String(data.delta.text).trim(), status: 'present' };
-    }
+    if (data.delta?.text && String(data.delta.text).trim()) return { text: String(data.delta.text).trim(), status: 'present' };
   }
 
   return { text: '', status: data.choices || data.content || data.output ? 'unknown' : 'absent' };
@@ -239,30 +244,157 @@ function parseConnectionInfo(raw) {
   });
   if (baseUrl || apiKey || model) return { baseUrl: baseUrl.replace(/\/$/, ''), apiKey, model };
 
-  if (/^https?:\/\//.test(text)) {
-    return { baseUrl: text.replace(/\/$/, ''), apiKey: '', model: '' };
-  }
-
-  if (/^sk-/.test(text)) {
-    return { baseUrl: '', apiKey: text, model: '' };
-  }
-
+  if (/^https?:\/\//.test(text)) return { baseUrl: text.replace(/\/$/, ''), apiKey: '', model: '' };
+  if (/^sk-/.test(text)) return { baseUrl: '', apiKey: text, model: '' };
   return {};
 }
 
 /* ═══════════════════════════════════════════════════════
-   7 Diagnostic Checks
+   STEP 1: Pre-flight Checks (run in parallel)
    ═══════════════════════════════════════════════════════ */
 
 /**
- * Check 1: OUTPUT CHECK (有无产物 — 20pts)
- * Send a normal request, check if response has valid content.
- * Cap rules:
- *   no content + has bill → max 65 total
- *   no content + no bill → max 55 total
- *   has content + no bill → max 75 total
+ * Check A: Base URL Reachability (12 pts)
+ * Simple HEAD/GET request to base URL to see if it responds.
  */
-async function check1_Output(baseUrl, apiKey, model, interfaceType, signal) {
+async function checkA_Reachability(baseUrl, apiKey, signal) {
+  const start = Date.now();
+  try {
+    const url = baseUrl.replace(/\/$/, '');
+    const resp = await fetch(url, { method: 'HEAD', signal, keepalive: false });
+    const elapsed = Date.now() - start;
+    if (resp.status >= 200 && resp.status < 600) {
+      return { state: 'pass', pts: WEIGHT.reachability, ptsEarned: WEIGHT.reachability, detail: `${resp.status} (${elapsed}ms)`, reason: '' };
+    }
+    return { state: 'fail', pts: WEIGHT.reachability, ptsEarned: 0, detail: `HTTP ${resp.status}`, reason: 'Base URL returned non-2xx status' };
+  } catch (err) {
+    if (err.name === 'AbortError') return { state: 'fail', pts: WEIGHT.reachability, ptsEarned: 0, detail: '超时', reason: 'Base URL request timed out' };
+    return { state: 'fail', pts: WEIGHT.reachability, ptsEarned: 0, detail: '网络错误', reason: 'Base URL not reachable: ' + err.message };
+  }
+}
+
+/**
+ * Check B: API Key Authentication (14 pts)
+ * Try to call /models with the key to see if it auths correctly.
+ */
+async function checkB_Auth(baseUrl, apiKey, signal) {
+  try {
+    const url = (baseUrl.replace(/\/$/, '') + '/models').replace(/\/+/g, '/').replace(':/', '://');
+    const resp = await fetch(url, {
+      method: 'GET',
+      headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
+      signal
+    });
+    if (resp.status === 401 || resp.status === 403) {
+      return { state: 'fail', pts: WEIGHT.auth, ptsEarned: 0, detail: 'Key无效', reason: 'API Key returned 401/403 — invalid or expired' };
+    }
+    if (resp.status >= 400) {
+      return { state: 'fail', pts: WEIGHT.auth, ptsEarned: 0, detail: `HTTP ${resp.status}`, reason: 'Auth request failed with HTTP ' + resp.status };
+    }
+    return { state: 'pass', pts: WEIGHT.auth, ptsEarned: WEIGHT.auth, detail: '鉴权通过', reason: '' };
+  } catch (err) {
+    if (err.name === 'AbortError') return { state: 'fail', pts: WEIGHT.auth, ptsEarned: 0, detail: '超时', reason: 'Auth check timed out' };
+    return { state: 'fail', pts: WEIGHT.auth, ptsEarned: 0, detail: '网络错误', reason: 'Auth check failed: ' + err.message };
+  }
+}
+
+/**
+ * Check C: Model List Discovery (12 pts)
+ * Fetch /models or /v1/models to get available models.
+ */
+async function checkC_ModelList(baseUrl, apiKey, signal) {
+  const candidates = [
+    (baseUrl.replace(/\/$/, '') + '/models').replace(/\/+/g, '/').replace(':/', '://'),
+    (baseUrl.replace(/\/$/, '') + '/v1/models').replace(/\/+/g, '/').replace(':/', '://'),
+  ];
+  let lastErr = '无法获取模型列表';
+  let data = null;
+
+  for (const url of candidates) {
+    try {
+      const resp = await fetch(url, {
+        method: 'GET',
+        headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
+        signal
+      });
+      if (resp.status === 401 || resp.status === 403) {
+        lastErr = '鉴权失败';
+        break;
+      }
+      if (!resp.ok) { lastErr = 'HTTP ' + resp.status; continue; }
+      data = await resp.json();
+      break;
+    } catch (err) {
+      if (err.name === 'AbortError') { lastErr = '超时'; break; }
+      lastErr = '请求失败';
+    }
+  }
+
+  if (!data) return { state: 'fail', pts: WEIGHT.modelList, ptsEarned: 0, detail: lastErr, reason: 'Model list endpoint not accessible', models: [] };
+
+  let models = [];
+  if (Array.isArray(data.data)) {
+    models = data.data.map(m => m.id || '').filter(Boolean);
+  } else if (Array.isArray(data.models)) {
+    models = data.models.map(m => typeof m === 'string' ? m : m.id || '').filter(Boolean);
+  } else if (Array.isArray(data)) {
+    models = data.map(m => typeof m === 'string' ? m : m.id || '').filter(Boolean);
+  }
+
+  if (models.length === 0) {
+    return { state: 'fail', pts: WEIGHT.modelList, ptsEarned: 0, detail: '模型列表为空', reason: 'Model list endpoint returned empty array', models: [] };
+  }
+  return { state: 'pass', pts: WEIGHT.modelList, ptsEarned: WEIGHT.modelList, detail: `${models.length}个模型`, reason: '', models };
+}
+
+/**
+ * Check D: Auto-detect Recommended Model (10 pts)
+ * Pick the first recommended model from the list or use user-provided one.
+ */
+function checkD_AutoModel(userModel, modelListResult) {
+  const models = modelListResult?.models || [];
+  // Prefer user-provided model if it exists
+  if (userModel && userModel.trim()) {
+    const found = models.some(m => m.toLowerCase().includes(userModel.toLowerCase())) || models.length === 0;
+    return {
+      state: 'pass', pts: WEIGHT.autoModel, ptsEarned: WEIGHT.autoModel,
+      detail: userModel,
+      reason: found ? '' : 'User provided model not in list',
+      recommendedModel: userModel.trim()
+    };
+  }
+  // Pick first available
+  if (models.length > 0) {
+    return {
+      state: 'pass', pts: WEIGHT.autoModel, ptsEarned: WEIGHT.autoModel,
+      detail: models[0],
+      reason: '',
+      recommendedModel: models[0]
+    };
+  }
+  return {
+    state: 'fail', pts: WEIGHT.autoModel, ptsEarned: 0,
+    detail: '无可用模型',
+    reason: 'No model available — user did not provide one and model list is empty',
+    recommendedModel: ''
+  };
+}
+
+/* ═══════════════════════════════════════════════════════
+   STEP 2: Target Model Calls (22 pts)
+   Sub-checks: output + bill + overcount + stream
+   ═══════════════════════════════════════════════════════ */
+
+/**
+ * Target model chat completion (22 pts total)
+ * - Has content: 10
+ * - Has bill: 7
+ * - No token overcount: 5
+ */
+async function checkE_TargetCall(baseUrl, apiKey, model, interfaceType, signal) {
+  const sub = {};
+
+  // E1: Output (10 pts)
   try {
     const req = buildRequest(baseUrl, apiKey, model, interfaceType, PROMPT_SHORT, 20);
     const resp = await fetch(req.endpoint, {
@@ -273,10 +405,16 @@ async function check1_Output(baseUrl, apiKey, model, interfaceType, signal) {
     });
 
     if (resp.status === 401 || resp.status === 403) {
-      return { name: 'output', label: '有无产物', labelEn: 'Output', pts: 20, ptsEarned: 0, state: 'fail', detail: 'Key无效', httpStatus: resp.status };
+      sub.output = { state: 'fail', pts: 10, ptsEarned: 0, detail: 'Key无效', reason: 'API Key invalid (401/403)' };
+      sub.bill = { state: 'fail', pts: 7, ptsEarned: 0, detail: '无法验证', reason: 'Request blocked by auth error' };
+      sub.overcount = { state: 'fail', pts: 5, ptsEarned: 0, detail: '无法验证', reason: 'Cannot test due to auth error' };
+      return { ...sub, httpStatus: resp.status };
     }
     if (resp.status >= 400) {
-      return { name: 'output', label: '有无产物', labelEn: 'Output', pts: 20, ptsEarned: 0, state: 'fail', detail: 'HTTP ' + resp.status, httpStatus: resp.status };
+      sub.output = { state: 'fail', pts: 10, ptsEarned: 0, detail: `HTTP ${resp.status}`, reason: 'Request returned HTTP ' + resp.status };
+      sub.bill = { state: 'fail', pts: 7, ptsEarned: 0, detail: 'HTTP ' + resp.status, reason: 'Request failed' };
+      sub.overcount = { state: 'fail', pts: 5, ptsEarned: 0, detail: 'HTTP ' + resp.status, reason: 'Request failed' };
+      return { ...sub, httpStatus: resp.status };
     }
 
     const data = await resp.json();
@@ -284,143 +422,59 @@ async function check1_Output(baseUrl, apiKey, model, interfaceType, signal) {
     const usage = data.usage || {};
 
     if (output.status === 'present' && output.text.length > 0) {
-      return {
-        name: 'output', label: '有无产物', labelEn: 'Output', pts: 20, ptsEarned: 20,
-        state: 'pass', detail: '有内容',
-        httpStatus: resp.status, text: output.text, usage
-      };
+      sub.output = { state: 'pass', pts: 10, ptsEarned: 10, detail: '有内容', reason: '' };
     } else if (output.status === 'unknown') {
-      return {
-        name: 'output', label: '有无产物', labelEn: 'Output', pts: 20, ptsEarned: 10,
-        state: 'warn', detail: '格式异常',
-        httpStatus: resp.status, usage
-      };
+      sub.output = { state: 'warn', pts: 10, ptsEarned: 5, detail: '格式异常', reason: 'Response format not recognized' };
     } else {
-      return {
-        name: 'output', label: '有无产物', labelEn: 'Output', pts: 20, ptsEarned: 0,
-        state: 'fail', detail: '没内容',
-        httpStatus: resp.status, usage
-      };
-    }
-  } catch (err) {
-    if (err.name === 'AbortError') {
-      return { name: 'output', label: '有无产物', labelEn: 'Output', pts: 20, ptsEarned: 0, state: 'fail', detail: '请求超时' };
-    }
-    return { name: 'output', label: '有无产物', labelEn: 'Output', pts: 20, ptsEarned: 0, state: 'fail', detail: '网络错误' };
-  }
-}
-
-/**
- * Check 2: BILL DETAILS CHECK (账单明细 — 18pts)
- * Check if response has usage object with required fields.
- */
-async function check2_BillDetails(baseUrl, apiKey, model, interfaceType, signal) {
-  try {
-    const req = buildRequest(baseUrl, apiKey, model, interfaceType, PROMPT_SHORT, 20);
-    const resp = await fetch(req.endpoint, {
-      method: 'POST',
-      headers: req.headers,
-      body: JSON.stringify(req.body),
-      signal
-    });
-
-    if (resp.status >= 400) {
-      return { name: 'bill', label: '账单明细', labelEn: 'Bill Details', pts: 18, ptsEarned: 0, state: 'fail', detail: 'HTTP ' + resp.status };
+      sub.output = { state: 'fail', pts: 10, ptsEarned: 0, detail: '没内容', reason: 'No valid content in response' };
     }
 
-    const data = await resp.json();
-    const usage = data.usage || {};
+    // E2: Bill (7 pts)
     const hasPromptTokens = usage.prompt_tokens != null || usage.input_tokens != null;
     const hasCompletionTokens = usage.completion_tokens != null || usage.output_tokens != null;
     const hasTotalTokens = usage.total_tokens != null;
-
     if (hasPromptTokens && hasCompletionTokens && hasTotalTokens) {
-      return {
-        name: 'bill', label: '账单明细', labelEn: 'Bill Details', pts: 18, ptsEarned: 18,
-        state: 'pass', detail: '有明细',
-        usage
-      };
+      sub.bill = { state: 'pass', pts: 7, ptsEarned: 7, detail: '有明细', reason: '' };
     } else if (hasTotalTokens) {
-      return {
-        name: 'bill', label: '账单明细', labelEn: 'Bill Details', pts: 18, ptsEarned: 9,
-        state: 'warn', detail: '明细不全',
-        usage
-      };
+      sub.bill = { state: 'warn', pts: 7, ptsEarned: 3, detail: '明细不全', reason: 'Incomplete usage data — some token fields missing' };
     } else {
-      return {
-        name: 'bill', label: '账单明细', labelEn: 'Bill Details', pts: 18, ptsEarned: 0,
-        state: 'fail', detail: '没给账单',
-        usage
-      };
-    }
-  } catch (err) {
-    if (err.name === 'AbortError') {
-      return { name: 'bill', label: '账单明细', labelEn: 'Bill Details', pts: 18, ptsEarned: 0, state: 'fail', detail: '请求超时' };
-    }
-    return { name: 'bill', label: '账单明细', labelEn: 'Bill Details', pts: 18, ptsEarned: 0, state: 'fail', detail: '网络错误' };
-  }
-}
-
-/**
- * Check 3: TOKEN OVERCOUNT CHECK (用量虚高 — 12pts)
- * Send a short prompt, check if returned tokens are significantly higher than expected.
- */
-async function check3_TokenOvercount(baseUrl, apiKey, model, interfaceType, signal) {
-  const shortPrompt = 'Hi';
-  const expectedTokens = 3;
-
-  try {
-    const req = buildRequest(baseUrl, apiKey, model, interfaceType, shortPrompt, 5);
-    const resp = await fetch(req.endpoint, {
-      method: 'POST',
-      headers: req.headers,
-      body: JSON.stringify(req.body),
-      signal
-    });
-
-    if (resp.status >= 400) {
-      return { name: 'overcount', label: '用量虚高', labelEn: 'Token Overcount', pts: 12, ptsEarned: 12, state: 'pass', detail: '未虚高' };
+      sub.bill = { state: 'fail', pts: 7, ptsEarned: 0, detail: '没给账单', reason: 'No usage data returned — cannot audit token consumption' };
     }
 
-    const data = await resp.json();
-    const usage = data.usage || {};
+    // E3: Token overcount (5 pts)
+    const shortPrompt = 'Hi';
     const totalTokens = usage.total_tokens || 0;
     const promptTokens = usage.prompt_tokens || usage.input_tokens || 0;
-
-    const threshold = Math.max(expectedTokens * 5, promptTokens * 3, 20);
+    const threshold = Math.max(3 * 5, promptTokens * 3, 20);
     if (totalTokens > threshold) {
-      return {
-        name: 'overcount', label: '用量虚高', labelEn: 'Token Overcount', pts: 12, ptsEarned: 0,
-        state: 'fail', detail: '疑似虚标',
-        usage
-      };
+      sub.overcount = { state: 'fail', pts: 5, ptsEarned: 0, detail: '疑似虚标', reason: `Token count (${totalTokens}) far exceeds expected (~${threshold}) for short prompt` };
     } else {
-      return {
-        name: 'overcount', label: '用量虚高', labelEn: 'Token Overcount', pts: 12, ptsEarned: 12,
-        state: 'pass', detail: '未虚高',
-        usage
-      };
+      sub.overcount = { state: 'pass', pts: 5, ptsEarned: 5, detail: '未虚标', reason: '' };
     }
+
+    return { ...sub, httpStatus: resp.status, usage };
+
   } catch (err) {
     if (err.name === 'AbortError') {
-      return { name: 'overcount', label: '用量虚高', labelEn: 'Token Overcount', pts: 12, ptsEarned: 12, state: 'pass', detail: '超时跳过' };
+      sub.output = { state: 'fail', pts: 10, ptsEarned: 0, detail: '超时', reason: 'Request timed out' };
+    } else {
+      sub.output = { state: 'fail', pts: 10, ptsEarned: 0, detail: '网络错误', reason: 'Network error: ' + err.message };
     }
-    return { name: 'overcount', label: '用量虚高', labelEn: 'Token Overcount', pts: 12, ptsEarned: 12, state: 'pass', detail: '网络错误跳过' };
+    sub.bill = { state: 'fail', pts: 7, ptsEarned: 0, detail: '网络错误', reason: 'Network error' };
+    sub.overcount = { state: 'fail', pts: 5, ptsEarned: 0, detail: '网络错误', reason: 'Network error' };
+    return sub;
   }
 }
 
 /**
- * Check 4: STREAMING BILL LOSS CHECK (流式丢账 — 12pts)
- * Send streaming request with include_usage, check if usage appears in chunks.
+ * Check F: Streaming + Usage (stability of streaming endpoint)
+ * Only runs if streaming is supported.
  */
-async function check4_StreamingBillLoss(baseUrl, apiKey, model, interfaceType, signal) {
+async function checkF_Streaming(baseUrl, apiKey, model, interfaceType, signal) {
   try {
     const req = buildRequest(baseUrl, apiKey, model, interfaceType, PROMPT_SHORT, {
-      maxTokens: 30,
-      stream: true,
-      streamOptions: { include_usage: true }
+      maxTokens: 30, stream: true, streamOptions: { include_usage: true }
     });
-
     const resp = await fetch(req.endpoint, {
       method: 'POST',
       headers: req.headers,
@@ -429,28 +483,23 @@ async function check4_StreamingBillLoss(baseUrl, apiKey, model, interfaceType, s
     });
 
     if (resp.status >= 400) {
-      return { name: 'stream', label: '流式丢账', labelEn: 'Streaming Bill', pts: 12, ptsEarned: 12, state: 'pass', detail: '未测试' };
+      return { state: 'pass', pts: 0, ptsEarned: 0, detail: '流式不支持', reason: 'Streaming returned error — might not be supported' };
     }
-
     if (!resp.body) {
-      return { name: 'stream', label: '流式丢账', labelEn: 'Streaming Bill', pts: 12, ptsEarned: 0, state: 'fail', detail: '流式会炸' };
+      return { state: 'warn', pts: 0, ptsEarned: 0, detail: '流式无响应体', reason: 'Streaming returned no readable body' };
     }
 
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
-    let hasContent = false;
-    let hasUsage = false;
-    let buffer = '';
+    let hasContent = false, hasUsage = false, buffer = '';
 
     try {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
         buffer = lines.pop() || '';
-
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             const dataStr = line.slice(6).trim();
@@ -458,13 +507,8 @@ async function check4_StreamingBillLoss(baseUrl, apiKey, model, interfaceType, s
             try {
               const chunk = JSON.parse(dataStr);
               const usage = chunk.usage;
-              if (usage && (usage.prompt_tokens || usage.completion_tokens || usage.total_tokens)) {
-                hasUsage = true;
-              }
-              const content = extractVisibleOutput(chunk, interfaceType);
-              if (content.status === 'present') {
-                hasContent = true;
-              }
+              if (usage && (usage.prompt_tokens || usage.completion_tokens || usage.total_tokens)) hasUsage = true;
+              if (extractVisibleOutput(chunk, interfaceType).status === 'present') hasContent = true;
             } catch (_) {}
           }
         }
@@ -472,175 +516,34 @@ async function check4_StreamingBillLoss(baseUrl, apiKey, model, interfaceType, s
     } catch (_) {}
 
     if (hasContent && !hasUsage) {
-      return {
-        name: 'stream', label: '流式丢账', labelEn: 'Streaming Bill', pts: 12, ptsEarned: 0,
-        state: 'fail', detail: '流式丢账'
-      };
-    } else if (hasUsage) {
-      return {
-        name: 'stream', label: '流式丢账', labelEn: 'Streaming Bill', pts: 12, ptsEarned: 12,
-        state: 'pass', detail: '流式有账'
-      };
-    } else if (hasContent) {
-      return {
-        name: 'stream', label: '流式丢账', labelEn: 'Streaming Bill', pts: 12, ptsEarned: 12,
-        state: 'pass', detail: '流式有账'
-      };
-    } else {
-      return {
-        name: 'stream', label: '流式丢账', labelEn: 'Streaming Bill', pts: 12, ptsEarned: 6,
-        state: 'warn', detail: '流式没账'
-      };
+      return { state: 'fail', pts: 0, ptsEarned: 0, detail: '流式丢账', reason: 'Streaming returns content but drops usage data — potential billing issue' };
     }
+    if (hasUsage) {
+      return { state: 'pass', pts: 0, ptsEarned: 0, detail: '流式有账', reason: '' };
+    }
+    return { state: 'warn', pts: 0, ptsEarned: 0, detail: '流式无数据', reason: 'Streaming returned no parseable data' };
   } catch (err) {
-    if (err.name === 'AbortError') {
-      return { name: 'stream', label: '流式丢账', labelEn: 'Streaming Bill', pts: 12, ptsEarned: 12, state: 'pass', detail: '超时跳过' };
-    }
-    return { name: 'stream', label: '流式丢账', labelEn: 'Streaming Bill', pts: 12, ptsEarned: 0, state: 'fail', detail: '流式会炸' };
+    if (err.name === 'AbortError') return { state: 'pass', pts: 0, ptsEarned: 0, detail: '超时跳过', reason: '' };
+    return { state: 'warn', pts: 0, ptsEarned: 0, detail: '流式异常', reason: 'Streaming test error: ' + err.message };
   }
 }
 
-/**
- * Check 5: CACHE CHECK (缓存有没有透 — 8pts)
- * Send same long prompt twice, check if cache is detected.
- */
-async function check5_Cache(baseUrl, apiKey, model, interfaceType, signal) {
-  try {
-    const req1 = buildRequest(baseUrl, apiKey, model, interfaceType, PROMPT_LONG_CACHE, 10);
-    const r1 = await fetch(req1.endpoint, { method: 'POST', headers: req1.headers, body: JSON.stringify(req1.body), signal });
-    const d1 = await r1.json();
-    const u1 = d1.usage || {};
-    const cached1 = u1.prompt_tokens_details?.cached_tokens || u1.input_tokens_details?.cached_tokens || 0;
-
-    await sleep(1500);
-
-    const req2 = buildRequest(baseUrl, apiKey, model, interfaceType, PROMPT_LONG_CACHE, 10);
-    const r2 = await fetch(req2.endpoint, { method: 'POST', headers: req2.headers, body: JSON.stringify(req2.body), signal });
-    const d2 = await r2.json();
-    const u2 = d2.usage || {};
-    const cached2 = u2.prompt_tokens_details?.cached_tokens || u2.input_tokens_details?.cached_tokens || 0;
-
-    if (cached1 > 0 || cached2 > 0) {
-      return {
-        name: 'cache', label: '缓存有没有透', labelEn: 'Cache Check', pts: 8, ptsEarned: 8,
-        state: 'pass', detail: '有缓存抵扣',
-        cachedTokens1: cached1, cachedTokens2: cached2
-      };
-    } else {
-      return {
-        name: 'cache', label: '缓存有没有透', labelEn: 'Cache Check', pts: 8, ptsEarned: 4,
-        state: 'warn', detail: '没看到缓存',
-        cachedTokens1: cached1, cachedTokens2: cached2
-      };
-    }
-  } catch (err) {
-    if (err.name === 'AbortError') {
-      return { name: 'cache', label: '缓存有没有透', labelEn: 'Cache Check', pts: 8, ptsEarned: 4, state: 'warn', detail: '没给缓存字段' };
-    }
-    return { name: 'cache', label: '缓存有没有透', labelEn: 'Cache Check', pts: 8, ptsEarned: 4, state: 'warn', detail: '没给缓存字段' };
-  }
-}
-
-/**
- * Check 6: MODEL SHINKAGE CHECK (模型缩水风险 — 15pts)
- * Send 3 simple tests: arithmetic, format, capital.
- */
-async function check6_ModelShrinkage(baseUrl, apiKey, model, interfaceType, signal) {
-  const tests = [
-    {
-      prompt: PROMPT_ARITHMETIC,
-      expected: '45',
-      normalize: (raw) => {
-        const text = (raw || '').trim().replace(/\s/g, '');
-        if (text.includes('45')) return 'correct';
-        return 'wrong';
-      },
-      name: '算术'
-    },
-    {
-      prompt: PROMPT_FORMAT,
-      expected: 'YES',
-      normalize: (raw) => {
-        const text = (raw || '').trim().toUpperCase();
-        if (text === 'YES') return 'correct';
-        if (text.startsWith('YES') && text.length > 3) return 'partial';
-        return 'wrong';
-      },
-      name: '格式'
-    },
-    {
-      prompt: PROMPT_CAPITAL,
-      expected: 'Paris',
-      normalize: (raw) => {
-        const text = (raw || '').trim();
-        if (text.toLowerCase().includes('paris')) return 'correct';
-        return 'wrong';
-      },
-      name: '常识'
-    }
-  ];
-
-  const results = [];
-  let totalScore = 0;
-
-  for (const test of tests) {
-    try {
-      const req = buildRequest(baseUrl, apiKey, model, interfaceType, test.prompt, 20);
-      const resp = await fetch(req.endpoint, {
-        method: 'POST',
-        headers: req.headers,
-        body: JSON.stringify(req.body),
-        signal
-      });
-
-      if (resp.status >= 400) {
-        results.push({ name: test.name, score: 0, output: '', state: 'fail' });
-        continue;
-      }
-
-      const data = await resp.json();
-      const output = extractVisibleOutput(data, interfaceType);
-      const norm = test.normalize(output.text);
-      const score = norm === 'correct' ? 100 : norm === 'partial' ? 60 : 0;
-      totalScore += score;
-      results.push({ name: test.name, score, output: output.text, state: norm === 'correct' ? 'pass' : 'fail' });
-    } catch (err) {
-      results.push({ name: test.name, score: 0, output: '', state: 'fail' });
-    }
-  }
-
-  const avgScore = Math.round(totalScore / tests.length);
-
-  if (avgScore >= 80) {
-    return {
-      name: 'shrinkage', label: '模型缩水风险', labelEn: 'Model Check', pts: 15, ptsEarned: 15,
-      state: 'pass', detail: '表现正常',
-      results, avgScore
-    };
-  } else if (avgScore >= 50) {
-    return {
-      name: 'shrinkage', label: '模型缩水风险', labelEn: 'Model Check', pts: 15, ptsEarned: 8,
-      state: 'warn', detail: '表现一般',
-      results, avgScore
-    };
-  } else {
-    return {
-      name: 'shrinkage', label: '模型缩水风险', labelEn: 'Model Check', pts: 15, ptsEarned: 0,
-      state: 'fail', detail: '模型缩水风险',
-      results, avgScore
-    };
-  }
-}
-
-/**
- * Check 7: STABILITY SAMPLING (稳定性采样 — 15pts)
- * Send 3 consecutive lightweight requests and evaluate stability.
- */
-async function check7_Stability(baseUrl, apiKey, model, interfaceType, signal) {
+/* ═══════════════════════════════════════════════════════
+   STEP 3: Stability Sampling (18 pts)
+   Sub-metrics:
+     success_rate   (8 pts): 3/3=8, 2/3=5, 1/3=2, 0/3=0
+     avg_latency    (4 pts): <2000=4, <5000=3, <10000=2, >=10000=0
+     latency_jitter (3 pts): small=3, medium=2, large=1, calc_fail=0
+     consistency    (2 pts): all_ok=2, partial=1, none=0
+     err_explain    (1 pt):  clear=1, unclear=0
+   ═══════════════════════════════════════════════════════ */
+async function checkG_Stability(baseUrl, apiKey, model, interfaceType, signal) {
   const TOTAL = 3;
 
   async function onePing(abortController) {
     const start = Date.now();
+    let ok = false, status = 0, hasContent = false, errMsg = '', errExplain = 0;
+    let latency = 0;
     try {
       const req = buildRequest(baseUrl, apiKey, model, interfaceType, PROMPT_STABILITY, 5);
       const resp = await fetch(req.endpoint, {
@@ -650,27 +553,41 @@ async function check7_Stability(baseUrl, apiKey, model, interfaceType, signal) {
         signal: abortController.signal,
         keepalive: false
       });
-      const elapsed = Date.now() - start;
-      const ok = resp.ok;
-      let text = '';
-      let hasContent = false;
-      let hasBill = false;
-      let _data = null;
+      latency = Date.now() - start;
+      status = resp.status;
+      ok = resp.ok;
+
       if (ok) {
         try {
           const data = await resp.json();
-          _data = data;
           const out = extractVisibleOutput(data, interfaceType);
-          text = out.text;
           hasContent = out.status === 'present' && out.text.length > 0;
-          const usage = data.usage || {};
-          hasBill = !!(usage.prompt_tokens || usage.completion_tokens || usage.total_tokens);
-        } catch (_) {}
+          // Check if response looks like OK
+          const text = out.text.trim().toUpperCase();
+          if (text === 'OK') errExplain = 1;
+          else if (text.length > 0) errExplain = 0;
+          else errExplain = 1;
+        } catch (_) {
+          errMsg = 'JSON解析失败';
+          errExplain = 0;
+        }
+      } else {
+        try {
+          const errData = await resp.json();
+          errMsg = errData.error?.message || errData.error?.type || errData.message || '';
+        } catch (_) {
+          errMsg = resp.statusText || 'HTTP ' + status;
+        }
+        if (!errMsg) errExplain = 0;
+        else errExplain = 1;
       }
-      return { elapsed, ok, hasContent, hasBill, text, _data, err: null };
     } catch (err) {
-      return { elapsed: Date.now() - start, ok: false, hasContent: false, hasBill: false, text: '', err: err.name };
+      latency = Date.now() - start;
+      ok = false;
+      errMsg = err.name === 'AbortError' ? '超时' : err.message;
+      errExplain = errMsg ? 1 : 0;
     }
+    return { latency, ok, status, hasContent, errMsg, errExplain };
   }
 
   const samples = [];
@@ -680,265 +597,383 @@ async function check7_Stability(baseUrl, apiKey, model, interfaceType, signal) {
     const controller = new AbortController();
     const prevAbort = signal._onabort;
     signal._onabort = () => { controller.abort(); aborted = true; };
-
     const s = await onePing(controller);
     samples.push(s);
-
     if (aborted) break;
-    if (i < TOTAL - 1) {
-      await sleep(800);
-    }
+    if (i < TOTAL - 1) await sleep(1000);
   }
 
+  // Sub-metric 1: Success rate (8 pts)
   const successCount = samples.filter(s => s.ok && s.hasContent).length;
-  const okCount = samples.filter(s => s.ok).length;
-  const times = samples.filter(s => s.ok).map(s => s.elapsed);
-  const tokens = samples.filter(s => s.ok).map(s => {
-    const u = (s._data || {}).usage || {};
-    return u.total_tokens || u.completion_tokens || 0;
-  });
+  const successPts = successCount === 3 ? 8 : successCount === 2 ? 5 : successCount === 1 ? 2 : 0;
 
-  // Latency variance check
-  let latVary = false;
-  if (times.length >= 2) {
-    const minT = Math.min(...times);
-    const maxT = Math.max(...times);
-    if (minT > 0 && maxT / minT > 3) latVary = true;
-    if (minT < 500 && maxT - minT > 3000) latVary = true;
+  // Sub-metric 2: Avg latency (4 pts)
+  const okSamples = samples.filter(s => s.ok);
+  const avgLat = okSamples.length > 0 ? okSamples.reduce((a, s) => a + s.latency, 0) / okSamples.length : 99999;
+  let latencyPts = 4;
+  if (avgLat >= 10000) latencyPts = 0;
+  else if (avgLat >= 5000) latencyPts = 2;
+  else if (avgLat >= 2000) latencyPts = 3;
+
+  // Sub-metric 3: Latency jitter (3 pts) — CV-based
+  let jitterPts = 0;
+  if (okSamples.length >= 2) {
+    const times = okSamples.map(s => s.latency);
+    const mean = times.reduce((a, b) => a + b, 0) / times.length;
+    const stddev = Math.sqrt(times.reduce((a, t) => a + Math.pow(t - mean, 2), 0) / times.length);
+    const cv = mean > 0 ? (stddev / mean) * 100 : 0;
+    if (cv < 20) jitterPts = 3;
+    else if (cv < 40) jitterPts = 2;
+    else jitterPts = 1;
   }
 
-  // Token variance check (short prompt → tokens should be tiny)
-  let tokVary = false;
-  if (tokens.length >= 2) {
-    const minTok = Math.min(...tokens);
-    const maxTok = Math.max(...tokens);
-    if (minTok > 0 && maxTok / minTok > 2.5) tokVary = true;
-  }
+  // Sub-metric 4: Consistency — all return OK (2 pts)
+  const consistencyPts = successCount === 3 ? 2 : successCount >= 1 ? 1 : 0;
 
-  // Bill consistency
-  const billCounts = samples.filter(s => s.hasBill).length;
-  const billInconsistent = okCount > 0 && (billCounts === 0 || billCounts === okCount);
+  // Sub-metric 5: Error explainability (1 pt)
+  const errExplainSum = samples.reduce((a, s) => a + s.errExplain, 0);
+  const explainPts = errExplainSum >= TOTAL ? 1 : errExplainSum > 0 ? 1 : 0;
 
-  // Decision
-  let ptsEarned, state, detail;
-  if (successCount === 3 && !latVary && !tokVary) {
-    ptsEarned = 15; state = 'pass'; detail = '三次都稳';
-  } else if (okCount >= 2 && successCount >= 2 && !latVary) {
-    ptsEarned = 8; state = 'warn'; detail = '有点飘';
-  } else {
-    ptsEarned = 0; state = 'fail'; detail = '很不稳';
-  }
+  const totalPts = successPts + latencyPts + jitterPts + consistencyPts + explainPts;
+
+  // State
+  let state = 'pass';
+  if (successCount === 3 && avgLat < 2000) state = 'pass';
+  else if (successCount >= 2 && avgLat < 5000) state = 'pass';
+  else if (successCount >= 1) state = 'warn';
+  else state = 'fail';
+
+  // Detail
+  const detail = `${successCount}/3成功,均${Math.round(avgLat)}ms`;
 
   return {
-    name: 'stability', label: '稳定性采样', labelEn: 'Stability', pts: 15, ptsEarned,
-    state, detail, samples
+    state, pts: WEIGHT.stability, ptsEarned: totalPts,
+    detail,
+    sub: {
+      success: { pts: 8, ptsEarned: successPts, detail: `${successCount}/3成功` },
+      latency: { pts: 4, ptsEarned: latencyPts, detail: avgLat < 99999 ? `均${Math.round(avgLat)}ms` : 'N/A' },
+      jitter: { pts: 3, ptsEarned: jitterPts, detail: jitterPts === 3 ? '稳定' : jitterPts === 2 ? '波动一般' : jitterPts === 1 ? '波动较大' : '无法计算' },
+      consistency: { pts: 2, ptsEarned: consistencyPts, detail: successCount === 3 ? '一致' : successCount >= 1 ? '部分一致' : '不一致' },
+      explain: { pts: 1, ptsEarned: explainPts, detail: explainPts ? '错误可读' : '错误不可读' },
+    },
+    samples,
+    reason: totalPts < WEIGHT.stability ? `稳定性得分 ${totalPts}/${WEIGHT.stability}` : ''
   };
 }
 
 /* ═══════════════════════════════════════════════════════
-   Score Calculator & Verdict
+   STEP 4: Usage Audit (6 pts)
+   Does the API return sufficient usage data for auditing?
    ═══════════════════════════════════════════════════════ */
-function calcScore(checks) {
-  let total = 0, earned = 0;
-  for (const c of checks) {
-    total += c.pts;
-    earned += c.ptsEarned;
-  }
-  return total > 0 ? Math.round(earned / total * 100) : 0;
-}
-
-function calcGrade(score) {
-  if (score >= 85) return 'A';
-  if (score >= 70) return 'B';
-  if (score >= 55) return 'C';
-  if (score >= 30) return 'D';
-  return 'F';
-}
-
-/**
- * Apply cap rules based on check1 (output) and check2 (bill).
- * Returns adjusted ptsEarned for check1 and check2.
- */
-function applyCapRules(checks) {
-  const c1 = checks.find(c => c.name === 'output');
-  const c2 = checks.find(c => c.name === 'bill');
-  const c7 = checks.find(c => c.name === 'stability');
-
-  if (!c1 || !c2) return checks;
-
-  const noContent = c1.ptsEarned === 0;
-  const hasBill = c2.ptsEarned > 0;
-  const noBill = c2.ptsEarned === 0;
-  const hasContent = c1.ptsEarned > 0;
-
-  // Compute "raw" total excluding c1 and c2
-  let othersEarned = 0;
-  let othersTotal = 0;
-  for (const c of checks) {
-    if (c.name !== 'output' && c.name !== 'bill') {
-      othersEarned += c.ptsEarned;
-      othersTotal += c.pts;
+async function checkH_UsageAudit(baseUrl, apiKey, model, interfaceType, signal) {
+  try {
+    const req = buildRequest(baseUrl, apiKey, model, interfaceType, PROMPT_SHORT, 20);
+    const resp = await fetch(req.endpoint, {
+      method: 'POST',
+      headers: req.headers,
+      body: JSON.stringify(req.body),
+      signal
+    });
+    if (resp.status >= 400) {
+      return { state: 'fail', pts: WEIGHT.usageAudit, ptsEarned: 0, detail: '请求失败', reason: 'Request failed' };
     }
+    const data = await resp.json();
+    const usage = data.usage || {};
+
+    const hasPrompt = usage.prompt_tokens != null || usage.input_tokens != null;
+    const hasCompletion = usage.completion_tokens != null || usage.output_tokens != null;
+    const hasTotal = usage.total_tokens != null;
+    const hasCached = !!(usage.prompt_tokens_details?.cached_tokens || usage.input_tokens_details?.cached_tokens);
+
+    if (hasPrompt && hasCompletion && hasTotal) {
+      return {
+        state: 'pass', pts: WEIGHT.usageAudit, ptsEarned: WEIGHT.usageAudit,
+        detail: '明细完整', reason: '',
+        sub: { prompt: hasPrompt, completion: hasCompletion, total: hasTotal, cached: hasCached }
+      };
+    } else if (hasTotal) {
+      return {
+        state: 'warn', pts: WEIGHT.usageAudit, ptsEarned: Math.round(WEIGHT.usageAudit / 2),
+        detail: '明细不全', reason: 'Partial usage data — cannot fully audit token consumption',
+        sub: { prompt: hasPrompt, completion: hasCompletion, total: hasTotal, cached: hasCached }
+      };
+    } else {
+      return {
+        state: 'fail', pts: WEIGHT.usageAudit, ptsEarned: 0,
+        detail: '无明细', reason: 'No usage data returned — cannot audit token consumption at all',
+        sub: { prompt: hasPrompt, completion: hasCompletion, total: hasTotal, cached: hasCached }
+      };
+    }
+  } catch (err) {
+    if (err.name === 'AbortError') return { state: 'fail', pts: WEIGHT.usageAudit, ptsEarned: 0, detail: '超时', reason: 'Request timed out' };
+    return { state: 'fail', pts: WEIGHT.usageAudit, ptsEarned: 0, detail: '网络错误', reason: 'Network error: ' + err.message };
   }
-
-  // Cap for check1
-  let c1Capped = c1.ptsEarned;
-  if (noContent && hasBill && c1.ptsEarned > 0) {
-    const cap = 65 - othersEarned - c2.ptsEarned;
-    c1Capped = Math.max(0, Math.min(c1.ptsEarned, Math.max(0, cap)));
-  }
-  if (noContent && noBill && c1.ptsEarned > 0) {
-    const cap = 55 - othersEarned;
-    c1Capped = Math.max(0, Math.min(c1.ptsEarned, Math.max(0, cap)));
-  }
-  if (hasContent && noBill && c1.ptsEarned > 0) {
-    const cap = 75 - othersEarned - c2.ptsEarned;
-    c1Capped = Math.max(0, Math.min(c1.ptsEarned, Math.max(0, cap)));
-  }
-
-  return checks.map(c => {
-    if (c.name === 'output') return { ...c, ptsEarned: c1Capped };
-    return c;
-  });
-}
-
-function getJudgment(score, checks) {
-  const c1 = checks.find(c => c.name === 'output');
-  const c7 = checks.find(c => c.name === 'stability');
-
-  if (c7?.ptsEarned === 0) return '很不稳';
-  if (c7?.ptsEarned === 8) return '有点飘';
-  if (score >= 85 && c1?.ptsEarned > 0) return '硬货';
-  if (score >= 70 && c1?.ptsEarned > 0) return '能用';
-  if (score >= 55) return '有坑';
-  if (score >= 30) return '高危';
-  if (c1?.ptsEarned === 0) return '返回废包';
-  return '别充';
-}
-
-function getOneLineFinding(score, checks) {
-  const zh = getDocLang() !== 'en';
-  const c5 = checks.find(c => c.name === 'cache');
-  const c7 = checks.find(c => c.name === 'stability');
-  const fails = checks.filter(c => c.state === 'fail');
-  const warns = checks.filter(c => c.state === 'warn');
-
-  // All pass
-  if (fails.length === 0 && warns.length === 0) {
-    return zh ? '各项检测通过' : 'All checks passed';
-  }
-
-  // Only cache warn
-  if (warns.length === 1 && warns[0].name === 'cache') {
-    return zh ? '主体硬货，缓存抵扣未确认' : 'Solid core; cache discount unconfirmed';
-  }
-
-  // Stability warn (8/15)
-  if (warns.some(c => c.name === 'stability')) {
-    return zh ? '主体可用，但稳定性有点飘' : 'Mostly usable; stability inconsistent';
-  }
-
-  // Stability fail
-  if (fails.some(c => c.name === 'stability')) {
-    return zh ? '接口不稳，谨慎充值' : 'Connection unstable; use caution';
-  }
-
-  // Multiple warns
-  if (warns.length > 1) {
-    return zh ? '主体可用，部分项目需复查' : 'Mostly usable; some items need review';
-  }
-
-  // Generic fail
-  const labels = fails.map(f => f.label).join('、');
-  return zh ? `异常：${labels}` : `Issues: ${labels}`;
 }
 
 /* ═══════════════════════════════════════════════════════
-   Report Card HTML Builder (for image generation)
+   STEP 5: Client Config Export (6 pts)
+   Can we construct a working client config from the info?
+   ═══════════════════════════════════════════════════════ */
+function checkI_ClientConfig(baseUrl, apiKey, model, modelListResult) {
+  const hasUrl = !!(baseUrl && baseUrl.startsWith('http'));
+  const hasKey = !!(apiKey && apiKey.startsWith('sk-'));
+  const hasModel = !!(model && model.trim());
+  const hasModelList = !!(modelListResult?.models?.length > 0);
+
+  const score = [hasUrl, hasKey, hasModel, hasModelList].filter(Boolean).length;
+  // 4/4 = 6, 3/4 = 5, 2/4 = 3, 1/4 = 1, 0/4 = 0
+  const ptsMap = [0, 1, 3, 5, 6];
+  const ptsEarned = ptsMap[Math.min(score, 4)];
+
+  if (score >= 3) return { state: 'pass', pts: WEIGHT.clientConfig, ptsEarned, detail: '配置完整', reason: '' };
+  if (score >= 2) return { state: 'warn', pts: WEIGHT.clientConfig, ptsEarned, detail: '配置不全', reason: 'Some client config fields missing' };
+  return { state: 'fail', pts: WEIGHT.clientConfig, ptsEarned, detail: '配置缺失', reason: 'Missing critical client config fields' };
+}
+
+/* ═══════════════════════════════════════════════════════
+   Score Calculator
+   ═══════════════════════════════════════════════════════ */
+function calcScore(result) {
+  let raw = 0;
+  for (const key of Object.keys(result.checks)) {
+    const c = result.checks[key];
+    raw += c.ptsEarned || 0;
+  }
+  return raw;
+}
+
+/**
+ * Apply hard cap rules to the raw score.
+ * Each cap is the ABSOLUTE MAXIMUM score achievable given the failure.
+ */
+function applyCaps(rawScore, result) {
+  const { checks } = result;
+  const reachFail = checks.reachability?.state === 'fail';
+  const authFail = checks.auth?.state === 'fail';
+  const modelListFail = checks.modelList?.state === 'fail';
+  const autoModelFail = checks.autoModel?.state === 'fail';
+  const targetOutputFail = checks.target?.sub?.output?.state === 'fail';
+  const targetOutputWarn = checks.target?.sub?.output?.state === 'warn';
+  const stabilityFail = checks.stability?.state === 'fail';
+  const stabilityWarn = checks.stability?.state === 'warn';
+  const stabilityFull = checks.stability?.sub?.success?.ptsEarned === 8;
+  const avgLatHigh = (checks.stability?.sub?.latency?.ptsEarned || 0) <= 2;
+  const usageFail = checks.usage?.state === 'fail';
+  const usageWarn = checks.usage?.state === 'warn';
+  const clientFail = checks.client?.state === 'fail';
+  const http4xx = checks.target?.httpStatus >= 400;
+
+  let cap = 100;
+
+  if (reachFail) cap = Math.min(cap, 25);
+  else if (authFail) cap = Math.min(cap, 40);
+  else if (modelListFail) cap = Math.min(cap, 55);
+  else if (autoModelFail) cap = Math.min(cap, 70);
+
+  if (http4xx) cap = Math.min(cap, 40);
+
+  if (targetOutputFail) cap = Math.min(cap, 60);
+  else if (targetOutputWarn) cap = Math.min(cap, 75);
+
+  if (!stabilityFull) cap = Math.min(cap, 88);
+  if (stabilityFail) cap = Math.min(cap, 60);
+  if (avgLatHigh) cap = Math.min(cap, 90);
+
+  if (usageFail) cap = Math.min(cap, 94);
+  else if (usageWarn) cap = Math.min(cap, 97);
+
+  if (clientFail) cap = Math.min(cap, 94);
+
+  // Additional: 3/3 stability but usage missing → 88-94
+  if (stabilityFull && usageFail) cap = Math.min(cap, 94);
+  if (stabilityFull && !usageFail && !usageWarn && !clientFail) cap = 100;
+
+  return Math.min(rawScore, cap);
+}
+
+function getJudgment(score, result) {
+  const g = getGrade(score);
+  const zh = getDocLang() !== 'en';
+  if (score >= 95) return zh ? '优秀' : 'Excellent';
+  if (score >= 90) return zh ? '良好' : 'Good';
+  if (score >= 80) return zh ? '一般' : 'Fair';
+  if (score >= 65) return zh ? '受限' : 'Limited';
+  if (score >= 40) return zh ? '较差' : 'Poor';
+  return zh ? '失败' : 'Failed';
+}
+
+function getOneLineFinding(score, result) {
+  const zh = getDocLang() !== 'en';
+  const { checks } = result;
+  const fails = Object.values(checks).filter(c => c?.state === 'fail');
+  const warns = Object.values(checks).filter(c => c?.state === 'warn');
+
+  if (fails.length === 0 && warns.length === 0) {
+    return zh ? '所有检测项通过' : 'All checks passed';
+  }
+
+  // Build human-readable summary of failures
+  if (fails.length > 0) {
+    const reasons = fails.map(f => f.reason || f.detail).filter(Boolean);
+    if (reasons.length > 0) {
+      return zh ? '异常：' + reasons[0] : 'Issue: ' + reasons[0];
+    }
+  }
+  if (warns.length > 0) {
+    const reasons = warns.map(f => f.reason || f.detail).filter(Boolean);
+    if (reasons.length > 0) {
+      return zh ? '注意：' + reasons[0] : 'Note: ' + reasons[0];
+    }
+  }
+
+  return zh ? '存在异常项' : 'Some items need attention';
+}
+
+/* ═══════════════════════════════════════════════════════
+   Report Card HTML Builder
    ═══════════════════════════════════════════════════════ */
 function buildReportCardHTML(result, formData, lang) {
   const zh = lang !== 'en';
-  const { score, checks, reportId, timestamp } = result;
-  const grade = calcGrade(score);
-  const judgment = getJudgment(score, checks);
-  const finding = getOneLineFinding(score, checks);
-
-  const gradeColors = { A: '#16a34a', B: '#3b82f6', C: '#f59e0b', D: '#f97316', F: '#dc2626' };
-  const gradeBgs = { A: '#dcfce7', B: '#eff6ff', C: '#fef9c3', D: '#ffedd5', F: '#fee2e2' };
-  const gradeColor = gradeColors[grade] || '#94a3b8';
-  const gradeBg = gradeBgs[grade] || '#f1f5f9';
-
-  const barStateColors = { pass: '#16a34a', fail: '#dc2626', warn: '#f59e0b' };
-  const barStateBgs = { pass: '#dcfce7', fail: '#fee2e2', warn: '#fef9c3' };
+  const { score, checks, reportId } = result;
+  const grade = getGrade(score);
 
   const escH = (s) => esc(String(s || ''));
 
   function pill(state) {
-    const c = barStateColors[state] || '#94a3b8';
-    const bg = barStateBgs[state] || '#f1f5f9';
-    const text = state === 'pass' ? (zh ? '通过' : 'Pass')
-      : state === 'fail' ? (zh ? '失败' : 'Fail')
-      : (zh ? '警告' : 'Warn');
-    return `<span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:9px;font-weight:700;color:${c};background:${bg}">${text}</span>`;
+    const colors = { pass: { c: '#16a34a', bg: '#dcfce7' }, warn: { c: '#f59e0b', bg: '#fef9c3' }, fail: { c: '#dc2626', bg: '#fee2e2' } };
+    const { c, bg } = colors[state] || { c: '#94a3b8', bg: '#f1f5f9' };
+    const texts = { pass: zh ? '通过' : 'Pass', warn: zh ? '警告' : 'Warn', fail: zh ? '失败' : 'Fail' };
+    return `<span style="display:inline-block;padding:2px 7px;border-radius:12px;font-size:10px;font-weight:700;color:${c};background:${bg}">${texts[state]}</span>`;
   }
 
-  function barRow(check) {
-    const c = barStateColors[check.state] || '#94a3b8';
-    const bg = barStateBgs[check.state] || '#f1f5f9';
-    const pct = check.state === 'pass' ? 100 : check.state === 'fail' ? 0 : 50;
-    const label = zh ? check.label : (check.labelEn || check.label);
-    const detail = escH(check.detail);
-
-    return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid #f1f5f9">
-      <div style="width:90px;font-size:11px;font-weight:600;color:#374151;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escH(label)}</div>
-      <div style="flex:1;height:8px;background:${bg};border-radius:4px;overflow:hidden">
-        <div style="height:100%;width:${pct}%;background:${c};border-radius:4px"></div>
-      </div>
-      <div style="width:42px;text-align:center;flex-shrink:0">${pill(check.state)}</div>
-      <div style="width:50px;text-align:right;font-size:10px;color:#94a3b8;flex-shrink:0">${check.ptsEarned}/${check.pts}</div>
-      <div style="width:70px;text-align:right;font-size:10px;color:#374151;font-weight:500;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${detail}</div>
+  function itemRow(key, label, check, isSub) {
+    if (!check) return '';
+    const rowClass = isSub ? 'report-sub-row' : 'report-row';
+    const indent = isSub ? 'padding-left:20px;' : '';
+    const labelText = isSub ? '  ' + label : label;
+    return `<div class="${rowClass}" style="${indent}">
+      <div class="report-row-label">${escH(labelText)}</div>
+      <div class="report-row-score">${check.ptsEarned}/${check.pts}</div>
+      <div class="report-row-pill">${pill(check.state)}</div>
+      <div class="report-row-detail">${escH(check.detail)}</div>
     </div>`;
   }
 
-  const riskTags = checks.filter(c => c.state === 'fail').map(c => {
-    const label = zh ? c.label : (c.labelEn || c.label);
-    return `<span style="background:${gradeBg};color:${gradeColor};font-size:10px;font-weight:700;padding:2px 9px;border-radius:20px">${escH(label)}</span>`;
-  });
-
-  // Sanitize baseUrl: only show origin + pathname
-  let safeBaseUrl = '';
-  try {
-    const u = new URL(formData.baseUrl);
-    safeBaseUrl = u.origin + u.pathname.replace(/\/$/, '');
-  } catch (_) {
-    safeBaseUrl = formData.baseUrl;
+  function sectionRow(key, label, check, subItems) {
+    const rows = [itemRow(key, label, check, false)];
+    if (subItems) {
+      for (const [k, v] of Object.entries(subItems)) {
+        rows.push(itemRow(k, k, v, true));
+      }
+    }
+    return rows.join('');
   }
 
-  return `<div style="max-width:540px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;background:#f8fafc;padding:32px;box-sizing:border-box">
+  // Build all check rows
+  let rows = '';
+  const itemLabels = {
+    reachability: { zh: 'Base URL 可达性', en: 'Base URL Reachability' },
+    auth: { zh: '鉴权 / Key 有效性', en: 'Auth / Key Validity' },
+    modelList: { zh: '模型列表获取', en: 'Model List Discovery' },
+    autoModel: { zh: '自动识别推荐模型', en: 'Auto-detect Model' },
+    target: { zh: '目标模型调用', en: 'Target Model Call' },
+    stability: { zh: '稳定性采样', en: 'Stability Sampling' },
+    usage: { zh: '用量审计', en: 'Usage Audit' },
+    client: { zh: '客户端配置导出', en: 'Client Config Export' },
+  };
+
+  rows += sectionRow('reachability', itemLabels.reachability[zh ? 'zh' : 'en'], checks.reachability);
+  rows += sectionRow('auth', itemLabels.auth[zh ? 'zh' : 'en'], checks.auth);
+  rows += sectionRow('modelList', itemLabels.modelList[zh ? 'zh' : 'en'], checks.modelList);
+  rows += sectionRow('autoModel', itemLabels.autoModel[zh ? 'zh' : 'en'], checks.autoModel);
+
+  // Target call with sub-items
+  if (checks.target) {
+    const t = checks.target;
+    const targetSubs = {};
+    if (t.sub) {
+      targetSubs['output'] = t.sub.output;
+      targetSubs['bill'] = t.sub.bill;
+      targetSubs['overcount'] = t.sub.overcount;
+    }
+    rows += sectionRow('target', itemLabels.target[zh ? 'zh' : 'en'], t.state ? { state: t.sub?.output?.state || t.state, pts: 22, ptsEarned: (t.sub?.output?.ptsEarned||0) + (t.sub?.bill?.ptsEarned||0) + (t.sub?.overcount?.ptsEarned||0), detail: '' } : null, targetSubs);
+  }
+
+  rows += sectionRow('stability', itemLabels.stability[zh ? 'zh' : 'en'], checks.stability, checks.stability?.sub);
+  rows += sectionRow('usage', itemLabels.usage[zh ? 'zh' : 'en'], checks.usage);
+  rows += sectionRow('client', itemLabels.client[zh ? 'zh' : 'en'], checks.client);
+
+  // Reason section
+  const failReasons = Object.values(checks)
+    .filter(c => c?.state === 'fail' && c.reason)
+    .map(c => c.reason);
+  const warnReasons = Object.values(checks)
+    .filter(c => c?.state === 'warn' && c.reason)
+    .map(c => c.reason);
+
+  let reasonHtml = '';
+  if (failReasons.length > 0 || warnReasons.length > 0) {
+    let items = failReasons.map(r => `<li>${escH(r)}</li>`).join('');
+    if (warnReasons.length > 0) items += warnReasons.map(r => `<li style="color:#f59e0b">${escH(r)}</li>`).join('');
+    reasonHtml = `<div class="report-section">
+      <div class="report-section-title">${zh ? '扣分原因' : 'Deduction Reasons'}</div>
+      <ul class="report-reason-list">${items}</ul>
+    </div>`;
+  }
+
+  // Next step suggestions
+  const suggestions = [];
+  const failNames = Object.entries(checks).filter(([, c]) => c?.state === 'fail').map(([k]) => k);
+  if (failNames.includes('reachability')) suggestions.push(zh ? '检查 Base URL 是否正确，端口是否开放' : 'Verify Base URL is correct and the port is open');
+  if (failNames.includes('auth')) suggestions.push(zh ? '确认 API Key 有效且未过期' : 'Verify API Key is valid and not expired');
+  if (failNames.includes('modelList')) suggestions.push(zh ? '该接口不支持模型列表查询，可手动填写模型 ID' : 'Model list not supported — fill in Model ID manually');
+  if (failNames.includes('target')) suggestions.push(zh ? '确认填写的模型 ID 与中转站支持模型匹配' : 'Verify the model ID matches what this relay supports');
+  if (failNames.includes('stability')) suggestions.push(zh ? '稳定性采样失败或波动较大，建议多次测试观察' : 'Stability issues detected — test multiple times to confirm');
+  if (failNames.includes('usage')) suggestions.push(zh ? '该接口不返回用量数据，无法核验真实消耗' : 'No usage data — cannot audit actual token consumption');
+  if (suggestions.length === 0 && warnReasons.length > 0) {
+    suggestions.push(zh ? '存在警告项，建议留意使用体验' : 'Some warnings detected — monitor usage experience');
+  }
+  if (suggestions.length === 0) {
+    suggestions.push(zh ? '各项检测通过，建议持续观察' : 'All checks passed — monitor usage over time');
+  }
+
+  let suggestionHtml = `<div class="report-section">
+    <div class="report-section-title">${zh ? '建议' : 'Next Steps'}</div>
+    <ul class="report-reason-list">${suggestions.map(s => `<li>${escH(s)}</li>`).join('')}</ul>
+  </div>`;
+
+  // Safe baseUrl
+  let safeBaseUrl = '';
+  try { safeBaseUrl = new URL(formData.baseUrl).origin + new URL(formData.baseUrl).pathname.replace(/\/$/, ''); }
+  catch (_) { safeBaseUrl = formData.baseUrl; }
+
+  return `<div style="max-width:560px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;background:#f8fafc;padding:32px;box-sizing:border-box">
+
     <div style="background:#0f172a;border-radius:20px;padding:18px 20px 16px;margin-bottom:12px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">
         <div>
           <div style="font-size:16px;font-weight:800;color:#fff;letter-spacing:-0.3px">API Doctor</div>
           <div style="font-size:11px;color:#94a3b8;margin-top:2px">${zh ? '中转站最强照妖镜' : 'Relay API Black-box Check'}</div>
         </div>
-        <div style="background:${gradeBg};border-radius:10px;padding:6px 14px;text-align:center;flex-shrink:0">
-          <div style="font-size:24px;font-weight:900;color:${gradeColor};line-height:1">${grade}</div>
-          <div style="font-size:9px;color:${gradeColor};font-weight:600;margin-top:2px">${zh ? '档' : 'Grade'}</div>
+        <div style="background:${grade.bg};border-radius:10px;padding:6px 14px;text-align:center;flex-shrink:0">
+          <div style="font-size:24px;font-weight:900;color:${grade.color};line-height:1">${grade.grade}</div>
+          <div style="font-size:9px;color:${grade.color};font-weight:600;margin-top:2px">${zh ? grade.labelZh : grade.label}</div>
         </div>
       </div>
       <div style="text-align:center;margin-bottom:10px">
-        <div style="font-size:64px;font-weight:900;color:${gradeColor};line-height:1">${score}</div>
-        <div style="font-size:14px;font-weight:700;color:${gradeColor};margin-top:4px">${escH(judgment)}</div>
+        <div style="font-size:64px;font-weight:900;color:${grade.color};line-height:1">${score}</div>
+        <div style="font-size:14px;font-weight:700;color:${grade.color};margin-top:4px">${escH(getJudgment(score, result))}</div>
       </div>
-      <div style="font-size:12px;color:#94a3b8;text-align:center;margin-top:4px">${escH(finding)}</div>
+      <div style="font-size:12px;color:#94a3b8;text-align:center;margin-top:4px">${escH(getOneLineFinding(score, result))}</div>
     </div>
 
     <div style="background:#fff;border-radius:16px;padding:14px 16px;margin-bottom:12px">
-      <div style="font-size:11px;font-weight:700;color:#0f172a;margin-bottom:8px">7 ${zh ? '项验货结果' : 'Test Results'}</div>
-      ${checks.map(barRow).join('')}
+      <div style="font-size:11px;font-weight:700;color:#0f172a;margin-bottom:10px">8 ${zh ? '项检测结果' : 'Diagnostic Results'}</div>
+      ${rows}
     </div>
 
-    ${riskTags.length > 0 ? `<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-bottom:10px">${riskTags.join('')}</div>` : ''}
+    ${reasonHtml}
+    ${suggestionHtml}
 
     <div style="background:#fff;border-radius:12px;padding:12px 14px;margin-bottom:10px;font-size:11px;color:#64748b">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
@@ -968,37 +1003,22 @@ async function saveDiagnosticImage() {
   var result = window.Doctor ? window.Doctor._result : null;
   var formData = window.Doctor ? window.Doctor._formData : null;
   if (!result || !formData) return;
-
   try {
     await new Promise(requestAnimationFrame);
     await document.fonts.ready.catch(function(){});
-
-    if (typeof htmlToImage === 'undefined') {
-      showToast('请使用浏览器截图');
-      return;
-    }
-
+    if (typeof htmlToImage === 'undefined') { showToast('请使用浏览器截图'); return; }
     const lang = getDocLang();
     const zh = lang !== 'en';
     const clone = document.createElement('div');
     clone.innerHTML = buildReportCardHTML(result, formData, lang);
     clone.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:540px;background:#f8fafc;padding:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;box-sizing:border-box';
     document.body.appendChild(clone);
-
-    const dataUrl = await htmlToImage.toPng(clone, {
-      pixelRatio: 2,
-      cacheBust: true,
-      backgroundColor: '#f8fafc',
-      width: 540
-    });
-
+    const dataUrl = await htmlToImage.toPng(clone, { pixelRatio: 2, cacheBust: true, backgroundColor: '#f8fafc', width: 540 });
     document.body.removeChild(clone);
-
     const link = document.createElement('a');
     link.download = 'aiapidoctor-' + Date.now() + '.png';
     link.href = dataUrl;
     link.click();
-
     showToast(zh ? '图片已保存' : 'Image saved');
   } catch (err) {
     showToast(zh ? '保存失败，请用浏览器截图' : 'Image failed, use browser screenshot');
@@ -1013,7 +1033,6 @@ window.Doctor = {
   _formData: null,
   _controller: null,
   _interfaceType: 'OpenAI Chat',
-  _checks: [null, null, null, null, null, null, null],
 
   init() {
     this._interfaceType = 'OpenAI Chat';
@@ -1022,23 +1041,13 @@ window.Doctor = {
   normalizeBaseUrl(input) {
     let val = (typeof input === 'string' ? input : input?.value || '').trim().replace(/\/$/, '');
     val = val.replace(/\/v1\/v1$/, '/v1');
-    if (!val.endsWith('/v1') && val.match(/^https?:\/\//)) {
-      val = val + '/v1';
-    }
-    if (typeof input === 'object' && input.value !== undefined) {
-      input.value = val;
-    }
+    if (!val.endsWith('/v1') && val.match(/^https?:\/\//)) val = val + '/v1';
+    if (typeof input === 'object' && input.value !== undefined) input.value = val;
     return val;
   },
 
-  setInterface(type) {
-    this._interfaceType = type;
-  },
+  setInterface(type) { this._interfaceType = type; },
 
-  /**
-   * Auto-detect model: fetch /models or /v1/models,
-   * fill in first available model or show a brief toast.
-   */
   async findModels() {
     const baseUrl = (document.getElementById('doctor-base-url')?.value || '').trim();
     const apiKey = (document.getElementById('doctor-api-key')?.value || '').trim();
@@ -1053,10 +1062,8 @@ window.Doctor = {
 
     try {
       const normalized = baseUrl.replace(/\/$/, '');
-      // Try both /models and /v1/models
       let models = [];
       const endpoints = [normalized + '/models', normalized + '/v1/models'];
-      let lastErr = null;
 
       for (const endpoint of endpoints) {
         try {
@@ -1064,33 +1071,19 @@ window.Doctor = {
             method: 'GET',
             headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' }
           });
-          if (resp.status === 401 || resp.status === 403) {
-            lastErr = 'Key无效';
-            break;
-          }
-          if (!resp.ok) {
-            lastErr = 'HTTP ' + resp.status;
-            continue;
-          }
+          if (resp.status === 401 || resp.status === 403) { showToast(zh ? 'API Key无效' : 'Invalid API Key'); break; }
+          if (!resp.ok) continue;
           const data = await resp.json();
-          if (Array.isArray(data.data)) {
-            models = data.data.map(m => m.id || '').filter(Boolean);
-          } else if (Array.isArray(data.models)) {
-            models = data.models.map(m => typeof m === 'string' ? m : m.id || '').filter(Boolean);
-          } else if (Array.isArray(data)) {
-            models = data.map(m => typeof m === 'string' ? m : m.id || '').filter(Boolean);
-          }
+          if (Array.isArray(data.data)) models = data.data.map(m => m.id || '').filter(Boolean);
+          else if (Array.isArray(data.models)) models = data.models.map(m => typeof m === 'string' ? m : m.id || '').filter(Boolean);
+          else if (Array.isArray(data)) models = data.map(m => typeof m === 'string' ? m : m.id || '').filter(Boolean);
           if (models.length > 0) break;
-        } catch (e) {
-          lastErr = e.message;
-        }
+        } catch (_) {}
       }
 
       if (models.length > 0) {
         const modelEl = document.getElementById('doctor-model');
-        if (modelEl && !modelEl.value) {
-          modelEl.value = models[0];
-        }
+        if (modelEl && !modelEl.value) modelEl.value = models[0];
         showToast(zh ? `已填入：${models[0]}` : `Filled: ${models[0]}`);
       } else {
         showToast(zh ? '无法自动识别，请手动填写模型 ID' : 'Cannot auto-detect; fill in Model ID manually');
@@ -1099,7 +1092,7 @@ window.Doctor = {
       showToast(zh ? '无法自动识别，请手动填写模型 ID' : 'Cannot auto-detect; fill in Model ID manually');
     }
 
-    if (btn) { btn.disabled = false; btn.textContent = zh ? '自动识别模型' : 'Auto-detect'; }
+    if (btn) { btn.disabled = false; btn.textContent = zh ? '自动识别模型' : 'Auto-detect model'; }
   },
 
   onConnectionInfoInput(textarea) {
@@ -1122,7 +1115,6 @@ window.Doctor = {
     const baseUrl = (document.getElementById('doctor-base-url')?.value || '').trim();
     const apiKey = (document.getElementById('doctor-api-key')?.value || '').trim();
     const model = (document.getElementById('doctor-model')?.value || '').trim();
-    const interfaceType = (document.getElementById('doctor-interface')?.value || this._interfaceType);
     const lang = getDocLang();
     const zh = lang !== 'en';
 
@@ -1136,77 +1128,93 @@ window.Doctor = {
     this._controller = new AbortController();
 
     const btn = document.getElementById('doctor-run-btn');
-
     if (btn) {
       btn.disabled = true;
       btn.innerHTML = `<span style="display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin 0.8s linear infinite"></span> ${zh ? '检测中...' : 'Checking...'}`;
     }
 
-    this._checks = [null, null, null, null, null, null, null];
+    this._formData = { baseUrl: normalizedUrl, model, interfaceType: this._interfaceType };
     this.showProgress('running');
-
-    this._formData = {
-      baseUrl: normalizedUrl,
-      model,
-      interfaceType
-    };
+    this._refreshProgress(0, 'pending');
 
     try {
       const signal = this._controller.signal;
 
-      this._currentIndex = 0;
-      const check1 = await check1_Output(normalizedUrl, apiKey, model, interfaceType, signal);
-      this._checks[0] = check1;
-      this._refreshProgress();
+      // ── Phase 1: Pre-flight checks (parallel) ──
+      this._refreshProgress(0, 'running');
+      const [reachResult, authResult, modelListResult] = await Promise.all([
+        checkA_Reachability(normalizedUrl, apiKey, signal),
+        checkB_Auth(normalizedUrl, apiKey, signal),
+        checkC_ModelList(normalizedUrl, apiKey, signal),
+      ]);
+      this._refreshProgress(0, reachResult.state, reachResult.detail);
+      this._refreshProgress(1, authResult.state, authResult.detail);
+      this._refreshProgress(2, modelListResult.state, modelListResult.detail);
 
-      this._currentIndex = 1;
-      const check2 = await check2_BillDetails(normalizedUrl, apiKey, model, interfaceType, signal);
-      this._checks[1] = check2;
-      this._refreshProgress();
+      // ── Phase 2: Auto-model detection ──
+      this._refreshProgress(3, 'running');
+      const autoModelResult = checkD_AutoModel(model, modelListResult);
+      this._refreshProgress(3, autoModelResult.state, autoModelResult.detail);
 
-      this._currentIndex = 2;
-      const check3 = await check3_TokenOvercount(normalizedUrl, apiKey, model, interfaceType, signal);
-      this._checks[2] = check3;
-      this._refreshProgress();
+      // Use recommended model (prefer auto-detected if user didn't provide)
+      const targetModel = autoModelResult.recommendedModel || model;
 
-      this._currentIndex = 3;
-      const check4 = await check4_StreamingBillLoss(normalizedUrl, apiKey, model, interfaceType, signal);
-      this._checks[3] = check4;
-      this._refreshProgress();
+      // ── Phase 3: Target model call ──
+      this._refreshProgress(4, 'running');
+      const targetResult = await checkE_TargetCall(normalizedUrl, apiKey, targetModel, this._interfaceType, signal);
+      const targetState = (targetResult.sub?.output?.state === 'fail') ? 'fail'
+        : (targetResult.sub?.output?.state === 'warn') ? 'warn' : 'pass';
+      this._refreshProgress(4, targetState, targetResult.sub?.output?.detail || '');
 
-      this._currentIndex = 4;
-      const check5 = await check5_Cache(normalizedUrl, apiKey, model, interfaceType, signal);
-      this._checks[4] = check5;
-      this._refreshProgress();
+      // ── Phase 4: Streaming check ──
+      this._refreshProgress(5, 'running');
+      const streamResult = await checkF_Streaming(normalizedUrl, apiKey, targetModel, this._interfaceType, signal);
+      this._refreshProgress(5, streamResult.state, streamResult.detail);
 
-      this._currentIndex = 5;
-      const check6 = await check6_ModelShrinkage(normalizedUrl, apiKey, model, interfaceType, signal);
-      this._checks[5] = check6;
-      this._refreshProgress();
+      // ── Phase 5: Stability sampling ──
+      this._refreshProgress(6, 'running');
+      const stabilityResult = await checkG_Stability(normalizedUrl, apiKey, targetModel, this._interfaceType, signal);
+      this._refreshProgress(6, stabilityResult.state, stabilityResult.detail);
 
-      this._currentIndex = 6;
-      const check7 = await check7_Stability(normalizedUrl, apiKey, model, interfaceType, signal);
-      this._checks[6] = check7;
-      this._refreshProgress();
+      // ── Phase 6: Usage audit ──
+      this._refreshProgress(7, 'running');
+      const usageResult = await checkH_UsageAudit(normalizedUrl, apiKey, targetModel, this._interfaceType, signal);
+      this._refreshProgress(7, usageResult.state, usageResult.detail);
 
-      let checks = this._checks.map(c => c);
-      checks = applyCapRules(checks);
+      // ── Phase 7: Client config ──
+      const clientResult = checkI_ClientConfig(normalizedUrl, apiKey, targetModel, modelListResult);
 
-      const score = calcScore(checks);
-      const grade = calcGrade(score);
-      const judgment = getJudgment(score, checks);
-      const finding = getOneLineFinding(score, checks);
+      // ── Assemble result ──
+      const checks = {
+        reachability: reachResult,
+        auth: authResult,
+        modelList: modelListResult,
+        autoModel: autoModelResult,
+        target: { ...targetResult, state: targetState },
+        stability: stabilityResult,
+        usage: usageResult,
+        client: clientResult,
+      };
+
+      // Raw score
+      let rawScore = calcScore({ checks });
+
+      // Apply caps
+      const finalScore = applyCaps(rawScore, { checks });
+      const grade = getGrade(finalScore);
+      const judgment = getJudgment(finalScore, { checks });
+      const finding = getOneLineFinding(finalScore, { checks });
 
       this._result = {
-        score,
+        score: finalScore,
+        rawScore,
         grade,
         judgment,
         finding,
         checks,
         reportId: generateReportId(),
         timestamp: new Date().toLocaleString('zh-CN', {
-          year: 'numeric', month: '2-digit', day: '2-digit',
-          hour: '2-digit', minute: '2-digit'
+          year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
         })
       };
 
@@ -1241,43 +1249,38 @@ window.Doctor = {
     const lang = getDocLang();
     const resultNode = document.getElementById('result-card');
     if (!resultNode) return;
-
     const html = buildReportCardHTML(result, this._formData, lang);
     resultNode.innerHTML = html;
-
     const rect = resultNode.getBoundingClientRect();
     if (rect.top > window.innerHeight * 0.6) {
       resultNode.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   },
 
-  /* ── 7-item progress bar ── */
+  /* ── 8-step progress bar ── */
   showProgress(state) {
     const container = document.getElementById('diag-progress');
     if (!container) return;
-
-    if (state === 'done') {
-      container.innerHTML = '';
-      return;
-    }
+    if (state === 'done') { container.innerHTML = ''; return; }
 
     const zh = getDocLang() !== 'en';
-    const labels = [
-      { i: 0, zh: '1/7 有无产物', en: '1/7 Output' },
-      { i: 1, zh: '2/7 账单明细', en: '2/7 Bill Details' },
-      { i: 2, zh: '3/7 用量虚高', en: '3/7 Token Overcount' },
-      { i: 3, zh: '4/7 流式丢账', en: '4/7 Streaming Bill' },
-      { i: 4, zh: '5/7 缓存有没有透', en: '5/7 Cache Check' },
-      { i: 5, zh: '6/7 模型缩水风险', en: '6/7 Model Check' },
-      { i: 6, zh: '7/7 稳定性采样', en: '7/7 Stability' }
+    const steps = [
+      { zh: '1/8 Base URL 可达性', en: '1/8 Base URL Reachability' },
+      { zh: '2/8 鉴权有效性', en: '2/8 Auth / Key Validity' },
+      { zh: '3/8 模型列表获取', en: '3/8 Model List Discovery' },
+      { zh: '4/8 自动识别模型', en: '4/8 Auto-detect Model' },
+      { zh: '5/8 目标模型调用', en: '5/8 Target Model Call' },
+      { zh: '6/8 稳定性采样', en: '6/8 Stability Sampling' },
+      { zh: '7/8 用量审计', en: '7/8 Usage Audit' },
+      { zh: '8/8 客户端配置', en: '8/8 Client Config' },
     ];
 
-    let rows = labels.map(l =>
-      `<div class="prog-row" id="prog-row-${l.i}" data-index="${l.i}">
-        <span class="prog-icon" id="prog-icon-${l.i}"></span>
-        <span class="prog-bar-wrap"><span class="prog-bar" id="prog-bar-${l.i}"></span></span>
-        <span class="prog-label" id="prog-label-${l.i}">${l.zh}</span>
-        <span class="prog-detail" id="prog-detail-${l.i}"></span>
+    const rows = steps.map((s, i) =>
+      `<div class="prog-row" id="prog-row-${i}" data-index="${i}">
+        <span class="prog-icon" id="prog-icon-${i}"><div style="width:14px;height:14px;border:2px solid #e2e8f0;border-radius:50%"></div></span>
+        <span class="prog-bar-wrap"><span class="prog-bar" id="prog-bar-${i}" style="width:0%"></span></span>
+        <span class="prog-label" id="prog-label-${i}">${s[zh ? 'zh' : 'en']}</span>
+        <span class="prog-detail" id="prog-detail-${i}"></span>
       </div>`
     ).join('');
 
@@ -1287,51 +1290,70 @@ window.Doctor = {
     </div>`;
   },
 
-  _refreshProgress() {
+  _refreshProgress(index, state, detail) {
     const zh = getDocLang() !== 'en';
-    const labels = [
-      { i: 0, zh: '1/7 有无产物', en: '1/7 Output' },
-      { i: 1, zh: '2/7 账单明细', en: '2/7 Bill Details' },
-      { i: 2, zh: '3/7 用量虚高', en: '3/7 Token Overcount' },
-      { i: 3, zh: '4/7 流式丢账', en: '4/7 Streaming Bill' },
-      { i: 4, zh: '5/7 缓存有没有透', en: '5/7 Cache Check' },
-      { i: 5, zh: '6/7 模型缩水风险', en: '6/7 Model Check' },
-      { i: 6, zh: '7/7 稳定性采样', en: '7/7 Stability' }
+    const steps = [
+      { zh: '1/8 Base URL 可达性', en: '1/8 Base URL Reachability' },
+      { zh: '2/8 鉴权有效性', en: '2/8 Auth / Key Validity' },
+      { zh: '3/8 模型列表获取', en: '3/8 Model List Discovery' },
+      { zh: '4/8 自动识别模型', en: '4/8 Auto-detect Model' },
+      { zh: '5/8 目标模型调用', en: '5/8 Target Model Call' },
+      { zh: '6/8 稳定性采样', en: '6/8 Stability Sampling' },
+      { zh: '7/8 用量审计', en: '7/8 Usage Audit' },
+      { zh: '8/8 客户端配置', en: '8/8 Client Config' },
     ];
 
-    for (let i = 0; i < 7; i++) {
-      const check = this._checks[i];
+    for (let i = 0; i < 8; i++) {
       const row = document.getElementById('prog-row-' + i);
       const icon = document.getElementById('prog-icon-' + i);
       const bar = document.getElementById('prog-bar-' + i);
       const label = document.getElementById('prog-label-' + i);
-      const detail = document.getElementById('prog-detail-' + i);
+      const detailEl = document.getElementById('prog-detail-' + i);
       if (!row) continue;
 
-      if (check) {
-        // Done
-        label.textContent = labels[i][zh ? 'zh' : 'en'];
-        detail.textContent = check.detail;
-        icon.innerHTML = check.state === 'pass'
-          ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>`
-          : check.state === 'warn'
-          ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="3"><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`
-          : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
-        bar.style.width = check.state === 'pass' ? '100%' : check.state === 'warn' ? '60%' : '20%';
-        bar.style.background = check.state === 'pass' ? '#16a34a' : check.state === 'warn' ? '#f59e0b' : '#dc2626';
-        row.className = 'prog-row prog-row--done prog-row--' + check.state;
-      } else if (i === this._currentIndex) {
-        // Running
-        label.textContent = labels[i][zh ? 'zh' : 'en'];
-        detail.textContent = zh ? '检测中...' : 'Checking...';
-        icon.innerHTML = `<div style="width:14px;height:14px;border:2px solid #2563eb;border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite"></div>`;
-        bar.style.width = '30%';
-        bar.style.background = '#2563eb';
-        row.className = 'prog-row prog-row--running';
+      if (i < index) {
+        // Already done
+        label.textContent = steps[i][zh ? 'zh' : 'en'];
+        detailEl.textContent = '';
+        icon.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>`;
+        bar.style.width = '100%';
+        bar.style.background = '#16a34a';
+        row.className = 'prog-row prog-row--done';
+      } else if (i === index) {
+        if (state === 'pass') {
+          label.textContent = steps[i][zh ? 'zh' : 'en'];
+          detailEl.textContent = detail || (zh ? '通过' : 'Pass');
+          icon.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>`;
+          bar.style.width = '100%';
+          bar.style.background = '#16a34a';
+          row.className = 'prog-row prog-row--done';
+        } else if (state === 'warn') {
+          label.textContent = steps[i][zh ? 'zh' : 'en'];
+          detailEl.textContent = detail || (zh ? '警告' : 'Warn');
+          icon.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="3"><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`;
+          bar.style.width = '60%';
+          bar.style.background = '#f59e0b';
+          row.className = 'prog-row prog-row--done prog-row--warn';
+        } else if (state === 'fail') {
+          label.textContent = steps[i][zh ? 'zh' : 'en'];
+          detailEl.textContent = detail || (zh ? '失败' : 'Fail');
+          icon.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+          bar.style.width = '20%';
+          bar.style.background = '#dc2626';
+          row.className = 'prog-row prog-row--done prog-row--fail';
+        } else {
+          // Running
+          label.textContent = steps[i][zh ? 'zh' : 'en'];
+          detailEl.textContent = zh ? '检测中...' : 'Checking...';
+          icon.innerHTML = `<div style="width:14px;height:14px;border:2px solid #2563eb;border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite"></div>`;
+          bar.style.width = '30%';
+          bar.style.background = '#2563eb';
+          row.className = 'prog-row prog-row--running';
+        }
       } else {
         // Pending
-        label.textContent = labels[i][zh ? 'zh' : 'en'];
-        detail.textContent = '';
+        label.textContent = steps[i][zh ? 'zh' : 'en'];
+        detailEl.textContent = '';
         icon.innerHTML = `<div style="width:14px;height:14px;border:2px solid #e2e8f0;border-radius:50%"></div>`;
         bar.style.width = '0%';
         bar.style.background = '#e2e8f0';
@@ -1340,72 +1362,56 @@ window.Doctor = {
     }
   },
 
-  _currentIndex: 0,
-
-  showImage() {
-    saveDiagnosticImage();
-  },
-
-  async saveImage() {
-    await saveDiagnosticImage();
-  },
+  async saveImage() { await saveDiagnosticImage(); },
 
   copyScore() {
     if (!this._result) { showToast(getDocLang() !== 'en' ? '请先检测' : 'Please run check first'); return; }
     const lang = getDocLang();
     const zh = lang !== 'en';
     const { score, grade, judgment, reportId } = this._result;
-
     const text = zh
-      ? `我的 API Doctor 验货：${grade}档 ${score}分 | ${judgment} | 报告 ID：${reportId}\nhttps://aiapidoctor.com/`
-      : `My API Doctor score: ${grade} ${score}/100 | ${judgment} | Report ID: ${reportId}\nhttps://aiapidoctor.com/`;
-
+      ? `我的 API Doctor 验货：${grade.grade}档 ${score}分 | ${judgment} | 报告 ID：${reportId}\nhttps://aiapidoctor.com/`
+      : `My API Doctor score: ${grade.grade} ${score}/100 | ${judgment} | Report ID: ${reportId}\nhttps://aiapidoctor.com/`;
     copyToClipboard(text, zh ? '验货分已复制' : 'Score copied');
   }
 };
 
 /* ═══════════════════════════════════════════════════════
-   CSS Animation (injected on load)
+   CSS (injected on load)
    ═══════════════════════════════════════════════════════ */
 (function injectStyles() {
   if (document.getElementById('doctor-dynamic-styles')) return;
   const style = document.createElement('style');
   style.id = 'doctor-dynamic-styles';
   style.textContent = `
-    @keyframes spin {
-      from { transform: rotate(0deg); }
-      to { transform: rotate(360deg); }
-    }
-    .progress-wrap {
-      background: #fff;
-      border-radius: 12px;
-      padding: 14px 16px;
-      margin-bottom: 16px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-    }
-    .progress-title {
-      font-size: 13px;
-      font-weight: 600;
-      color: #0f172a;
-      margin-bottom: 12px;
-    }
-    .prog-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 8px;
-    }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    .progress-wrap { background: #fff; border-radius: 12px; padding: 14px 16px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .progress-title { font-size: 13px; font-weight: 600; color: #0f172a; margin-bottom: 12px; }
+    .prog-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
     .prog-row:last-child { margin-bottom: 0; }
     .prog-icon { flex-shrink: 0; width: 14px; height: 14px; display: flex; align-items: center; justify-content: center; }
     .prog-bar-wrap { flex: 1; height: 5px; background: #e2e8f0; border-radius: 3px; overflow: hidden; }
-    .prog-bar { height: 100%; width: 0%; background: #e2e8f0; border-radius: 3px; transition: width 0.4s ease, background 0.4s ease; }
-    .prog-label { font-size: 12px; color: #94a3b8; white-space: nowrap; min-width: 120px; }
+    .prog-bar { height: 100%; width: 0%; background: #e2e8f0; border-radius: 3px; transition: width 0.4s ease, background 0.4s ease; display: block; }
+    .prog-label { font-size: 12px; color: #94a3b8; white-space: nowrap; min-width: 130px; }
     .prog-detail { font-size: 11px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100px; text-align: right; }
     .prog-row--running .prog-label { color: #2563eb; font-weight: 600; }
     .prog-row--done .prog-label { color: #374151; }
-    .prog-row--done.prog-row--pass .prog-label { color: #16a34a; }
     .prog-row--done.prog-row--warn .prog-label { color: #f59e0b; }
     .prog-row--done.prog-row--fail .prog-label { color: #dc2626; }
+
+    /* Report card rows */
+    .report-row { display: grid; grid-template-columns: 2fr 1fr 60px 1.2fr; gap: 6px; align-items: center; padding: 7px 0; border-bottom: 1px solid #f1f5f9; font-size: 12px; }
+    .report-row:last-child { border-bottom: none; }
+    .report-sub-row { display: grid; grid-template-columns: 2fr 1fr 60px 1.2fr; gap: 6px; align-items: center; padding: 5px 0 5px 16px; border-bottom: 1px solid #f8fafc; font-size: 11px; color: #64748b; }
+    .report-sub-row:last-child { border-bottom: none; }
+    .report-row-label { font-weight: 600; color: #374151; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .report-row-score { text-align: center; color: #374151; font-weight: 700; }
+    .report-row-pill { text-align: center; }
+    .report-row-detail { color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right; }
+    .report-section { background: #fff; border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
+    .report-section-title { font-size: 12px; font-weight: 700; color: #0f172a; margin-bottom: 8px; }
+    .report-reason-list { margin: 0; padding-left: 18px; font-size: 12px; color: #dc2626; line-height: 1.8; }
+    .report-reason-list li { color: #374151; }
   `;
   document.head.appendChild(style);
 })();
