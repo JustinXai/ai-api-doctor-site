@@ -1133,60 +1133,98 @@ async function checkJ_CostTransparency(baseUrl, apiKey, model, interfaceType, si
    ═══════════════════════════════════════════════════════ */
 
 /**
- * Comprehensive platform / proxy / IDE / Agent identity keyword list.
- * Covers: cloud platforms, gateway/relay, IDE tools, coding agents, dev environments.
+ * Strong platform / IDE / Agent entity keywords.
+ * When matched (without negative/don't-know framing),
+ * these indicate platform/proxy/IDE layer exposure.
  */
-const PLATFORM_OR_PROXY_KEYWORDS = [
-  // ── Generic gateway / relay / proxy / router ──
-  'gateway', 'api gateway', 'openai-compatible', 'openai compatible',
-  'api-compatible', 'api compatible', 'compatible model', 'relay',
-  'proxy', 'reverse proxy', 'router', 'route', 'model router',
-  'llm router', 'gateway model', 'serving platform', 'model platform',
-  'inference platform', '中转', '中转站', '转发', '反代', '代理',
-  '网关', '路由', '模型平台', '推理平台',
+const STRONG_PLATFORM_ENTITIES = [
+  // ── Windsurf / Cascade ──
+  'windsurf', 'windsurf cascade', 'windsurf editor', 'windsurf ide',
+  'cascade', 'cascade agent',
 
-  // ── Google / Vertex / Gemini platform layer ──
+  // ── Cursor / Cline / Continue ──
+  'cursor', 'cursor ide', 'cursor agent', 'cursor composer',
+  'cline', 'cline agent',
+  'continue', 'continue.dev', 'continue agent',
+
+  // ── Other coding IDEs / agents ──
+  'codeium', 'cognition', 'devin', 'devin agent',
+  'agent command center',
+
+  // ── GitHub / Microsoft / Azure / Foundry ──
+  'github copilot', 'copilot', 'copilot chat', 'copilot coding agent', 'copilot agent',
+  'azure', 'azure openai', 'azure ai', 'azure ai foundry',
+  'microsoft foundry', 'foundry models', 'foundry agent',
+  'microsoft copilot',
+
+  // ── AWS ──
+  'aws', 'amazon web services', 'aws bedrock', 'amazon bedrock',
+  'bedrock', 'bedrock marketplace', 'sagemaker', 'amazon sagemaker',
+  'amazon q', 'amazon q developer', 'q developer', 'aws q', 'aws agent',
+
+  // ── Google / Vertex ──
   'vertex', 'vertex ai', 'google vertex', 'google cloud vertex',
   'google ai studio', 'ai studio', 'gemini api', 'model garden',
   'google cloud', 'gemini cli', 'antigravity',
 
-  // ── AWS platform layer ──
-  'aws', 'amazon web services', 'bedrock', 'amazon bedrock',
-  'bedrock marketplace', 'sagemaker', 'amazon sagemaker',
-  'amazon q', 'amazon q developer', 'q developer', 'aws q',
-  'aws console', 'aws agent',
-
-  // ── Microsoft / Azure / Foundry platform layer ──
-  'azure', 'azure openai', 'azure ai', 'azure ai foundry',
-  'microsoft foundry', 'foundry models', 'foundry agent',
-  'microsoft copilot', 'github copilot', 'copilot cli',
-  'copilot coding agent', 'copilot agent',
-
-  // ── IDE / coding agent / dev tool layer ──
-  'kiro', 'kiro ide', 'kiro cli',
-  'cursor', 'cursor ide', 'cursor agent',
-  'cline', 'cline agent',
-  'continue', 'continue.dev',
-  'windsurf', 'windsurf editor', 'cascade',
-  'codeium', 'codium', 'zed', 'zed ai', 'zed assistant',
-  'trae', 'trae ai', 'tabnine',
-  'sourcegraph cody', 'cody', 'supermaven',
-  'augment', 'augment code', 'aider',
+  // ── Claude / Anthropic platform layer ──
   'claude code', 'claude-code',
+  'anthropic console', 'anthropic workbench',
+
+  // ── Replit / web app builders ──
   'replit', 'replit agent',
   'lovable', 'bolt', 'bolt.new', 'v0', 'vercel v0',
+  'stackblitz', 'codesandbox',
 
-  // ── Development environment wording ──
-  'ide', 'editor', 'code editor', 'development environment',
-  'dev environment', 'coding assistant', 'coding agent',
-  'ai coding assistant', 'agentic coding', 'agentic ide',
-  'software agent', '开发环境', '代码助手', '编程助手',
-  '代码代理', '开发工具', '编辑器',
+  // ── Kiro ──
+  'kiro', 'kiro ide', 'kiro cli',
 
-  // ── Common wrapper self-description patterns ──
-  'i am a coding assistant', 'i am an ai coding assistant',
-  'i am running in', 'served through', 'powered by',
-  'routed through', 'hosted on', 'provided by', 'deployed on',
+  // ── Other coding tools ──
+  'vscode agent', 'vs code agent',
+  'zed', 'zed ai', 'zed assistant',
+  'trae', 'trae ai',
+  'tabnine', 'sourcegraph cody', 'cody', 'supermaven',
+  'augment', 'augment code', 'aider',
+  'roo code', 'roocode', 'kilocode', 'kilo code',
+];
+
+/**
+ * Weak / generic platform words.
+ * These are common in negative responses like
+ * "I don't have access to the exact model name, model family, or serving platform".
+ * MUST NOT be used as detectedSource. Only count toward platform_or_proxy_identity
+ * when combined with positive assertion, NOT when part of a "don't know" sentence.
+ */
+const WEAK_PLATFORM_WORDS = [
+  'gateway', 'api gateway', 'openai-compatible', 'openai compatible',
+  'api-compatible', 'api compatible', 'compatible model',
+  'relay', 'proxy', 'reverse proxy', 'router', 'route',
+  'model router', 'llm router',
+  'serving platform', 'model platform', 'inference platform',
+  'gateway model',
+  '中转', '中转站', '转发', '反代', '代理', '网关', '路由',
+  '模型平台', '推理平台',
+];
+
+/**
+ * Patterns that indicate the model CANNOT determine its own identity.
+ * These MUST override ANY platform keyword match and result in 'ambiguous'.
+ */
+const NEGATIVE_IDENTITY_PATTERNS = [
+  "i don't have access", 'i do not have access', 'i cannot access',
+  "i don't know", 'i do not know', "i don't",
+  'cannot determine', 'cannot identify', 'unable to determine',
+  'not available', 'not applicable', 'not provided',
+  'no access to', 'without access to',
+  'unknown model', 'model unknown', 'model is unknown',
+  'cannot confirm', 'unable to confirm',
+  "don't have information", 'do not have information', 'no information about',
+  "i'm an ai", 'i am an ai',
+  'ai language model', 'language model', 'ai assistant',
+  'ai model', 'a language model',
+  "can't provide", "cannot provide", 'unable to provide', 'not able to provide',
+  '保密', '无法确认', '不确定', '不知道', '无权限', '无法访问',
+  '不知道模型', '不知道运行', '无法判断',
 ];
 
 /**
@@ -1195,23 +1233,24 @@ const PLATFORM_OR_PROXY_KEYWORDS = [
  * tool descriptions, IDE behaviors, or wrapper personas.
  */
 const CONTAMINATION_PATTERNS = [
-  // Tool/IDE persona references — long response with these = contamination
   'i am a kiro', 'i am cursor', 'i am cline', 'i am continue',
   'i am an ide', 'i am a coding assistant', 'i am an ai coding assistant',
   'i am a plugin', 'i am an extension', 'i am a wrapper',
-  'i am running in', 'i am serving as a',
+  'i am windsurf', 'i am cascade',
+  'i am running in',
   'responsible for managing your project',
   'i can manage your project files',
   'i can modify your codebase',
   'i can execute commands',
   'i can read your workspace',
   'i can access your working directory',
+  'i can edit your codebase',
   'as a kiro development environment',
   'as a cursor agent',
   'as a cline agent',
   'as a replit agent',
   'as a coding assistant i can',
-  'development environment that',
+  'as a windsurf cascade',
   'tool personality',
   '系统提示', 'system prompt', 'wrapper prompt', 'tool prompt',
   '内部 wrapper', '人格污染', '开发环境污染',
@@ -1219,44 +1258,70 @@ const CONTAMINATION_PATTERNS = [
 
 /**
  * Extract the most specific detected source from the model's response text.
- * Returns the first matched keyword from the priority list.
+ * Returns a strong entity string (never generic terms like 'gateway', 'serving platform').
  */
 function extractDetectedSource(text) {
-  const t = text.toLowerCase().trim();
-  const PRIORITY_SOURCES = [
-    'amazon q developer', 'amazon bedrock', 'github copilot', 'azure ai foundry',
-    'microsoft foundry', 'google vertex', 'vertex ai', 'openai-compatible',
-    'openai compatible', 'continue.dev', 'windsurf editor',
-    'cursor agent', 'cline agent', 'replit agent',
-    'kiro ide', 'kiro cli', 'claude code', 'amazon q',
-  ];
-  for (const src of PRIORITY_SOURCES) {
+  const t = text.toLowerCase();
+  for (const src of STRONG_PLATFORM_ENTITIES) {
     if (t.includes(src)) return src;
   }
-  // Fallback: match any keyword
-  for (const kw of PLATFORM_OR_PROXY_KEYWORDS) {
-    if (t.includes(kw.toLowerCase())) return kw;
-  }
   return null;
+}
+
+/**
+ * Check if response is a "I don't know / can't access" negative framing.
+ */
+function isNegativeUnknownResponse(text) {
+  const t = text.toLowerCase();
+  return NEGATIVE_IDENTITY_PATTERNS.some(p => t.includes(p));
+}
+
+/**
+ * Check if response contains a strong platform entity.
+ */
+function hasStrongEntity(text) {
+  const t = text.toLowerCase();
+  return STRONG_PLATFORM_ENTITIES.some(e => t.includes(e));
+}
+
+/**
+ * Check if response contains weak platform words.
+ */
+function hasWeakPlatformWord(text) {
+  const t = text.toLowerCase();
+  return WEAK_PLATFORM_WORDS.some(w => t.includes(w));
+}
+
+/**
+ * Check if response contains a contamination pattern.
+ */
+function hasContamination(text) {
+  const t = text.toLowerCase();
+  return CONTAMINATION_PATTERNS.some(p => t.includes(p));
 }
 
 /**
  * Classify model identity response into 6 categories.
  * Returns { category, score, reason, detectedSource }
  *
- * Classification priority:
- *   1. hard_contamination — tool persona / system prompt pollution
- *   2. wrong_family       — clear model family mismatch
- *   3. exact_match        — model identity matches target
- *   4. family_match       — same model family, not exact
- *   5. platform_or_proxy_identity — platform / gateway / IDE / agent layer
- *   6. ambiguous          — vague / unknown / cannot determine
+ * Classification priority (STRICT ORDER — must not skip):
+ *   1. hard_contamination       — tool persona / system prompt pollution
+ *   2. ambiguous (negative)      — "don't know / can't access" framing (before platform check!)
+ *   3. wrong_family              — clear model family mismatch
+ *   4. exact_match              — model identity matches target
+ *   5. family_match             — same model family, not exact
+ *   6. platform_or_proxy_identity — strong entity OR positive assertion of platform/gateway
+ *   7. ambiguous (fallback)      — completely unexpected response
  *
- * NOTE: Kiro/Vertex/AWS Bedrock/Azure/Cursor/Cline/Windsurf/Continue/
- *       Copilot/Claude Code/Replit Agent/basic gateway responses
- *       → platform_or_proxy_identity (3/6), medium risk, NOT a death sentence.
- *       → Only becomes high risk when combined with token anomalies,
- *         max_tokens failures, or multiple ability failures.
+ * Rules:
+ *   - "I don't have access... serving platform" → ambiguous (NOT platform_or_proxy_identity)
+ *   - "Windsurf" → platform_or_proxy_identity with detectedSource="windsurf"
+ *   - "I am Windsurf and can edit your codebase" → hard_contamination
+ *   - detectedSource never uses generic terms (gateway/serving platform/proxy)
+ *   - Kiro/Vertex/AWS Bedrock/Azure/Cursor/Cline/Windsurf/Continue/Copilot/Claude Code/
+ *     Replit Agent → platform_or_proxy_identity (3/6), medium risk
+ *     Only becomes high risk when combined with token anomalies, max_tokens failures,
+ *     or multiple ability failures.
  */
 function evaluateModelIdentity(identityText, finalTestModelId) {
   const zh = getDocLang() !== 'en';
@@ -1264,33 +1329,34 @@ function evaluateModelIdentity(identityText, finalTestModelId) {
   const targetLower = normalizeModelId(finalTestModelId).toLowerCase();
   const rawResponse = identityText.trim();
 
-  // ── Detect platform / proxy / IDE / agent keywords ──
-  const hitPlatformKeywords = PLATFORM_OR_PROXY_KEYWORDS.filter(kw =>
-    t.includes(kw.toLowerCase())
-  );
-  const hasPlatformHit = hitPlatformKeywords.length > 0;
-  const detectedSource = extractDetectedSource(rawResponse);
-
-  // ── Hard contamination: tool persona / system prompt pollution ──
-  // Requires BOTH a contamination keyword AND a long(ish) response suggesting
-  // the model is actively adopting a tool/IDE persona rather than just mentioning it.
-  const hasContaminationTrigger = CONTAMINATION_PATTERNS.some(p => t.includes(p.toLowerCase()));
-  const isLongContaminatedResponse = rawResponse.length > 30 && hasContaminationTrigger;
-  // Also flag if the response reads like a system-prompt leak / wrapper intro
-  const isSystemPromptLeak = /\b(system prompt|wrapper prompt|internal prompt|tool description|角色设定|人设)\b/i.test(rawResponse);
-
-  if (isLongContaminatedResponse || isSystemPromptLeak) {
+  // ── Step 1: Hard contamination ──
+  if (hasContamination(rawResponse)) {
     return {
       category: 'hard_contamination',
       score: 0,
       reason: zh
         ? '模型回答中出现开发环境、工具人格或系统提示污染信号'
         : 'Model response shows development environment, tool persona or system prompt contamination',
-      detectedSource,
+      detectedSource: extractDetectedSource(rawResponse),
     };
   }
 
-  // ── Wrong family: clear model family mismatch ──
+  // ── Step 2: Negative "don't know / can't access" framing ──
+  // Must check BEFORE platform keyword detection to avoid misclassification.
+  // "I don't have access to the exact model name, model family, or serving platform"
+  // → ambiguous, NOT platform_or_proxy_identity.
+  if (isNegativeUnknownResponse(rawResponse)) {
+    return {
+      category: 'ambiguous',
+      score: 1.5,
+      reason: zh
+        ? `模型自报身份模糊：${rawResponse}`
+        : `Model self-reported identity is vague: ${rawResponse}`,
+      detectedSource: null,
+    };
+  }
+
+  // ── Step 3: Wrong family ──
   const GPT_FAMILY = ['gpt', 'chatgpt', 'openai'];
   const CLAUDE_FAMILY = ['claude', 'anthropic'];
   const GEMINI_FAMILY = ['gemini', 'google'];
@@ -1317,8 +1383,6 @@ function evaluateModelIdentity(identityText, finalTestModelId) {
   const respFamily = detectFamily(t);
   const targetFamily = detectFamily(targetLower);
   const isWrongFamily = targetFamily !== 'unknown' && respFamily !== 'unknown' && respFamily !== targetFamily;
-
-  // Also flag: if target is Claude but response says GPT, or vice versa
   const explicitFamilyConflict = (
     (targetLower.includes('claude') && (t.includes('gpt') || t.includes('openai') || t.includes('gemini'))) ||
     (targetLower.includes('gpt') && (t.includes('claude') || t.includes('anthropic'))) ||
@@ -1334,11 +1398,11 @@ function evaluateModelIdentity(identityText, finalTestModelId) {
       reason: zh
         ? '模型自报家族与目标 Model ID 明显不一致，存在模型降配或路由错误疑似风险'
         : 'Model self-reported family conflicts with target Model ID — possible downgrade or routing error',
-      detectedSource,
+      detectedSource: extractDetectedSource(rawResponse),
     };
   }
 
-  // ── Exact match ──
+  // ── Step 4: Exact match ──
   const exactMatch = t.includes(targetLower) ||
     targetLower.includes(t) ||
     (targetLower.startsWith('gpt') && (t.startsWith('gpt') || t.includes('gpt') || t.includes('chatgpt'))) ||
@@ -1347,7 +1411,7 @@ function evaluateModelIdentity(identityText, finalTestModelId) {
     (targetLower.startsWith('o3') && (t.includes('o3') || t.includes('openai'))) ||
     (targetLower.startsWith('o4') && (t.includes('o4') || t.includes('openai'))) ||
     (targetLower.startsWith('gemini') && (t.includes('gemini') || t.includes('google'))) ||
-    (targetLower.includes('gpt') && t.includes('openai') && !hasPlatformHit) ||
+    (targetLower.includes('gpt') && t.includes('openai') && !hasStrongEntity(rawResponse) && !hasWeakPlatformWord(rawResponse)) ||
     t.split(/\s/)[0].split('-')[0] === targetLower.split(/\s/)[0].split('-')[0];
 
   if (exactMatch) {
@@ -1358,48 +1422,41 @@ function evaluateModelIdentity(identityText, finalTestModelId) {
         category: 'exact_match',
         score: 6,
         reason: zh ? '模型身份与目标一致' : 'Model identity matches target',
-        detectedSource,
+        detectedSource: null,
       };
     } else {
       return {
         category: 'family_match',
         score: 4,
         reason: zh ? '模型属于同一家族但不够精确' : 'Model in same family but not exact match',
-        detectedSource,
+        detectedSource: null,
       };
     }
   }
 
-  // ── Platform / proxy / IDE / Agent identity ──
-  if (hasPlatformHit) {
+  // ── Step 5: Platform / proxy / IDE / Agent identity ──
+  // Only count if there's a strong entity OR a positive (not negative) weak platform word.
+  // NOT triggered by "serving platform" in a "don't know" sentence.
+  const hasStrong = hasStrongEntity(rawResponse);
+  const hasWeak = hasWeakPlatformWord(rawResponse);
+
+  if (hasStrong || hasWeak) {
     return {
       category: 'platform_or_proxy_identity',
       score: 3,
       reason: zh
-        ? `检测到平台代理层身份暴露（${detectedSource || '未知平台'}），不等于模型不可用，但来源透明度较低`
-        : `Platform proxy layer identity detected (${detectedSource || 'unknown platform'}) — source transparency reduced, not necessarily unusable`,
-      detectedSource,
+        ? `检测到平台代理层身份暴露（${extractDetectedSource(rawResponse) || '未知平台'}），不等于模型不可用，但来源透明度较低`
+        : `Platform proxy layer identity detected (${extractDetectedSource(rawResponse) || 'unknown platform'}) — source transparency reduced, not necessarily unusable`,
+      detectedSource: extractDetectedSource(rawResponse),
     };
   }
 
-  // ── Ambiguous ──
-  const VAGUE_PATTERNS = [
-    'ai assistant', 'unknown', 'an ai', 'an ai model',
-    'language model', 'i cannot', "i don't know", "i don't",
-    "don't know", "cannot know", "no access", "unknown model",
-    'i am', 'i\'m a', 'not sure', 'not certain',
-    'i do not', 'without access', 'cannot determine',
-    '无法确认', '无法确定', '不确定', '不知道',
-  ];
-  const isVague = VAGUE_PATTERNS.some(p => t === p || t.includes(p)) || t === 'ai' || t === 'model';
-
+  // ── Step 6: Fallback ambiguous ──
   return {
-    category: isVague ? 'ambiguous' : 'ambiguous',
+    category: 'ambiguous',
     score: 1.5,
-    reason: zh
-      ? `模型自报身份模糊：${rawResponse}`
-      : `Model self-reported identity is vague: ${rawResponse}`,
-    detectedSource,
+    reason: zh ? `模型自报身份不明确：${rawResponse}` : `Model self-reported identity unclear: ${rawResponse}`,
+    detectedSource: null,
   };
 }
 
@@ -3574,8 +3631,175 @@ window.MockCases = {
     return { raw: final, capped, grade, desc: `Case BO: AWS Bedrock + overhead>1000 + completion=81 → capped=${capped} (expected 70-78, low from token not AWS alone)` };
   },
 
+  // ── New Cases BU-CC ──────────────────────────────────
+
+  // Case BU: "Windsurf" → platform_or_proxy_identity
+  caseBU() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      evidence: {
+        modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
+        sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'windsurf', evidenceText: 'Windsurf', explanation: '检测到平台代理层身份暴露（windsurf）。' },
+        coreAbilityFailures: 0,
+        subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getGrade(capped);
+    return { raw: final, capped, grade, desc: `Case BU: "Windsurf" → platform_or_proxy_identity, detectedSource=windsurf → capped=${capped} (expected 82-90, B, cannot be A)` };
+  },
+
+  // Case BV: "Windsurf Cascade" → platform_or_proxy_identity
+  caseBV() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      evidence: {
+        modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
+        sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'windsurf cascade', evidenceText: 'Windsurf Cascade', explanation: '检测到平台代理层身份暴露（windsurf cascade）。' },
+        coreAbilityFailures: 0,
+        subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getGrade(capped);
+    return { raw: final, capped, grade, desc: `Case BV: "Windsurf Cascade" → platform_or_proxy_identity, detectedSource=windsurf cascade → capped=${capped} (expected 82-90, B)` };
+  },
+
+  // Case BW: "I am Windsurf Cascade and can edit your codebase." → hard_contamination
+  caseBW() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 27, status: 'failed',
+      deductions: ['模型回答中出现开发环境、工具人格或系统提示污染信号'],
+      evidence: {
+        modelIdentityScore: 0, modelIdentityLevel: 'hard_contamination',
+        sourceTransparency: { category: 'hard_contamination', label: '工具人格污染', riskLevel: 'high', detectedSource: 'windsurf cascade', evidenceText: 'I am Windsurf Cascade and can edit your codebase.', explanation: '模型回答中出现开发环境、工具人格或系统提示污染信号。' },
+        coreAbilityFailures: 0,
+        subScores: {modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getGrade(capped);
+    return { raw: final, capped, grade, desc: `Case BW: "I am Windsurf Cascade and can edit your codebase." → hard_contamination → capped=${capped} (expected ≤82, no A/B)` };
+  },
+
+  // Case BX: "Cursor Agent" → platform_or_proxy_identity
+  caseBX() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      evidence: {
+        modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
+        sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'cursor', evidenceText: 'Cursor Agent', explanation: '检测到平台代理层身份暴露（cursor）。' },
+        coreAbilityFailures: 0,
+        subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getGrade(capped);
+    return { raw: final, capped, grade, desc: `Case BX: "Cursor Agent" → platform_or_proxy_identity, detectedSource=cursor → capped=${capped} (expected 82-90, B)` };
+  },
+
+  // Case BY: "I am Cline and can execute commands in your workspace." → hard_contamination
+  caseBY() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 27, status: 'failed',
+      deductions: ['模型回答中出现开发环境、工具人格或系统提示污染信号'],
+      evidence: {
+        modelIdentityScore: 0, modelIdentityLevel: 'hard_contamination',
+        sourceTransparency: { category: 'hard_contamination', label: '工具人格污染', riskLevel: 'high', detectedSource: 'cline', evidenceText: 'I am Cline and can execute commands in your workspace.', explanation: '模型回答中出现开发环境、工具人格或系统提示污染信号。' },
+        coreAbilityFailures: 0,
+        subScores: {modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getGrade(capped);
+    return { raw: final, capped, grade, desc: `Case BY: "I am Cline and can execute commands in your workspace." → hard_contamination → capped=${capped} (expected ≤82, no A/B)` };
+  },
+
+  // Case BZ: "AWS Bedrock" → platform_or_proxy_identity
+  caseBZ() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      evidence: {
+        modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
+        sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'aws bedrock', evidenceText: 'AWS Bedrock', explanation: '检测到平台代理层身份暴露（aws bedrock）。' },
+        coreAbilityFailures: 0,
+        subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getGrade(capped);
+    return { raw: final, capped, grade, desc: `Case BZ: "AWS Bedrock" → platform_or_proxy_identity, detectedSource=aws bedrock → capped=${capped} (expected 82-90, B)` };
+  },
+
+  // Case CA: "Azure AI Foundry" → platform_or_proxy_identity
+  caseCA() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      evidence: {
+        modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
+        sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'azure ai foundry', evidenceText: 'Azure AI Foundry', explanation: '检测到平台代理层身份暴露（azure ai foundry）。' },
+        coreAbilityFailures: 0,
+        subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getGrade(capped);
+    return { raw: final, capped, grade, desc: `Case CA: "Azure AI Foundry" → platform_or_proxy_identity, detectedSource=azure ai foundry → capped=${capped} (expected 82-90, B)` };
+  },
+
+  // Case CB: "I don't have access to the exact model name, model family, or serving platform I'm running on." → ambiguous
+  // Must NOT be misclassified as platform_or_proxy_identity just because of "serving platform"
+  caseCB() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      evidence: {
+        modelIdentityScore: 1.5, modelIdentityLevel: 'ambiguous',
+        sourceTransparency: { category: 'ambiguous', label: '身份模糊', riskLevel: 'medium', detectedSource: null, evidenceText: "I don't have access to the exact model name, model family, or serving platform I'm running on.", explanation: '模型自报身份模糊（"serving platform"出现在否定句中，不归为平台代理层身份）。' },
+        coreAbilityFailures: 0,
+        subScores: {modelIdentity:1.5,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getGrade(capped);
+    return { raw: final, capped, grade, desc: `Case CB: "I don't have access... serving platform" → ambiguous (NOT platform_or_proxy_identity) → capped=${capped} (expected 82-89, B, detectedSource=null)` };
+  },
+
+  // Case CC: "served through OpenAI-compatible gateway" → platform_or_proxy_identity
+  caseCC() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      evidence: {
+        modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
+        sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'openai-compatible gateway', evidenceText: 'served through OpenAI-compatible gateway', explanation: '检测到平台代理层身份暴露（openai-compatible gateway）。' },
+        coreAbilityFailures: 0,
+        subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getGrade(capped);
+    return { raw: final, capped, grade, desc: `Case CC: "served through OpenAI-compatible gateway" → platform_or_proxy_identity, detectedSource=openai-compatible gateway → capped=${capped} (expected 82-90, B)` };
+  },
+
   runAll() {
-    const results = ['A','B','K','L','M','N','O','P','Q','V','W','X','Y','Z','AA','AB','AC','AD','AE','AF-1','AF-2','AG-1','AG-2','AH-1','AH-2','AI','AJ','AK','AL','AM','AN','AO','AP','AQ','AR','AS','AT','AU','AV','AW','AX','AY','AZ-1','AZ-2','BA-1','BA-2','BB','BC','BD','BE','BF','BG','BH','BI','BJ','BK','BL','BM','BN','BO'].map(c => {
+    const results = ['A','B','K','L','M','N','O','P','Q','V','W','X','Y','Z','AA','AB','AC','AD','AE','AF-1','AF-2','AG-1','AG-2','AH-1','AH-2','AI','AJ','AK','AL','AM','AN','AO','AP','AQ','AR','AS','AT','AU','AV','AW','AX','AY','AZ-1','AZ-2','BA-1','BA-2','BB','BC','BD','BE','BF','BG','BH','BI','BJ','BK','BL','BM','BN','BO','BU','BV','BW','BX','BY','BZ','CA','CB','CC'].map(c => {
       const r = this['case' + c.replace('-','_')] ? this['case' + c.replace('-','_')]() : null;
       return r ? `${r.desc} | Grade: ${r.grade?.grade || '?'} ${r.grade?.labelZh || ''}` : `Case ${c}: not found`;
     });
