@@ -735,14 +735,29 @@ async function checkB_Auth(baseUrl, apiKey, signal) {
     }
   }
 
-  // A6: Auth consistency
+  // A6: Auth consistency — ONLY when there's a genuine auth conflict
+  // /models returns 401/403 but chat/completions succeeds, OR vice versa
+  // NOT: one returns 404, the other returns 200 — that's an API compatibility issue, not auth inconsistency
+  const authModelsFail = modelsStatus === 401 || modelsStatus === 403;
+  const authChatFail = chatStatus === 401 || chatStatus === 403;
   const modelsOk = modelsStatus >= 200 && modelsStatus < 400;
   const chatOk = chatStatus >= 200 && chatStatus < 400;
   if (modelsOk && chatOk) {
     a6 = 2;
-  } else if (modelsOk !== chatOk) {
+    // Both pass — no inconsistency
+  } else if (authModelsFail && chatOk) {
     a6 = 1;
-    details.push(zh ? '/models 与 chat/completions 鉴权结果不一致' : '/models and /chat/completions auth results inconsistent');
+    details.push(zh ? '/models 返回 401/403，但 chat/completions 鉴权通过' : '/models returned 401/403 but /chat/completions authenticated successfully');
+    if (status !== 'failed') status = 'warning';
+  } else if (modelsOk && authChatFail) {
+    a6 = 1;
+    details.push(zh ? 'chat/completions 返回 401/403，但 /models 鉴权通过' : '/chat/completions returned 401/403 but /models authenticated successfully');
+    if (status !== 'failed') status = 'warning';
+  } else if (modelsOk !== chatOk) {
+    // One worked, one didn't — but NOT due to auth failures specifically
+    // This is more of an API compatibility / path issue
+    a6 = 1.5;
+    details.push(zh ? '部分接口响应状态不一致，可能为路径兼容性问题' : 'Some endpoints have inconsistent response status — may be an API path compatibility issue');
     if (status !== 'failed') status = 'warning';
   } else {
     a6 = 0.5;
@@ -750,8 +765,8 @@ async function checkB_Auth(baseUrl, apiKey, signal) {
   }
 
   // A1: Authorization Header accepted (3 pts)
-  // Inferred: if we got any response at all, the header was accepted
-  if (modelsStatus === 401 || chatStatus === 401) {
+  // Inferred: if we got any non-401 response, the header was accepted
+  if (authModelsFail && authChatFail) {
     a1 = 0;
     deductions.push(zh ? 'Authorization Header 未被识别' : 'Authorization Header not recognized');
   } else if (modelsStatus === 0 && chatStatus === 0) {
@@ -759,6 +774,30 @@ async function checkB_Auth(baseUrl, apiKey, signal) {
     details.push(zh ? '无法发送授权请求' : 'Cannot send authorization request');
   } else {
     a1 = 3;
+  }
+
+  // A5: Error explainability — only when we received error response bodies
+  // NOT: just because one endpoint returned a non-200 status
+  let gotExplainedError = false;
+  if (chatResp) {
+    try {
+      const errData = await chatResp.json();
+      const errMsg = errData.error?.message || errData.error?.type || '';
+      if (errMsg) {
+        a5 = 1;
+        evidence.errorMessage = errMsg;
+        gotExplainedError = true;
+      }
+    } catch (_) {}
+  }
+  if (!gotExplainedError && (chatStatus >= 400 || modelsStatus >= 400)) {
+    // Only penalize if we got an error status AND couldn't parse an explanation
+    a5 = 0;
+    deductions.push(zh ? '错误信息不可读' : 'Error message not readable');
+  } else if (gotExplainedError) {
+    a5 = 1;
+  } else {
+    a5 = 1; // No errors encountered — full credit
   }
 
   const score = a1 + a2 + a3 + a4 + a5 + a6;
@@ -771,9 +810,11 @@ async function checkB_Auth(baseUrl, apiKey, signal) {
     else status = 'failed';
   }
 
-  summary = score < 14
-    ? (zh ? `14项中得 ${score} 分，部分项目未达标` : `Scored ${score}/14, some items below standard`)
-    : (zh ? '完全达标' : 'Fully compliant');
+  summary = score >= 13
+    ? (zh ? '核心接口鉴权通过' : 'Core endpoints authenticated successfully')
+    : score >= 11
+    ? (zh ? '鉴权基本通过，存在轻微差异' : 'Auth mostly passed with minor differences')
+    : (zh ? '鉴权存在明显问题' : 'Auth has significant issues');
 
   return mkCheck({
     id: 'auth',
@@ -1834,8 +1875,74 @@ function calcRawScore(checks) {
 }
 
 /* ═══════════════════════════════════════════════════════
+   Soft Penalty & Risk Classification
+   These are NOT hard caps — they describe the risk type
+   and control suggestion text and deduction reasons.
+   ═══════════════════════════════════════════════════════ */
+/**
+ * Classify model visibility risk level based on actual results.
+ * Returns { riskType, softDeduction, reasonZh, reasonEn }
+ * riskType: null | 'model_visibility_risk' | 'model_selection_risk' | 'model_unavailable'
+ */
+function classifyModelRisk(modelIdInfo, checks) {
+  const { modelSource, isFinalModelInModelList, userModel, allModels } = modelIdInfo || {};
+  const normalizedAll = (allModels || []).map(normalizeModelId);
+  const modelNotInList = userModel &&
+    !normalizedAll.includes(normalizeModelId(userModel));
+  const modelListSucceeded = (checks.modelList?.score || 0) >= 3 && (checks.modelList?.evidence?.modelCount || 0) > 0;
+  const targetScore = checks.targetCall?.score || 0;
+  const targetWorks = targetScore >= 11;
+  const usageScore = checks.usageAudit?.score || 0;
+  const stabilityScore = checks.stability?.score || 0;
+
+  // Only relevant when modelSource === 'user_input' and model not in list
+  if (modelSource !== 'user_input' || !modelNotInList || !modelListSucceeded) {
+    return { riskType: null, softDeduction: 0, reasonZh: '', reasonEn: '' };
+  }
+
+  // model_unavailable: not in list AND target call failed
+  if (!targetWorks) {
+    return {
+      riskType: 'model_unavailable',
+      softDeduction: 0,
+      reasonZh: `当前 Model ID ${userModel} 未出现在模型列表中，且目标模型调用失败`,
+      reasonEn: `Model ID ${userModel} not found in /models list and target call failed`
+    };
+  }
+
+  // model_selection_risk: not in list, target works but usage or format issues
+  if (targetWorks && (targetScore < 17 || usageScore < 1)) {
+    return {
+      riskType: 'model_selection_risk',
+      softDeduction: 4,
+      reasonZh: `当前 Model ID 未出现在模型列表中，且响应格式或用量数据异常`,
+      reasonEn: `Model ID not in /models list and response format or usage data is abnormal`
+    };
+  }
+
+  // model_visibility_risk: not in list but target works well
+  if (targetWorks && targetScore >= 20 && stabilityScore >= 16 && usageScore >= 6) {
+    return {
+      riskType: 'model_visibility_risk',
+      softDeduction: 2,
+      reasonZh: `当前 Model ID 未出现在 /models 列表中，但实际调用已通过，可能是别名模型、隐藏模型或供应商未完整暴露模型列表`,
+      reasonEn: `Model ID not in /models list but actual call passed — may be an alias, hidden model, or incomplete model list`
+    };
+  }
+
+  // Fallback: not in list, target works but other issues
+  return {
+    riskType: 'model_selection_risk',
+    softDeduction: 3,
+    reasonZh: `当前 Model ID 未出现在模型列表中，实际调用部分成功`,
+    reasonEn: `Model ID not in /models list; actual call partially succeeded`
+  };
+}
+
+/* ═══════════════════════════════════════════════════════
    Hard Cap Rules
    Each cap is the ABSOLUTE MAXIMUM score given the failure mode.
+   Soft penalties are applied separately via classifyModelRisk.
    ═══════════════════════════════════════════════════════ */
 function applyCaps(rawScore, checks, modelIdInfo) {
   let cap = 100;
@@ -1872,7 +1979,6 @@ function applyCaps(rawScore, checks, modelIdInfo) {
   }
 
   // R5: Target model call truly failed (network error) → 45-68
-  // Only apply floor when request couldn't be sent. Low scores from API responses get no floor.
   const targetNetworkFail = (checks.targetCall?.evidence?.networkError === true);
   if (targetNetworkFail) {
     cap = Math.min(cap, 68);
@@ -1900,20 +2006,11 @@ function applyCaps(rawScore, checks, modelIdInfo) {
     floor = Math.max(floor, 65);
   }
 
-  // R8: User model not in /models list, but model works → 70-88
-  // Only applies when modelSource === 'user_input' and the model is NOT in the list
-  const { userModel, allModels, modelSource, isFinalModelInModelList } = modelIdInfo || {};
-  const normalizedAll = (allModels || []).map(normalizeModelId);
-  const userModelNotInList = modelSource === 'user_input' &&
-    userModel &&
-    !normalizedAll.includes(normalizeModelId(userModel));
-  if (userModelNotInList && targetWorks) {
-    cap = Math.min(cap, 88);
-    floor = Math.max(floor, 70);
-  }
+  // R8: REMOVED — model not in list but works → NO HARD CAP
+  // Handled as soft penalty via classifyModelRisk() instead.
+  // High-quality sites should NOT be capped at 88 for this reason alone.
 
   // R9: Stability not 3/3 → 70-88
-  // Only apply floor when stability was tested and failed by choice, not when skipped due to target failure
   const stabilityWasSkipped = (checks.stability?.status === 'skipped');
   const successSamples = (checks.stability?.evidence?.samples?.filter(s => s.ok && s.hasContent).length) || 0;
   if (successSamples < 3 && targetWorks && !stabilityWasSkipped) {
@@ -1928,7 +2025,7 @@ function applyCaps(rawScore, checks, modelIdInfo) {
     floor = Math.max(floor, 75);
   }
 
-  // R11: usage/token returned but completely un-auditable (only when target call worked AND not skipped)
+  // R11: usage completely missing (only when target call worked AND not skipped)
   if (!targetNetworkFail && (checks.usageAudit?.score || 0) < 1 && !stabilityWasSkipped) {
     cap = Math.min(cap, 94);
     floor = Math.max(floor, 75);
@@ -1992,8 +2089,9 @@ function getOneLineFinding(score, checks) {
    Suggestions Generator
    Generates suggestions based on deductions and failed/warning/inconsistent items.
    Priority-ordered from most severe to least.
+   modelRisk: from classifyModelRisk() — layered model visibility messages.
    ═══════════════════════════════════════════════════════ */
-function generateSuggestions(checks, score, modelIdInfo) {
+function generateSuggestions(checks, score, modelIdInfo, modelRisk) {
   const zh = getDocLang() !== 'en';
   const suggestions = [];
   const addedKeys = new Set();
@@ -2022,17 +2120,25 @@ function generateSuggestions(checks, score, modelIdInfo) {
     );
   }
 
-  // 3. modelSource === 'user_input' AND final model not in list
-  const { modelSource, isFinalModelInModelList } = modelIdInfo || {};
-  const modelListSucceeded = (checks.modelList?.score || 0) >= 3 && (checks.modelList?.evidence?.modelCount || 0) > 0;
-  if (modelSource === 'user_input' && !isFinalModelInModelList && modelListSucceeded) {
-    add('model_not_in_list',
-      '模型列表中未发现当前 Model ID，可能是别名模型、隐藏模型或填写错误。',
-      'Current Model ID not found in the model list. It may be an alias, hidden model, or a typo.'
+  // 3. Model visibility risk — use layered modelRisk from classifyModelRisk()
+  if (modelRisk && modelRisk.riskType === 'model_visibility_risk') {
+    add('model_visibility_risk',
+      '当前 Model ID 未出现在 /models 列表中，但实际调用已通过，可能是别名模型、隐藏模型或供应商未完整暴露模型列表。',
+      'Model ID not in /models list but actual call passed — may be an alias, hidden model, or incomplete model list.'
+    );
+  } else if (modelRisk && modelRisk.riskType === 'model_selection_risk') {
+    add('model_selection_risk',
+      '当前 Model ID 未出现在 /models 列表中，且响应格式或用量数据异常，建议确认模型 ID 是否正确。',
+      'Model ID not in /models list and response format or usage data is abnormal. Confirm if the Model ID is correct.'
+    );
+  } else if (modelRisk && modelRisk.riskType === 'model_unavailable') {
+    add('model_unavailable',
+      '当前 Model ID 未出现在 /models 列表中，且实际调用失败，请检查模型 ID 是否填写正确或是否有权限。',
+      'Model ID not in /models list and actual call failed. Check if the Model ID is correct or if you have permission.'
     );
   }
 
-  // 3b. modelSource === 'auto_detected' — no model-not-found message, just positive feedback
+  // 3b. modelSource === 'auto_detected' — no model-not-found message
   if (modelSource === 'auto_detected' && isFinalModelInModelList) {
     add('auto_detected_ok',
       '系统已从模型列表中自动选择可测试模型。',
@@ -2049,7 +2155,7 @@ function generateSuggestions(checks, score, modelIdInfo) {
     );
   }
 
-  // 5. High average latency
+  // 5. High average latency (> 8000ms — serious; 5000-8000ms — mild)
   const avgLat = checks.stability?.evidence?.avgLatency || 0;
   if (avgLat > 8000) {
     add('high_latency',
@@ -2121,10 +2227,10 @@ function generateSuggestions(checks, score, modelIdInfo) {
    Report Card HTML Builder
    Default collapsed, expandable details.
    ═══════════════════════════════════════════════════════ */
-function buildReportCardHTML(result, formData, lang, modelIdInfo) {
+function buildReportCardHTML(result, formData, lang, modelIdInfo, modelRisk) {
   const zh = lang !== 'en';
   const { score, rawScore, checks, reportId } = result;
-  const grade = getGrade(score);
+  const grade = getScoreGrade(score);
 
   const escH = (s) => esc(String(s || ''));
 
@@ -2255,8 +2361,8 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
     </div>`;
   }
 
-  // Generate suggestions
-  const suggestions = generateSuggestions(checks, score, modelIdInfo);
+  // Generate suggestions (modelRisk passed for layered model visibility messages)
+  const suggestions = generateSuggestions(checks, score, modelIdInfo, modelRisk);
   let suggestionHtml = `<div class="rc-section">
     <div class="rc-section-title">${zh ? '建议' : 'Recommendations'}</div>
     <ul style="margin:0;padding:0 0 0 16px;font-size:12px;color:#374151;line-height:1.8">
@@ -2264,16 +2370,25 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
     </ul>
   </div>`;
 
-  // Deductions section
+  // Deductions section — include model risk as a visible soft item
   const allDeductions = Object.values(checks)
     .filter(c => c?.deductions?.length > 0)
-    .flatMap(c => c.deductions.map(d => ({ text: d, check: c.label?.[zh?'zh':'en'] || c.id })));
+    .flatMap(c => c.deductions.map(d => ({ text: d, check: c.label?.[zh?'zh':'en'] || c.id, severity: 'fail' })));
+  // Append model risk as a "warn" severity deduction (not critical red)
+  if (modelRisk && modelRisk.riskType && modelRisk.reasonZh) {
+    allDeductions.push({
+      text: modelRisk.reasonZh,
+      check: zh ? '模型可见性' : 'Model Visibility',
+      severity: 'warn'
+    });
+  }
   let deductionsHtml = '';
   if (allDeductions.length > 0) {
     deductionsHtml = `<div class="rc-section">
       <div class="rc-section-title">${zh ? '扣分原因' : 'Deduction Reasons'}</div>
-      <ul style="margin:0;padding:0 0 0 16px;font-size:11px;color:#dc2626;line-height:1.9">
-        ${allDeductions.map(d => `<li><span style="color:#64748b;font-size:10px">[${escH(d.check)}]</span> ${escH(d.text)}</li>`).join('')}
+      <ul style="margin:0;padding:0 0 0 16px;font-size:11px;line-height:1.9">
+        ${allDeductions.map(d => `<li style="color:${d.severity === 'fail' ? '#dc2626' : '#d97706'};padding:2px 0 2px 16px;position:relative">
+      <span style="position:absolute;left:0;color:${d.severity === 'fail' ? '#dc2626' : '#d97706'}">&#8226;</span><span style="color:#64748b;font-size:10px">[${escH(d.check)}]</span> ${escH(d.text)}</li>`).join('')}
       </ul>
     </div>`;
   }
@@ -2708,10 +2823,18 @@ window.Doctor = {
         clientConfig: clientResult,
       };
 
+      // Classify model visibility risk (soft penalty, NOT hard cap)
+      const modelRisk = classifyModelRisk(modelIdInfo, checks);
+
       // Raw score
       let rawScore = calcRawScore(checks);
 
-      // Apply caps
+      // Apply soft penalty for model visibility risk (gentle deduction)
+      if (modelRisk.softDeduction > 0) {
+        rawScore = Math.max(0, rawScore - modelRisk.softDeduction);
+      }
+
+      // Apply hard caps
       const finalScore = applyCaps(rawScore, checks, modelIdInfo);
       const grade = getScoreGrade(finalScore);
       const judgment = getJudgment(finalScore, checks);
@@ -2724,6 +2847,8 @@ window.Doctor = {
         judgment,
         finding,
         checks,
+        modelRisk,           // { riskType, softDeduction, reasonZh, reasonEn }
+        modelIdInfo,         // pass through for suggestions
         reportId: generateReportId(),
         timestamp: new Date().toLocaleString('zh-CN', {
           year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
@@ -2762,7 +2887,7 @@ window.Doctor = {
     const lang = getDocLang();
     const resultNode = document.getElementById('result-card');
     if (!resultNode) return;
-    const html = buildReportCardHTML(result, this._formData, lang, this._modelIdInfo);
+    const html = buildReportCardHTML(result, this._formData, lang, this._modelIdInfo, result.modelRisk);
     resultNode.innerHTML = html;
     const rect = resultNode.getBoundingClientRect();
     if (rect.top > window.innerHeight * 0.6) {
