@@ -1,15 +1,13 @@
-refactor: report card = shareable short card (Playground v4 style)
+feat: refine scoring logic v7 — platform_or_proxy_identity scoring guard, stability thresholds, basic compat display, suggestions priority
 
-- New calcShareableCard() with dynamic verdict algorithm
-  Priority: Output > Billing > Token Details > Streaming > Model > Connection
-- New renderCard() unified rendering for both quick and full modes
-- Dark header section: grade badge + large score + dynamic verdict
-- 6 scoring bars with pass/fail/warn/skip color coding
-- Verdict is no longer "diluted" for all C grades
-  Dynamic verdicts: Empty-Run Fraud / Empty Response / Model Shrinkage / Solid
-- saveDiagnosticImage exports short card (540px, 2x pixel ratio)
-- Removed old renderFullReport long template
-- "展开技术详情" collapsible, excluded from image export
-- Billing judgment strict: no "空跑扣费" without balance evidence
-- CSS/HTML compact: desktop 540px max, mobile 100% width
-- English version synced
+feat: stability scoring — S2 avgLat 800-1500ms=1.2(medium), >3000ms=0(high); S3 maxLat 5000+=0(high); S4 jitter >3000ms=0(high); getStabilityRiskLevel: 12-15=low, 8-11.9=medium, 0-7.9=high
+
+feat: Model Integrity high risk — platform_or_proxy_identity alone cannot trigger high (score~36=medium), only wrong_family/hard_contamination/coreAbilityFailures>=3/targetCallFail can trigger high
+
+feat: basicCompatibility — round totalScore to 1 decimal place (6.6/7 not 6.5714...), summary simplified
+
+feat: generateSuggestions — stability high risk priority 10 BEFORE platform_or_proxy_identity(priority 11), new wording for platform identity, medium stability after
+
+fix: 快速验货 → 一键验货 in all 4 locations (report, run button, progress steps, modeLabel)
+
+feat: add mock cases CD-CJ (6 cases)
