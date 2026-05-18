@@ -63,7 +63,7 @@ const GRADES = [
   { min: 95, grade: 'A', label: 'Excellent', labelZh: '优秀',   color: '#16a34a', bg: '#dcfce7',
     desc: 'Overall signals excellent — no significant billing or model downgrade risks detected',
     descZh: '综合信号表现优秀，未发现明显扣费或模型降配风险' },
-  { min: 90, grade: 'B', label: 'Good',      labelZh: '良好',   color: '#0891b2', bg: '#ecfeff',
+  { min: 90, grade: 'B', label: 'Good',      labelZh: '良好',   color: '#16a34a', bg: '#ecfeff',
     desc: 'Core signals good with minor explainable limitations',
     descZh: '核心信号表现良好，存在少量可解释限制' },
   { min: 80, grade: 'C', label: 'Fair',     labelZh: '可用',   color: '#d97706', bg: '#fef9c3',
@@ -1687,7 +1687,6 @@ async function checkK_ModelIntegrity(baseUrl, apiKey, model, interfaceType, sign
   else if (identityCategory === 'wrong_family' && coreAbilityFailures >= 1) status = 'failed';
   else if (coreAbilityFailures >= 3) status = 'failed';
   else if (identityCategory === 'wrong_family') status = 'warning';
-  else if (identityCategory === 'hard_contamination') status = 'warning';
   else if (coreAbilityFailures >= 1) status = 'warning';
   evidence.coreAbilityFailures = coreAbilityFailures;
   evidence.modelIdentityScore = identityScore;
@@ -2003,15 +2002,6 @@ function applyCaps(rawScore, checks, modelIdInfo) {
   // B must have: no high risk modules, coreAbilityFailures <= 1
   const canBeB = costRisk !== 'high' && modelRisk !== 'high' && stabilityRisk !== 'high'
     && coreAbilityFailures <= 1 && !hasInconsistent;
-  // wrong_family → can't be A
-  if (identityCategory === 'wrong_family') cap = Math.min(cap, 86);
-  // hard_contamination → can't be A/B
-  if (identityCategory === 'hard_contamination') cap = Math.min(cap, 82);
-  // platform_or_proxy_identity (and legacy proxy_route_identity): can be B, can't be A
-  if (isProxyOrPlatform) cap = Math.min(cap, 90);
-  // ambiguous → can't be A
-  if (identityCategory === 'ambiguous') cap = Math.min(cap, 89);
-
   if (!canBeB) cap = Math.min(cap, 89);
   if (!canBeA) cap = Math.min(cap, 94);
 
@@ -2143,7 +2133,7 @@ function generateSuggestions(checks, modelIdInfo) {
     : `Stability sampling shows fluctuation — may affect Cline, Continue and other client experiences.`);
   // Priority 12: All good
   if (suggestions.length === 0) add('all_good', zh ? '扣费透明度、模型能力和稳定性信号表现良好，建议继续小额观察。' : 'Billing transparency, model capabilities and stability signals look good — recommend ongoing small-amount monitoring.');
-  return suggestions.map(s => s.text);
+  return suggestions.map(s => s.text).slice(0, 2); // limit to top 2
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -2158,39 +2148,38 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
   const costRisk = getCostRiskLevel(checks.costTransparency?.score || 0);
   const modelRisk = getModelRiskLevel(checks.modelIntegrity?.score || 0);
   const stabilityRisk = getStabilityRiskLevel(checks.stability?.score || 0);
-  const stabilityScore = checks.stability?.score || 0;
   const identityCategory = checks.modelIntegrity?.evidence?.modelIdentityLevel || 'exact_match';
   const coreAbilityFailures = checks.modelIntegrity?.evidence?.coreAbilityFailures ?? 0;
+  const isProxyOrPlatform = identityCategory === 'proxy_route_identity' || identityCategory === 'platform_or_proxy_identity';
+  const sourceTransparency = checks.modelIntegrity?.evidence?.sourceTransparency;
+  const srcRisk = sourceTransparency?.riskLevel || (isProxyOrPlatform || identityCategory === 'ambiguous' || identityCategory === 'wrong_family' || identityCategory === 'hard_contamination' ? 'medium' : 'low');
+  const srcLabelMap = {
+    exact_match: {zh:'清晰',en:'Clear'}, family_match: {zh:'家族匹配',en:'Family Match'},
+    platform_or_proxy_identity: {zh:'平台代理层暴露',en:'Platform/Proxy Exposed'},
+    proxy_route_identity: {zh:'平台代理层暴露',en:'Platform/Proxy Exposed'},
+    ambiguous: {zh:'身份未确认',en:'Identity Unconfirmed'},
+    wrong_family: {zh:'模型家族不一致',en:'Family Inconsistent'},
+    hard_contamination: {zh:'工具人格污染',en:'Tool/Persona Contamination'},
+    failed: {zh:'测试失败',en:'Test Failed'}, empty: {zh:'无回答',en:'No Answer'},
+  };
+  const srcLabel = srcLabelMap[identityCategory] || {zh:'未知',en:'Unknown'};
+  const detectedSource = sourceTransparency?.detectedSource || null;
   const confidence = getConfidence(checks);
   const confidenceColors = { high: { color: '#16a34a', bg: '#dcfce7' }, medium: { color: '#d97706', bg: '#fef9c3' }, low: { color: '#dc2626', bg: '#fee2e2' } };
   const confColor = confidenceColors[confidence.level] || confidenceColors.medium;
   const hasUsage = !!(checks.targetCall?.evidence?.usage && Object.keys(checks.targetCall.evidence.usage).length > 0);
-  const verdictText = getJudgment(score, checks);
-  const sourceTransparency = checks.modelIntegrity?.evidence?.sourceTransparency;
-  const detectedSource = sourceTransparency?.detectedSource || null;
-  // Alias: proxy_route_identity === platform_or_proxy_identity
-  const isProxyOrPlatform = identityCategory === 'proxy_route_identity' || identityCategory === 'platform_or_proxy_identity';
 
+  // Priority: cost>model>stability>proxy (user requirement order)
   let verdictDesc = '';
-  if (costRisk === 'low' && modelRisk === 'low' && stabilityRisk === 'low' && identityCategory === 'exact_match') {
-    verdictDesc = zh ? '所有核心信号表现优秀，未发现明显扣费或模型降配风险。' : 'All core signals excellent — no significant billing or model downgrade risk detected.';
-  } else if (identityCategory === 'hard_contamination') {
-    verdictDesc = zh ? '模型回答存在开发环境污染信号，建议谨慎用于高成本任务。' : 'Model response shows development environment contamination — use with caution for high-cost tasks.';
-  } else if (!hasUsage) {
-    verdictDesc = zh ? 'usage 完全缺失，扣费不可审计，置信度降低。' : 'usage completely missing — billing unauditable, confidence reduced.';
-  } else if (identityCategory === 'wrong_family') {
-    if (coreAbilityFailures >= 1) verdictDesc = zh ? '模型自报家族与目标明显不一致，能力测试也有异常，建议谨慎。' : 'Model family inconsistent with target, plus ability anomalies — use with caution.';
-    else verdictDesc = zh ? '模型自报家族与目标不一致，存在降配疑似风险。' : 'Model self-reported family inconsistent with target — possible downgrade risk.';
-  } else if (isProxyOrPlatform) {
-    if (coreAbilityFailures >= 1) verdictDesc = zh ? '检测到平台代理层身份暴露且能力测试有异常，建议小额核对。' : 'Proxy layer identity detected with ability anomalies — verify with small amount.';
-    else verdictDesc = zh ? '检测到平台代理层身份暴露，来源透明度降低。' : 'Platform proxy layer identity detected — source transparency reduced.';
-  } else if (identityCategory === 'ambiguous') {
-    verdictDesc = zh ? '模型身份模糊，结论置信度降低。' : 'Model identity vague — reduced conclusion confidence.';
-  } else if (costRisk === 'high' || modelRisk === 'high') {
-    verdictDesc = zh ? '扣费或模型能力信号异常较多，建议谨慎使用。' : 'Billing or model capability signals show significant anomalies — use with caution.';
-  } else {
-    verdictDesc = zh ? '部分信号存在异常，建议小额继续验证。' : 'Some signals abnormal — recommend small-amount continued verification.';
-  }
+  if (costRisk === 'high') verdictDesc = zh ? 'usage/token信号异常，扣费不易核对' : 'usage/token abnormal — billing hard to audit.';
+  else if (modelRisk === 'high') verdictDesc = zh ? '模型能力或身份异常，建议谨慎使用' : 'Model capability/identity anomalies — use with caution.';
+  else if (stabilityRisk === 'high') verdictDesc = zh ? '稳定性波动较大，建议谨慎用于客户端' : 'Stability fluctuates significantly — use caution.';
+  else if (isProxyOrPlatform) verdictDesc = zh ? '检测到平台代理层，来源透明度降低' : 'Platform proxy layer detected — reduced source transparency.';
+  else if (!hasUsage) verdictDesc = zh ? 'usage缺失，扣费不可审计' : 'usage missing — billing unauditable.';
+  else if (identityCategory === 'wrong_family') verdictDesc = zh ? '模型家族不一致，存在降配风险' : 'Model family inconsistent — possible downgrade.';
+  else if (identityCategory === 'hard_contamination') verdictDesc = zh ? '模型回答存在工具人格污染' : 'Model shows tool-persona contamination.';
+  else if (costRisk === 'low' && modelRisk === 'low' && stabilityRisk === 'low' && identityCategory === 'exact_match') verdictDesc = zh ? '主要信号正常，建议继续小额观察' : 'All signals normal — continue monitoring.';
+  else verdictDesc = zh ? '部分信号异常，建议小额继续验证' : 'Some signals abnormal — verify with small amounts.';
   const disclaimer = zh ? '本报告仅基于可复现 API 信号，不构成法律结论。' : 'This report is based on reproducible API signals only and does not constitute a legal conclusion.';
 
   function moduleSection(checkKey, checkData, riskLevel) {
@@ -2202,23 +2191,86 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
     const cfg = statusColor(status);
     const rowId = 'rc-row-' + checkKey + '-' + reportId;
     const contentId = 'rc-content-' + checkKey + '-' + reportId;
+
+    // Build deduction details for expandable content
+    let detailDeductions = '';
+    if (checkData.deductions && checkData.deductions.length > 0) {
+      detailDeductions = `<div style="margin-bottom:8px">
+        <div style="font-size:10px;font-weight:600;color:#dc2626;margin-bottom:4px">${zh ? '扣分详情' : 'Deduction Details'}</div>
+        <ul style="margin:0;padding:0 0 0 14px;font-size:11px;color:#dc2626;line-height:1.7">
+          ${checkData.deductions.map(d => `<li style="padding:1px 0">${escH(d)}</li>`).join('')}
+        </ul>
+      </div>`;
+    }
+
+    // subItems: costTransparency subScores
     let subItemsHtml = '';
-    if (checkData.evidence?.subItems) {
-      subItemsHtml = Object.entries(checkData.evidence.subItems).map(([k, v]) => {
-        if (!v || v.maxScore === 0) return '';
+    if (checkData.evidence?.subScores && typeof checkData.evidence.subScores === 'object') {
+      const subScoreLabels = {
+        usageField: zh ? 'usage 字段' : 'usage Field',
+        promptTokens: zh ? 'prompt token' : 'prompt tokens',
+        completionTokens: zh ? 'completion token' : 'completion tokens',
+        totalTokens: zh ? 'total token' : 'total tokens',
+        shortReply: zh ? '短回复检测' : 'Short Reply',
+        maxTokens: zh ? 'max_tokens' : 'max_tokens',
+        usageStability: zh ? '用量稳定性' : 'Usage Stability',
+        clarity: zh ? '清晰度' : 'Clarity',
+        promptTokenEst: zh ? 'token 估算' : 'Token Est.',
+        // modelIntegrity subScores
+        modelIdentity: zh ? '模型身份' : 'Model Identity',
+        modelVisibility: zh ? '模型可见性' : 'Model Visibility',
+        targetCallQuality: zh ? '调用质量' : 'Call Quality',
+        jsonTest: zh ? 'JSON 测试' : 'JSON Test',
+        instructionTest: zh ? '指令遵循' : 'Instruction',
+        codeRepair: zh ? '代码修复' : 'Code Repair',
+        reasoning: zh ? '推理能力' : 'Reasoning',
+        needle: zh ? '大海捞针' : 'Needle',
+        consistency: zh ? '一致性' : 'Consistency',
+      };
+      subItemsHtml = Object.entries(checkData.evidence.subScores).map(([k, v]) => {
+        if (v == null || v.maxScore === undefined) return '';
         const subRatio = v.maxScore > 0 ? v.score / v.maxScore : 0;
         const subStatus = subRatio >= 0.8 ? 'good' : subRatio >= 0.5 ? 'warning' : 'failed';
         const subCfg = statusColor(subStatus);
         const icon = subRatio >= 0.8 ? '&#10003;' : subRatio >= 0.5 ? '&#9888;' : '&#10007;';
-        return `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:11px">
+        return `<div style="display:flex;align-items:center;gap:6px;padding:2px 0;font-size:11px">
           <span style="color:${subCfg.color}">${icon}</span>
-          <span style="flex:1;color:#374151">${escH(k)}</span>
+          <span style="flex:1;color:#374151">${escH(subScoreLabels[k] || k)}</span>
           <span style="font-weight:700;color:#374151">${v.score}/${v.maxScore}</span>
         </div>`;
       }).join('');
     }
 
-    // Add source transparency detail block for modelIntegrity
+    // stability samples table — only in expand detail
+    let stabilitySamplesHtml = '';
+    if (checkKey === 'stability' && checkData.evidence?.samples?.length > 0) {
+      const samples = checkData.evidence.samples;
+      stabilitySamplesHtml = `<div style="margin-top:8px">
+        <div style="font-size:10px;font-weight:600;color:#0f172a;margin-bottom:4px">${zh ? '采样明细' : 'Sample Details'}</div>
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:10px">
+            <tr style="background:#f1f5f9">
+              <th style="padding:3px 6px;text-align:left;color:#64748b">#</th>
+              <th style="padding:3px 6px;text-align:center;color:#64748b">${zh ? '状态' : 'Status'}</th>
+              <th style="padding:3px 6px;text-align:right;color:#64748b">${zh ? '延迟' : 'Latency'}</th>
+              <th style="padding:3px 6px;text-align:right;color:#64748b">${zh ? '输出' : 'Output'}</th>
+            </tr>
+            ${samples.map((s, i) => {
+              const rowColor = !s.ok ? '#fee2e2' : s.hasContent ? '#dcfce7' : '#fef9c3';
+              return `<tr style="background:${rowColor}">
+                <td style="padding:2px 6px;color:#64748b">${i + 1}</td>
+                <td style="padding:2px 6px;text-align:center;color:${s.ok ? '#16a34a' : '#dc2626'}">${s.ok ? 'OK' : (s.errMsg || 'ERR')}</td>
+                <td style="padding:2px 6px;text-align:right;color:#374151">${s.latency || 0}ms</td>
+                <td style="padding:2px 6px;text-align:right;color:#374151">${s.responseText ? escH(s.responseText.substring(0, 20)) : '-'}</td>
+              </tr>`;
+            }).join('')}
+          </table>
+        </div>
+      </div>`;
+    }
+
+    // sourceTransparency detail — only in expand detail
+    let sourceTransparencyHtml = '';
     if (checkKey === 'modelIntegrity' && checkData.evidence?.sourceTransparency) {
       const st = checkData.evidence.sourceTransparency;
       const stLabelMap = {
@@ -2232,31 +2284,69 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
         failed: zh ? '测试失败' : 'Test Failed',
         empty: zh ? '无回答' : 'No Answer',
       };
-      const detected = st.detectedSource
-        ? `<div style="margin-top:4px"><span style="font-size:10px;color:#94a3b8">${zh ? '检测来源：' : 'Detected source: '}</span><span style="font-size:11px;font-weight:600;color:#d97706">${escH(st.detectedSource)}</span></div>`
-        : '';
-      subItemsHtml += `<div style="margin-top:8px;padding:8px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;font-size:11px">
-        <div style="font-weight:600;color:#0f172a;margin-bottom:4px">${zh ? '来源透明度' : 'Source Transparency'}</div>
+      sourceTransparencyHtml = `<div style="margin-top:8px;padding:8px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;font-size:11px">
+        <div style="font-weight:600;color:#0f172a;margin-bottom:6px">${zh ? '来源透明度' : 'Source Transparency'}</div>
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
-          <span style="font-size:11px;color:#374151">${zh ? '身份分类：' : 'Category: '}</span>
-          <span style="font-weight:600;color:${riskColors[st.riskLevel || 'medium'].color}">${escH(stLabelMap[st.category] || st.category)}</span>
-          ${detectedSource ? `<span style="font-size:10px;color:#94a3b8">(${escH(detectedSource)})</span>` : ''}
+          <span style="font-size:11px;color:#374151">${zh ? '分类：' : 'Category: '}</span>
+          <span style="font-weight:600;color:${riskColors[st.riskLevel || 'medium'].color}">${escH(stLabelMap[st.category] || st.category || '-')}</span>
         </div>
-        <div style="margin-bottom:4px"><span style="font-size:10px;color:#94a3b8">${zh ? '模型自报：' : 'Raw response: '}</span><span style="font-size:10px;color:#475569;font-style:italic">${escH(st.evidenceText || checkData.evidence?.modelIdentityResponse || '-')}</span></div>
-        ${st.explanation ? `<div style="font-size:10px;color:#64748b;line-height:1.5">${escH(st.explanation)}</div>` : ''}
+        ${st.detectedSource ? `<div style="margin-bottom:4px"><span style="font-size:10px;color:#94a3b8">${zh ? '检测来源：' : 'Source: '}</span><span style="font-size:11px;font-weight:600;color:#d97706">${escH(st.detectedSource)}</span></div>` : ''}
+        ${st.evidenceText ? `<div style="margin-bottom:4px"><span style="font-size:10px;color:#94a3b8">${zh ? '原始回答：' : 'Raw response: '}</span><span style="font-size:10px;color:#475569;font-style:italic">${escH(st.evidenceText.substring(0, 120))}${st.evidenceText.length > 120 ? '...' : ''}</span></div>` : ''}
+        ${st.explanation ? `<div style="font-size:10px;color:#64748b;line-height:1.5">${escH(st.explanation.substring(0, 200))}</div>` : ''}
       </div>`;
     }
 
-    const pillHtml = riskLevel ? `<span style="display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;color:${riskColors[riskLevel].color};background:${riskColors[riskLevel].bg}">${zh ? riskLevelLabelZH(riskLevel) : riskLevelLabelEN(riskLevel)}</span>` : `<span style="display:inline-block;padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;color:${cfg.color};background:${cfg.bg}">${statusLabel(status, zh)}</span>`;
+    // modelIntegrity summary compression (section 六)
+    let summaryText = checkData.summary || '';
+    if (checkKey === 'modelIntegrity') {
+      const idCat = checkData.evidence?.modelIdentityLevel || 'exact_match';
+      if (idCat === 'platform_or_proxy_identity' || idCat === 'proxy_route_identity') {
+        const ds = checkData.evidence?.sourceTransparency?.detectedSource;
+        summaryText = ds
+          ? (zh ? `来源透明度较低：${ds}` : `Low source transparency: ${ds}`)
+          : (zh ? '来源透明度较低' : 'Low source transparency');
+      } else if (idCat === 'ambiguous') {
+        summaryText = zh ? '模型身份未确认' : 'Model identity unconfirmed';
+      } else if (idCat === 'wrong_family') {
+        summaryText = zh ? '模型家族不一致' : 'Model family inconsistent';
+      } else if (idCat === 'hard_contamination') {
+        summaryText = zh ? '工具人格污染信号' : 'Tool persona contamination';
+      }
+    }
+
+    // format score: round to 1 decimal if not integer
+    const fmtScore = (s, max) => {
+      if (max === 0) return '0/' + max;
+      const r = Math.round(s / max * 10) / 10;
+      if (Number.isInteger(r)) return r + '/' + max;
+      return r.toFixed(1) + '/' + max;
+    };
+
+    const pillHtml = riskLevel ? `<span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:700;color:${riskColors[riskLevel].color};background:${riskColors[riskLevel].bg}">${zh ? riskLevelLabelZH(riskLevel) : riskLevelLabelEN(riskLevel)}</span>` : `<span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:700;color:${cfg.color};background:${cfg.bg}">${statusLabel(status, zh)}</span>`;
+
+    const hasDetailContent = detailDeductions || subItemsHtml || stabilitySamplesHtml || sourceTransparencyHtml;
+
     return `<div class="rc-check-block">
-      <div class="rc-check-header" id="${rowId}" onclick="(function(){var c=document.getElementById('${contentId}');var t=document.getElementById('${rowId}-toggle');var cur=c.style.display;c.style.display=cur==='none'?'block':'none';t.textContent=cur==='none'?'[${zh?'收起':'Collapse'} ...]':'[${zh?'展开':'Expand'} ...]';})()" style="cursor:pointer;user-select:none;display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #f1f5f9">
-        <span style="font-weight:600;font-size:12px;color:#374151">${escH(label)}</span>
-        <span style="font-weight:700;font-size:12px;color:#374151">${actualScore}/${maxScore}</span>
+      <div class="rc-check-header" id="${rowId}" onclick="(function(){
+        var c=document.getElementById('${contentId}');
+        var t=document.getElementById('${rowId}-toggle');
+        if(!c||!t)return;
+        var cur=c.style.display;
+        c.style.display=cur==='none'?'block':'none';
+        t.textContent=cur==='none'?'[${zh?'收起':'Collapse'} ...]':'[${zh?'展开':'Expand'} ...]';
+      })()" style="cursor:pointer;user-select:none;display:flex;align-items:center;gap:6px;padding:6px 0;min-height:52px;border-bottom:1px solid #f1f5f9">
+        <span style="font-weight:600;font-size:12px;color:#374151;min-width:90px">${escH(label)}</span>
+        <span style="font-weight:800;font-size:12px;color:#0f172a;min-width:52px">${fmtScore(actualScore, maxScore)}</span>
         ${pillHtml}
-        <span style="flex:1;color:#94a3b8;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escH(checkData.summary || '')}</span>
-        <span id="${rowId}-toggle" style="color:#2563eb;font-size:11px;white-space:nowrap">[${zh?'展开':'Expand'} ...]</span>
+        <span style="flex:1;color:#94a3b8;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escH(summaryText)}</span>
+        ${hasDetailContent ? `<span id="${rowId}-toggle" style="color:#2563eb;font-size:11px;white-space:nowrap;flex-shrink:0">[${zh?'展开':'Expand'} ...]</span>` : ''}
       </div>
-      <div id="${contentId}" style="display:none;padding:4px 0 8px 0">${subItemsHtml}</div>
+      ${hasDetailContent ? `<div id="${contentId}" style="display:none;padding:4px 0 8px 0">
+        ${detailDeductions}
+        ${subItemsHtml ? `<div style="margin-bottom:8px">${subItemsHtml}</div>` : ''}
+        ${stabilitySamplesHtml}
+        ${sourceTransparencyHtml}
+      </div>` : ''}
     </div>`;
   }
 
@@ -2304,40 +2394,37 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
         <span style="font-size:28px;font-weight:900;color:#fff;letter-spacing:-1px">${score}</span>
         <span style="font-size:13px;color:rgba(255,255,255,0.6)">/ 100</span>
       </div>
-      <div style="font-size:12px;font-weight:600;color:rgba(255,255,255,0.9);margin-bottom:12px">${escH(verdictText)}</div>
-      <div style="display:flex;justify-content:center;gap:16px;flex-wrap:wrap">
-        <div style="background:rgba(255,255,255,0.1);border-radius:10px;padding:8px 14px;min-width:100px;text-align:center">
-          <div style="font-size:10px;color:rgba(255,255,255,0.6);margin-bottom:4px">${zh ? '扣费透明度' : 'Cost Transparency'}</div>
-          <span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;color:${riskColors[costRisk].color};background:${riskColors[costRisk].bg}">${zh ? riskLevelLabelZH(costRisk) : riskLevelLabelEN(costRisk)}</span>
+      <!-- 5 risk pills — compressed, unified labels -->
+      <div style="display:flex;justify-content:center;gap:8px;flex-wrap:wrap">
+        <div style="background:rgba(255,255,255,0.1);border-radius:8px;padding:5px 10px;min-width:72px;text-align:center">
+          <div style="font-size:9px;color:rgba(255,255,255,0.6);margin-bottom:2px">${zh ? '扣费透明' : 'Cost'}</div>
+          <span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700;color:${riskColors[costRisk].color};background:${riskColors[costRisk].bg}">${zh ? riskLevelLabelZH(costRisk) : riskLevelLabelEN(costRisk)}</span>
         </div>
-        <div style="background:rgba(255,255,255,0.1);border-radius:10px;padding:8px 14px;min-width:100px;text-align:center">
-          <div style="font-size:10px;color:rgba(255,255,255,0.6);margin-bottom:4px">${zh ? '模型降配疑似' : 'Model Integrity'}</div>
-          <span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;color:${riskColors[modelRisk].color};background:${riskColors[modelRisk].bg}">${zh ? riskLevelLabelZH(modelRisk) : riskLevelLabelEN(modelRisk)}</span>
+        <div style="background:rgba(255,255,255,0.1);border-radius:8px;padding:5px 10px;min-width:72px;text-align:center">
+          <div style="font-size:9px;color:rgba(255,255,255,0.6);margin-bottom:2px">${zh ? '模型可信' : 'Model'}</div>
+          <span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700;color:${riskColors[modelRisk].color};background:${riskColors[modelRisk].bg}">${zh ? riskLevelLabelZH(modelRisk) : riskLevelLabelEN(modelRisk)}</span>
         </div>
-        <div style="background:rgba(255,255,255,0.1);border-radius:10px;padding:8px 14px;min-width:100px;text-align:center">
-          <div style="font-size:10px;color:rgba(255,255,255,0.6);margin-bottom:4px">${zh ? '稳定性' : 'Stability'}</div>
-          <span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;color:${riskColors[stabilityRisk].color};background:${riskColors[stabilityRisk].bg}">${zh ? stabilityLabelZH(stabilityScore) : stabilityLabelEN(stabilityScore)}</span>
+        <div style="background:rgba(255,255,255,0.1);border-radius:8px;padding:5px 10px;min-width:72px;text-align:center">
+          <div style="font-size:9px;color:rgba(255,255,255,0.6);margin-bottom:2px">${zh ? '稳定性' : 'Stability'}</div>
+          <span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700;color:${riskColors[stabilityRisk].color};background:${riskColors[stabilityRisk].bg}">${zh ? riskLevelLabelZH(stabilityRisk) : riskLevelLabelEN(stabilityRisk)}</span>
         </div>
-        <div style="background:rgba(255,255,255,0.1);border-radius:10px;padding:8px 14px;min-width:100px;text-align:center">
-          <div style="font-size:10px;color:rgba(255,255,255,0.6);margin-bottom:4px">${zh ? '结论置信度' : 'Confidence'}</div>
-          <span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;color:${confColor.color};background:${confColor.bg}">${confidence.label}</span>
+        <div style="background:rgba(255,255,255,0.1);border-radius:8px;padding:5px 10px;min-width:72px;text-align:center">
+          <div style="font-size:9px;color:rgba(255,255,255,0.6);margin-bottom:2px">${zh ? '置信度' : 'Conf.'}</div>
+          <span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700;color:${confColor.color};background:${confColor.bg}">${confidence.label}</span>
         </div>
-        ${sourceTransparency ? `<div style="background:rgba(255,255,255,0.1);border-radius:10px;padding:8px 14px;min-width:100px;text-align:center">
-          <div style="font-size:10px;color:rgba(255,255,255,0.6);margin-bottom:4px">${zh ? '来源透明度' : 'Source'}</div>
-          <span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;color:${riskColors[sourceTransparency.riskLevel]?.color || '#fff'};background:${riskColors[sourceTransparency.riskLevel]?.bg || 'rgba(255,255,255,0.15)'}">${escH(sourceTransparency.label || identityCategory)}</span>
-        </div>` : ''}
+        <div style="background:rgba(255,255,255,0.1);border-radius:8px;padding:5px 10px;min-width:72px;text-align:center">
+          <div style="font-size:9px;color:rgba(255,255,255,0.6);margin-bottom:2px">${zh ? '来源透明' : 'Source'}</div>
+          <span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700;color:${riskColors[srcRisk].color};background:${riskColors[srcRisk].bg}">${escH(srcLabel[zh?'zh':'en'])}</span>
+        </div>
       </div>
     </div>
 
-    <!-- Verdict description -->
-    <div style="background:#fff;border-radius:12px;padding:10px 14px;margin-bottom:10px;font-size:12px;color:#374151;line-height:1.6">${escH(verdictDesc)}</div>
-
-    <!-- Disclaimer -->
-    <div style="font-size:10px;color:#94a3b8;text-align:center;padding:2px 0 6px;line-height:1.4">${escH(disclaimer)}</div>
+    <!-- Verdict description (short, one line) -->
+    <div style="background:#fff;border-radius:12px;padding:8px 14px;margin-bottom:8px;font-size:11px;color:#374151;line-height:1.5">${escH(verdictDesc)}</div>
 
     <!-- 5 module sections -->
     <div style="background:#fff;border-radius:16px;padding:12px 16px;margin-bottom:10px">
-      <div style="font-size:11px;font-weight:700;color:#0f172a;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #f1f5f9">${zh ? '5 项检测结果（点击展开详情）' : '5 Diagnostic Modules (click to expand)'}</div>
+      <div style="font-size:11px;font-weight:700;color:#0f172a;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #f1f5f9">${zh ? '5项检测（点击展开详情）' : '5 Modules (tap to expand)'}</div>
       ${moduleSection('costTransparency', checks.costTransparency, costRisk)}
       ${moduleSection('modelIntegrity', checks.modelIntegrity, modelRisk)}
       ${moduleSection('stability', checks.stability, stabilityRisk)}
@@ -2346,7 +2433,6 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
     </div>
 
     ${toolCallingHtml}
-    ${deductionsHtml}
     ${suggestionHtml}
 
     <!-- Test config -->
@@ -2360,8 +2446,6 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
 
     <!-- Footer -->
     <div style="text-align:center;font-size:11px;color:#94a3b8;padding:2px 0">${zh ? '报告 ID' : 'Report ID'}: ${reportId} &nbsp;|&nbsp; aiapidoctor.com</div>
-    <div style="font-size:10px;color:#94a3b8;text-align:center;padding:4px 0 2px;line-height:1.4">${escH(disclaimer)}</div>
-
     <!-- Actions -->
     <div style="display:flex;gap:8px;margin-top:10px">
       <button onclick="Doctor.saveImage()" style="flex:1;padding:10px;background:#2563eb;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">${zh ? '保存图片' : 'Save Image'}</button>
@@ -2385,6 +2469,9 @@ async function saveDiagnosticImage() {
     const sourceEl = document.getElementById('result-card');
     if (!sourceEl) { showToast('报告未生成'); return; }
     const clone = sourceEl.cloneNode(true);
+    // Collapse all expandable sections before screenshot
+    [].forEach.call(clone.querySelectorAll('[id^="rc-content-"]'), function(el) { el.style.display = 'none'; });
+    [].forEach.call(clone.querySelectorAll('[id$="-toggle"]'), function(el) { var zh2 = el.textContent.includes('收起') || el.textContent.includes('Collapse'); el.textContent = zh2 ? '[展开 ...]' : '[Expand ...]'; });
     clone.style.cssText = 'position:fixed;top:0;left:0;display:block;width:560px;background:#f8fafc;padding:0;box-sizing:border-box;pointer-events:none';
     document.body.appendChild(clone);
     const dataUrl = await htmlToImage.toPng(clone, { pixelRatio: 2, cacheBust: true, backgroundColor: '#f8fafc', width: 560 });
@@ -2665,13 +2752,32 @@ window.Doctor = {
   copyScore() {
     if (!this._result) { showToast(getDocLang() !== 'en' ? '请先检测' : 'Please run check first'); return; }
     const zh = getDocLang() !== 'en';
-    const { score, grade, judgment, reportId, deepMode } = this._result;
+    const { score, grade, reportId, deepMode, checks } = this._result;
     const modeLabel = deepMode ? (zh ? '深度验货' : 'Deep Check') : (zh ? '一键验货' : 'One-Click');
-    const costRisk = getCostRiskLevel(this._result.checks?.costTransparency?.score || 0);
-    const modelRisk = getModelRiskLevel(this._result.checks?.modelIntegrity?.score || 0);
+    const costRisk = getCostRiskLevel(checks?.costTransparency?.score || 0);
+    const modelRisk = getModelRiskLevel(checks?.modelIntegrity?.score || 0);
+    const stabilityScore = checks?.stability?.score || 0;
+    const stabilityRisk = getStabilityRiskLevel(stabilityScore);
+    const identityCategory = checks?.modelIntegrity?.evidence?.modelIdentityLevel || 'exact_match';
+    const isProxyOrPlatform = identityCategory === 'proxy_route_identity' || identityCategory === 'platform_or_proxy_identity';
+    const srcLabelMap = {
+      exact_match: {zh:'清晰',en:'Clear'}, family_match: {zh:'家族匹配',en:'Family Match'},
+      platform_or_proxy_identity: {zh:'平台代理层暴露',en:'Platform/Proxy Exposed'},
+      proxy_route_identity: {zh:'平台代理层暴露',en:'Platform/Proxy Exposed'},
+      ambiguous: {zh:'身份未确认',en:'Identity Unconfirmed'},
+      wrong_family: {zh:'模型家族不一致',en:'Family Inconsistent'},
+      hard_contamination: {zh:'工具人格污染',en:'Tool/Persona Contam.'},
+      failed: {zh:'测试失败',en:'Test Failed'}, empty: {zh:'无回答',en:'No Answer'},
+    };
+    const srcLabelCopy = srcLabelMap[identityCategory]?.[zh?'zh':'en'] || (zh ? '未知' : 'Unknown');
+    const suggestions = generateSuggestions(checks, {});
+    const costLabel = zh ? riskLevelLabelZH(costRisk) : riskLevelLabelEN(costRisk);
+    const modelLabel = zh ? riskLevelLabelZH(modelRisk) : riskLevelLabelEN(modelRisk);
+    const stabilityLabel = zh ? riskLevelLabelZH(stabilityRisk) : riskLevelLabelEN(stabilityRisk);
+    const gradeLabel = grade?.gradeZh || grade?.label || score;
     const text = zh
-      ? `${modeLabel} | ${grade.gradeZh} ${score}分 | ${judgment} | 扣费:${zh?riskLevelLabelZH(costRisk):riskLevelLabelEN(costRisk)} | 模型:${zh?riskLevelLabelZH(modelRisk):riskLevelLabelEN(modelRisk)} | ID:${reportId}\nhttps://aiapidoctor.com/`
-      : `${modeLabel} | ${grade.grade} ${score}/100 | ${judgment} | Cost:${riskLevelLabelEN(costRisk)} | Model:${riskLevelLabelEN(modelRisk)} | ID:${reportId}\nhttps://aiapidoctor.com/`;
+      ? `AI API Doctor 验货报告\n验货分：${score}/100，${gradeLabel}\n扣费透明度：${costLabel}\n模型可信度：${modelLabel}\n稳定性：${stabilityLabel}\n来源透明度：${srcLabelCopy}\n主要建议：${suggestions[0] || '-'}\n本报告仅基于可复现 API 信号，不构成最终证明。\nID：${reportId} · aiapidoctor.com`
+      : `AI API Doctor Report\nScore: ${score}/100, ${grade?.label || ''}\nCost: ${costLabel}\nModel: ${modelLabel}\nStability: ${stabilityLabel}\nSource: ${srcLabelCopy}\nMain advice: ${suggestions[0] || '-'}\nBased on reproducible API signals only.\nID: ${reportId} · aiapidoctor.com`;
     copyToClipboard(text, zh ? '验货分已复制' : 'Score copied');
   }
 };
