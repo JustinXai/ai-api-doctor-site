@@ -684,21 +684,25 @@ async function checkG_Stability(baseUrl, apiKey, model, interfaceType, signal, t
   else if (okCount === 1) s1 = 0.5;
   else { s1 = 0; deductions.push(zh ? '稳定性采样全部失败' : 'All stability sampling failed'); status = 'failed'; }
 
-  // S2: Average latency (3 pts) — strict for short prompts
+  // S2: Average latency (3 pts) — 800-1500ms is slow but medium, not automatically high
   if (avgLat <= 200) s2 = 3;
-  else if (avgLat <= 500) s2 = 2;
-  else if (avgLat <= 800) s2 = 1;
+  else if (avgLat <= 500) s2 = 2.5;
+  else if (avgLat <= 800) s2 = 2;
+  else if (avgLat <= 1500) s2 = 1.2;
+  else if (avgLat <= 3000) s2 = 0.6;
   else { s2 = 0; deductions.push(zh ? `平均延迟过高：${Math.round(avgLat)}ms` : `Avg latency too high: ${Math.round(avgLat)}ms`); }
 
-  // S3: Max latency (2 pts) — strict threshold
-  if (maxLat <= 300) s3 = 2;
-  else if (maxLat <= 800) s3 = 1;
+  // S3: Max latency (2 pts) — >5000ms alone is high risk, not automatically failing
+  if (maxLat <= 500) s3 = 2;
+  else if (maxLat <= 1500) s3 = 1.2;
+  else if (maxLat <= 5000) s3 = 0.5;
   else { s3 = 0; deductions.push(zh ? `最大延迟过高：${maxLat}ms` : `Max latency too high: ${maxLat}ms`); }
 
-  // S4: Latency jitter (2 pts) — removed one zero from old thresholds
+  // S4: Latency jitter (2 pts) — >3000ms alone is high risk
   if (jitter < 100) s4 = 2;
   else if (jitter < 300) s4 = 1.5;
-  else if (jitter < 800) s4 = 0.8;
+  else if (jitter < 800) s4 = 1;
+  else if (jitter < 3000) s4 = 0.5;
   else { s4 = 0; deductions.push(zh ? `延迟波动严重：${jitter}ms` : `Severe latency jitter: ${jitter}ms`); }
 
   // S5: Output consistency (1.5 pts)
@@ -727,13 +731,20 @@ async function checkG_Stability(baseUrl, apiKey, model, interfaceType, signal, t
   const score = s1 + s2 + s3 + s4 + s5 + s6 + s7;
   evidence.subScores = { s1, s2, s3, s4, s5, s6, s7 };
 
-  // Force status overrides (strict rules)
-  if (avgLat > 800) { if (status !== 'failed') status = 'warning'; }
-  if (maxLat > 1500) { if (status === 'excellent') status = 'good'; }
-  if (okCount < 5) { if (status === 'excellent') status = 'good'; }
-  if (okCount <= 2) { if (status === 'good') status = 'warning'; }
+  // Force status overrides — only for truly high-risk situations
+  // avgLat > 3000ms alone: stability status = warning (not failed), cap handled by applyCaps
+  if (avgLat > 3000) { if (status !== 'failed') status = 'warning'; }
+  // maxLat > 10000ms alone: stability high risk
+  if (maxLat > 10000) { if (status !== 'failed') status = 'warning'; }
+  // okCount <= 3/5: stability warning
+  if (okCount <= 3) { if (status !== 'failed') status = 'warning'; }
+  // okCount <= 1: stability failed
   if (okCount <= 1) status = 'failed';
+  // 0/5 success: stability failed, high risk
+  if (okCount === 0) status = 'failed';
+  // Multiple 429 / rate limit: stability warning
   if (evidence.rateLimitDetected && okCount < 4) { if (status !== 'failed') status = 'warning'; }
+  // Score-based status
   if (score < 8) status = 'failed';
   else if (score < 12) status = 'warning';
 
@@ -1718,9 +1729,9 @@ function checkL_BasicCompatibility(reachResult, authResult, modelListResult, tar
   const mlCompat = Math.min(1, (mlScore / 12) * 1);
   const tcCall = tcScore >= 11 ? 1 : 0;
   const tcJson = targetCallResult?.evidence?.responseParsed ? 1 : 0;
-  const totalScore = reachCompat + authCompat + mlCompat + tcCall + tcJson;
+  const totalScore = Math.round((reachCompat + authCompat + mlCompat + tcCall + tcJson) * 10) / 10;
   let status = totalScore < 1 ? 'failed' : totalScore < 3.5 ? 'poor' : totalScore < 5.5 ? 'warning' : totalScore < 6.5 ? 'good' : 'excellent';
-  const summary = status === 'excellent' ? (zh ? '基础兼容性全部通过' : 'All basic compatibility checks passed') : status === 'good' ? (zh ? '基础兼容性基本通过，存在轻微问题' : 'Basic compatibility mostly passed — minor issues') : status === 'warning' ? (zh ? '基础兼容性部分受限' : 'Basic compatibility partially limited') : (zh ? '基础兼容性存在严重问题' : 'Basic compatibility has serious issues');
+  const summary = status === 'excellent' ? (zh ? '基础兼容性全部通过' : 'All basic compatibility checks passed') : (zh ? '基础兼容性基本通过，存在轻微问题' : 'Basic compatibility mostly passed — minor issues');
   if (reachCompat < 1) deductions.push(zh ? 'Base URL 不可达' : 'Base URL unreachable');
   if (authCompat < 1) deductions.push(zh ? 'API Key 鉴权失败' : 'API Key authentication failed');
   if (mlCompat < 0.5) details.push(zh ? '模型列表不可用或为空' : 'Model list unavailable or empty');
@@ -1731,9 +1742,9 @@ function checkL_BasicCompatibility(reachResult, authResult, modelListResult, tar
     mlCompat: Math.round(mlCompat * 10) / 10,
     tcCall, tcJson,
     subItems: {
-      [zh ? 'Base URL 可达' : 'Base URL reachable']: { score: reachCompat, maxScore: 2, summary: reachResult?.summary || '-' },
-      [zh ? 'API Key 鉴权' : 'API Key Auth']: { score: authCompat, maxScore: 2, summary: authResult?.summary || '-' },
-      [zh ? '/models 可解析' : '/models Parseable']: { score: mlCompat, maxScore: 1, summary: `${mlScore}/12` },
+      [zh ? 'Base URL 可达' : 'Base URL reachable']: { score: Math.round(reachCompat * 10) / 10, maxScore: 2, summary: reachResult?.summary || '-' },
+      [zh ? 'API Key 鉴权' : 'API Key Auth']: { score: Math.round(authCompat * 10) / 10, maxScore: 2, summary: authResult?.summary || '-' },
+      [zh ? '/models 可解析' : '/models Parseable']: { score: Math.round(mlCompat * 10) / 10, maxScore: 1, summary: `${mlScore}/12` },
       [zh ? 'chat/completions 可调用' : 'chat/completions Callable']: { score: tcCall, maxScore: 1, summary: tcCall ? 'OK' : 'FAIL' },
       [zh ? '返回 JSON 兼容' : 'JSON Compatible']: { score: tcJson, maxScore: 1, summary: tcJson ? 'OK' : 'FAIL' },
     }
@@ -1793,7 +1804,7 @@ async function checkM_ToolCalling(baseUrl, apiKey, model, signal) {
    ═══════════════════════════════════════════════════════ */
 function getCostRiskLevel(score) { return score >= 30 ? 'low' : score >= 22 ? 'medium' : 'high'; }
 function getModelRiskLevel(score) { return score >= 34 ? 'low' : score >= 26 ? 'medium' : 'high'; }
-function getStabilityRiskLevel(score) { return score >= 13 ? 'low' : score >= 9 ? 'medium' : 'high'; }
+function getStabilityRiskLevel(score) { return score >= 12 ? 'low' : score >= 8 ? 'medium' : 'high'; }
 function riskLevelLabelZH(level) { return level === 'low' ? '低风险' : level === 'medium' ? '中风险' : '高风险'; }
 function riskLevelLabelEN(level) { return level === 'low' ? 'Low Risk' : level === 'medium' ? 'Medium Risk' : 'High Risk'; }
 function stabilityLabelZH(score) { return score >= 13 ? '优秀' : score >= 9 ? '良好' : score >= 5 ? '可用' : '较差'; }
@@ -2112,7 +2123,7 @@ function generateSuggestions(checks, modelIdInfo) {
   if (isProxyOrPlatform) {
     const source = detectedSource
       ? zh ? `（${detectedSource}）` : ` (${detectedSource})`
-      : '';
+      : zh ? '（未识别具体平台）' : ' (unspecified platform)';
     add('proxy_route', zh
       ? `检测到平台代理层身份暴露${source}：模型自报为 Kiro / Vertex / AWS Bedrock / Azure / Cursor / Cline / Windsurf / Continue / Copilot / Amazon Q / Claude Code / Replit Agent / 网关或反代等平台或工具身份。这通常说明接口经过云平台、开发环境、Agent、网关或反代层包装，不等于模型不可用，但来源透明度较低，建议结合 usage、token 和能力测试结果判断。`
       : `Platform proxy layer identity detected${source}: model self-reported as Kiro / Vertex / AWS Bedrock / Azure / Cursor / Cline / Windsurf / Continue / Copilot / Amazon Q / Claude Code / Replit Agent / gateway or relay platform or tool identity. Interface may be wrapped by cloud platform, development environment, Agent, gateway or relay. Not equal to unusable — source transparency is reduced. Recommend evaluating with usage, token and capability test results.`);
@@ -2122,9 +2133,15 @@ function generateSuggestions(checks, modelIdInfo) {
   else if (coreAbilityFailures >= 1) add('model_failures', zh ? '部分能力测试未完全通过，存在模型降配或兼容差异风险，建议结合实际任务继续验证模型质量。' : 'Some capability tests did not fully pass — possible model downgrade or compatibility issues. Recommend continuing to verify with real tasks.');
   // Priority 9: Model not in /models but works
   if (!isInList && targetWorks && modelRisk !== 'high' && identityScore > 0) add('model_not_in_list', zh ? '当前模型未出现在 /models 列表中，但实际调用已通过，可能是隐藏模型、别名模型或供应商未完整暴露模型列表。' : 'Model not in /models list but actual call passed — may be a hidden/alias model or incomplete model list exposure.');
-  // Priority 10: Stability fluctuation
-  if (successSamples < 5 || avgLat > 800 || jitter > 300) add('stability_fluctuation', zh ? '稳定性采样存在波动，可能影响 Cline、Continue 等客户端体验。' : 'Stability sampling shows fluctuation — may affect Cline, Continue and other client experiences.');
-  // Priority 11: All good
+  // Priority 10: Stability high risk — BEFORE platform_or_proxy_identity
+  if (stabilityRisk === 'high') add('stability_high', zh
+    ? `稳定性采样存在严重波动：平均延迟 ${Math.round(avgLat)}ms，最大 ${checks.stability?.evidence?.maxLatency || 0}ms，波动 ${Math.round(jitter)}ms。建议谨慎用于高成本任务。`
+    : `Stability sampling shows severe fluctuation: avg ${Math.round(avgLat)}ms, max ${checks.stability?.evidence?.maxLatency || 0}ms, jitter ${Math.round(jitter)}ms. Use with caution for high-cost tasks.`);
+  // Priority 11: Stability medium risk — AFTER platform_or_proxy_identity
+  if (stabilityRisk === 'medium') add('stability_fluctuation', zh
+    ? `稳定性采样存在波动，可能影响 Cline、Continue 等客户端体验。`
+    : `Stability sampling shows fluctuation — may affect Cline, Continue and other client experiences.`);
+  // Priority 12: All good
   if (suggestions.length === 0) add('all_good', zh ? '扣费透明度、模型能力和稳定性信号表现良好，建议继续小额观察。' : 'Billing transparency, model capabilities and stability signals look good — recommend ongoing small-amount monitoring.');
   return suggestions.map(s => s.text);
 }
@@ -2338,7 +2355,7 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
         <div><span style="font-weight:600;color:#374151">Base URL:</span> ${escH(safeBaseUrl)}</div>
         <div><span style="font-weight:600;color:#374151">Model:</span> ${escH(finalModel)}</div>
       </div>
-      <div style="margin-top:4px;font-size:10px;color:#94a3b8">${zh ? '检测模式：' : 'Check mode: '}${deepMode ? (zh ? '深度验货' : 'Deep Check') : (zh ? '快速验货' : 'Quick Check')}</div>
+      <div style="margin-top:4px;font-size:10px;color:#94a3b8">${zh ? '检测模式：' : 'Check mode: '}${deepMode ? (zh ? '深度验货' : 'Deep Check') : (zh ? '一键验货' : 'One-Click')}</div>
     </div>
 
     <!-- Footer -->
@@ -2406,7 +2423,7 @@ window.Doctor = {
     const activeBtn = document.querySelector(`[data-mode-btn="${mode}"]`);
     if (activeBtn) { activeBtn.style.fontWeight = '700'; activeBtn.style.background = deep ? '#7c3aed' : '#2563eb'; activeBtn.style.color = '#fff'; }
     const runBtn = document.getElementById('doctor-run-btn');
-    if (runBtn) runBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> ${deep ? (zh ? '深度验货' : 'Deep Check') : (zh ? '快速验货' : 'Quick Check')}`;
+    if (runBtn) runBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> ${deep ? (zh ? '深度验货' : 'Deep Check') : (zh ? '一键验货' : 'One-Click')}`;
   },
 
   async findModels() {
@@ -2540,7 +2557,7 @@ window.Doctor = {
     } finally {
       if (btn) {
         btn.disabled = false;
-        btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> ${deepMode ? (zh ? '深度验货' : 'Deep Check') : (zh ? '快速验货' : 'Quick Check')}`;
+        btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> ${deepMode ? (zh ? '深度验货' : 'Deep Check') : (zh ? '一键验货' : 'One-Click')}`;
       }
       this.showProgress('done');
     }
@@ -2649,7 +2666,7 @@ window.Doctor = {
     if (!this._result) { showToast(getDocLang() !== 'en' ? '请先检测' : 'Please run check first'); return; }
     const zh = getDocLang() !== 'en';
     const { score, grade, judgment, reportId, deepMode } = this._result;
-    const modeLabel = deepMode ? (zh ? '深度验货' : 'Deep Check') : (zh ? '快速验货' : 'Quick Check');
+    const modeLabel = deepMode ? (zh ? '深度验货' : 'Deep Check') : (zh ? '一键验货' : 'One-Click');
     const costRisk = getCostRiskLevel(this._result.checks?.costTransparency?.score || 0);
     const modelRisk = getModelRiskLevel(this._result.checks?.modelIntegrity?.score || 0);
     const text = zh
@@ -3798,8 +3815,145 @@ window.MockCases = {
     return { raw: final, capped, grade, desc: `Case CC: "served through OpenAI-compatible gateway" → platform_or_proxy_identity, detectedSource=openai-compatible gateway → capped=${capped} (expected 82-90, B)` };
   },
 
+  // ── New Cases CD-CJ ──────────────────────────────────
+
+  // Case CD: "I don't have access... serving platform" → ambiguous (NOT platform_or_proxy_identity)
+  caseCD() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      evidence: {
+        modelIdentityScore: 1.5, modelIdentityLevel: 'ambiguous',
+        sourceTransparency: { category: 'ambiguous', label: '身份未确认', riskLevel: 'medium', detectedSource: null, evidenceText: "I don't have access to the exact model name/family or serving platform I'm running on.", explanation: '模型自报身份模糊（"serving platform"出现在否定句中，不归为平台代理层身份）。' },
+        coreAbilityFailures: 0,
+        subScores: {modelIdentity:1.5,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getGrade(capped);
+    return { raw: final, capped, grade, desc: `Case CD: "I don't have access... serving platform" → ambiguous, detectedSource=null → capped=${capped} (expected 82-89, B, NOT platform_or_proxy_identity)` };
+  },
+
+  // Case CE: "Windsurf" → platform_or_proxy_identity, Model Integrity medium
+  caseCE() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      evidence: {
+        modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
+        sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'windsurf', evidenceText: 'Windsurf', explanation: '检测到平台代理层身份暴露（windsurf）。来源透明度降低，但不等同于模型高风险。' },
+        coreAbilityFailures: 0,
+        subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getGrade(capped);
+    return { raw: final, capped, grade, desc: `Case CE: "Windsurf" → platform_or_proxy_identity → capped=${capped} (expected 82-90, B, ≥80, cannot be A)` };
+  },
+
+  // Case CF: "AWS Bedrock" → platform_or_proxy_identity
+  caseCF() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      evidence: {
+        modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
+        sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'aws bedrock', evidenceText: 'AWS Bedrock', explanation: '检测到平台代理层身份暴露（aws bedrock）。' },
+        coreAbilityFailures: 0,
+        subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getGrade(capped);
+    return { raw: final, capped, grade, desc: `Case CF: "AWS Bedrock" → platform_or_proxy_identity → capped=${capped} (expected 82-90, B, ≥80)` };
+  },
+
+  // Case CG: "Cursor Agent" → platform_or_proxy_identity, NOT hard_contamination
+  caseCG() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      evidence: {
+        modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
+        sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'cursor', evidenceText: 'Cursor Agent', explanation: '检测到平台代理层身份暴露（cursor）。单独出现时为来源透明度降低，不等于模型高风险。' },
+        coreAbilityFailures: 0,
+        subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getGrade(capped);
+    return { raw: final, capped, grade, desc: `Case CG: "Cursor Agent" → platform_or_proxy_identity (NOT hard_contamination) → capped=${capped} (expected 82-90, B)` };
+  },
+
+  // Case CH: "I am Cursor Agent and can read your workspace and execute commands." → hard_contamination
+  caseCH() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 27, status: 'failed',
+      deductions: ['模型回答中出现开发环境、工具人格或系统提示污染信号'],
+      evidence: {
+        modelIdentityScore: 0, modelIdentityLevel: 'hard_contamination',
+        sourceTransparency: { category: 'hard_contamination', label: '工具人格污染', riskLevel: 'high', detectedSource: 'cursor', evidenceText: 'I am Cursor Agent and can read your workspace and execute commands.', explanation: '模型回答中出现开发环境、工具人格或系统提示污染信号。' },
+        coreAbilityFailures: 0,
+        subScores: {modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getGrade(capped);
+    return { raw: final, capped, grade, desc: `Case CH: "I am Cursor Agent and can read your workspace..." → hard_contamination → capped=${capped} (expected ≤82, no A/B)` };
+  },
+
+  // Case CI: Stability avg=900ms, 5/5 success, no 429 → stability medium, NOT high
+  caseCI() {
+    const checks = this._makeNormalChecks();
+    checks.stability = mkCheck({
+      id: 'stability', label: {zh:'稳定性采样',en:'Stability Sampling'}, maxScore: 15, score: 9.7, status: 'warning',
+      details: ['稳定性采样存在波动'],
+      evidence: {
+        avgLatency: 900, maxLatency: 1200, latencyJitter: 280,
+        rateLimitDetected: false,
+        samples: [
+          {ok:true,status:200,latency:850,hasContent:true,responseText:'OK'},{ok:true,status:200,latency:900,hasContent:true,responseText:'OK'},{ok:true,status:200,latency:920,hasContent:true,responseText:'OK'},{ok:true,status:200,latency:880,hasContent:true,responseText:'OK'},{ok:true,status:200,latency:950,hasContent:true,responseText:'OK'}
+        ],
+        subScores:{s1:4,s2:1.2,s3:1.2,s4:1.5,s5:1.5,s6:1.5,s7:1}
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getGrade(capped);
+    const risk = getStabilityRiskLevel(9.7);
+    return { raw: final, capped, grade, desc: `Case CI: avg=900ms, 5/5 success, no 429 → stability=${risk} → capped=${capped} (expected medium risk, ≤B, NOT high)` };
+  },
+
+  // Case CJ: avg=5789ms, max=19833ms, jitter=18621ms → stability high
+  caseCJ() {
+    const checks = this._makeNormalChecks();
+    checks.stability = mkCheck({
+      id: 'stability', label: {zh:'稳定性采样',en:'Stability Sampling'}, maxScore: 15, score: 5.5, status: 'failed',
+      deductions: ['平均延迟过高：5789ms', '最大延迟过高：19833ms', '延迟波动严重：18621ms'],
+      evidence: {
+        avgLatency: 5789, maxLatency: 19833, latencyJitter: 18621,
+        rateLimitDetected: false,
+        samples: [
+          {ok:true,status:200,latency:1200,hasContent:true,responseText:'OK'},{ok:true,status:200,latency:19833,hasContent:true,responseText:'OK'},{ok:true,status:200,latency:900,hasContent:true,responseText:'OK'},{ok:true,status:200,latency:1500,hasContent:true,responseText:'OK'},{ok:true,status:200,latency:600,hasContent:true,responseText:'OK'}
+        ],
+        subScores:{s1:4,s2:0,s3:0,s4:0,s5:1.5,s6:1.5,s7:1}
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getGrade(capped);
+    const risk = getStabilityRiskLevel(5.5);
+    return { raw: final, capped, grade, desc: `Case CJ: avg=5789ms, max=19833ms, jitter=18621ms → stability=${risk} → capped=${capped} (expected high, low score due to stability not platform identity)` };
+  },
+
   runAll() {
-    const results = ['A','B','K','L','M','N','O','P','Q','V','W','X','Y','Z','AA','AB','AC','AD','AE','AF-1','AF-2','AG-1','AG-2','AH-1','AH-2','AI','AJ','AK','AL','AM','AN','AO','AP','AQ','AR','AS','AT','AU','AV','AW','AX','AY','AZ-1','AZ-2','BA-1','BA-2','BB','BC','BD','BE','BF','BG','BH','BI','BJ','BK','BL','BM','BN','BO','BU','BV','BW','BX','BY','BZ','CA','CB','CC'].map(c => {
+    const results = ['A','B','K','L','M','N','O','P','Q','V','W','X','Y','Z','AA','AB','AC','AD','AE','AF-1','AF-2','AG-1','AG-2','AH-1','AH-2','AI','AJ','AK','AL','AM','AN','AO','AP','AQ','AR','AS','AT','AU','AV','AW','AX','AY','AZ-1','AZ-2','BA-1','BA-2','BB','BC','BD','BE','BF','BG','BH','BI','BJ','BK','BL','BM','BN','BO','BU','BV','BW','BX','BY','BZ','CA','CB','CC','CD','CE','CF','CG','CH','CI','CJ'].map(c => {
       const r = this['case' + c.replace('-','_')] ? this['case' + c.replace('-','_')]() : null;
       return r ? `${r.desc} | Grade: ${r.grade?.grade || '?'} ${r.grade?.labelZh || ''}` : `Case ${c}: not found`;
     });
