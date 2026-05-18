@@ -1,17 +1,32 @@
 /**
- * AI API Doctor — Diagnostic Engine v3 (Fine-Grained Scoring + Unified Grades)
+ * AI API Doctor — Diagnostic Engine v6 (Upgraded: Kiro/Vertex Proxy Route + Token Inflation + J8 Dual-Prompt + 6-Type K0 + Confidence)
  * website/assets/test.js
  *
- * Core principles:
- * 1. No simple pass=full / fail=0 scoring — every check has multiple sub-items
- * 2. finalTestModelId is determined once and used for ALL core tests
- * 3. modelSource tracks how the model was selected: user_input | auto_detected
- * 4. All model comparisons use normalizeModelId() for case-insensitive matching
- * 5. getScoreGrade() is the single source of truth for all grade/color/tier lookups
- * 6. getCheckStatus() determines individual check status from score ratios
- * 7. Reports explain WHY a score was given, not just WHAT the score is
+ * Core principles (same as v5, with additions):
+ * 1. User's core concerns: billing transparency + model quality + stability
+ * 2. Cost transparency + model integrity = 75/100 points (core value)
+ * 3. Basic compatibility is a prerequisite, not the core value
+ * 4. Kiro/Vertex/gateway = proxy_route_identity = medium risk, not a death sentence
+ * 5. wrong_family / hard_contamination = high risk, always penalized
+ * 6. Token inflation, usage missing, max_tokens failure, multi ability failures → severe caps
+ * 7. Scores normalized to 0-100 then weighted for final score
+ * 8. Final score max 98 — no perfect score
+ * 9. Conclusion confidence level reported
  *
- * Security: API Key NEVER in localStorage/console/URL/report images/copy text
+ * Prohibited language:
+ * - "该站乱扣费" / "This site overcharges"
+ * - "该模型是假模型" / "This model is fake"
+ * - "已验证真实模型" / "Real model verified"
+ * - "真实扣费已确认" / "Real billing confirmed"
+ * - "该模型是降配" / "This model is downgraded"
+ *
+ * Allowed language:
+ * - "usage 明细不完整，扣费不可审计风险较高"
+ * - "prompt_tokens 明显高于本地估算，存在隐藏上下文、额外包装或 token inflation 风险"
+ * - "极短回复 token 明显偏高，存在扣费不可解释风险"
+ * - "模型自报身份与目标模型不一致，存在模型降配疑似风险"
+ * - "检测到平台代理层身份暴露，这不等于模型不可用，但会降低来源透明度"
+ * - "本报告仅基于可复现 API 信号，不构成最终证明"
  */
 'use strict';
 
@@ -28,54 +43,45 @@ const PROMPT_STABILITY = 'Reply with exactly: OK';
 
 /* ═══════════════════════════════════════════════════════
    Score weights (total = 100)
+   Core: cost transparency (35) + model integrity (40) = 75 pts
    ═══════════════════════════════════════════════════════ */
 const WEIGHT = {
-  reachability:   12,   // API server reachability
-  auth:           14,   // Auth / API Key validity
-  modelList:      12,   // Model list retrieval
-  autoModel:      10,   // Model identification & selection
-  targetCall:     22,   // Target model call quality
-  stability:      18,   // Stability sampling (3 pings)
-  usageAudit:      6,   // Usage auditing
-  clientConfig:    6,   // Client config exportability
+  basicCompatibility:  7,   // Basic reachability & auth (prerequisite)
+  costTransparency:   35,  // Usage billing transparency
+  modelIntegrity:     40,  // Model capability & integrity signals
+  stability:          15,  // Response stability
+  clientConfig:        3,  // Client config exportability (reduced from 6)
 };
 WEIGHT.total = Object.values(WEIGHT).reduce((a, b) => a + b, 0); // 100
 
 /* ═══════════════════════════════════════════════════════
-   Model ID Normalization
-   All model comparisons MUST use this function.
-   ═══════════════════════════════════════════════════════ */
-function normalizeModelId(id) {
-  if (!id) return '';
-  return String(id).trim().toLowerCase();
-}
-
-/* ═══════════════════════════════════════════════════════
    Grade table (6 levels) — unified for all components
+   Score range: 95-98=A, 90-94=B, 80-89=C, 65-79=D, 40-64=E, 0-39=F
+   Max score is 98 — excellent is not trivially given.
    ═══════════════════════════════════════════════════════ */
 const GRADES = [
   { min: 95, grade: 'A', label: 'Excellent', labelZh: '优秀',   color: '#16a34a', bg: '#dcfce7',
-    desc: 'Compatibility, stability and usage audit are all excellent',
-    descZh: '兼容性、稳定性和用量审计表现优秀' },
+    desc: 'Overall signals excellent — no significant billing or model downgrade risks detected',
+    descZh: '综合信号表现优秀，未发现明显扣费或模型降配风险' },
   { min: 90, grade: 'B', label: 'Good',      labelZh: '良好',   color: '#0891b2', bg: '#ecfeff',
-    desc: 'Core functions available with minor limitations',
-    descZh: '核心功能可用，存在少量限制' },
+    desc: 'Core signals good with minor explainable limitations',
+    descZh: '核心信号表现良好，存在少量可解释限制' },
   { min: 80, grade: 'C', label: 'Fair',     labelZh: '可用',   color: '#d97706', bg: '#fef9c3',
-    desc: 'Usable, but some items need attention',
-    descZh: '可用，但部分项目需要注意' },
+    desc: 'Usable, but some billing or model signals need attention',
+    descZh: '可用，但部分扣费或模型信号需要注意' },
   { min: 65, grade: 'D', label: 'Limited',  labelZh: '受限',   color: '#ea580c', bg: '#ffedd5',
-    desc: 'Partial compatibility with significant limitations',
-    descZh: '部分兼容，存在明显限制' },
+    desc: 'Significant risks — recommend small-amount verification before use',
+    descZh: '存在明显风险，建议小额验证后再使用' },
   { min: 40, grade: 'E', label: 'Poor',     labelZh: '较差',   color: '#dc2626', bg: '#fee2e2',
-    desc: 'Serious compatibility issues',
-    descZh: '存在严重兼容问题' },
+    desc: 'Multiple critical signal anomalies — not recommended for high-cost tasks',
+    descZh: '多项关键信号异常，不建议用于高成本任务' },
   { min: 0,  grade: 'F', label: 'Failed',   labelZh: '失败',   color: '#dc2626', bg: '#fee2e2',
-    desc: 'Current configuration is not usable',
-    descZh: '当前配置不可用' },
+    desc: 'Configuration unusable or extremely high risk',
+    descZh: '当前配置不可用或风险极高' },
 ];
 
 /**
- * Unified grade lookup — used by ALL components (report card, badge, copy text, image export)
+ * Unified grade lookup — used by ALL components
  * @param {number} score
  * @returns {object} grade object
  */
@@ -85,8 +91,6 @@ function getScoreGrade(score) {
   }
   return GRADES[GRADES.length - 1];
 }
-
-// Backward-compatible alias
 const getGrade = getScoreGrade;
 
 /* ═══════════════════════════════════════════════════════
@@ -101,24 +105,15 @@ const STATUS_CONFIG = {
   inconsistent:{ zh: '矛盾', en: 'Inconsistent',  color: '#7c3aed', bg: '#ede9fe', pill: 'warn' },
 };
 
-/**
- * Unified check status based on score ratio.
- * @param {number} earned
- * @param {number} maxScore
- * @param {string|null} forced
- * @returns {string} status
- */
 function getCheckStatus(earned, maxScore, forced) {
   if (forced) return forced;
   const ratio = maxScore > 0 ? earned / maxScore : 0;
   if (ratio >= 0.95) return 'excellent';
   if (ratio >= 0.80) return 'good';
   if (ratio >= 0.50) return 'warning';
-  if (ratio > 0)     return 'poor';   // partial credit but below warning threshold
+  if (ratio > 0) return 'poor';
   return 'failed';
 }
-
-// Backward-compatible alias
 const computeCheckStatus = getCheckStatus;
 
 function statusLabel(status, zh) {
@@ -189,61 +184,46 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-/* ═══════════════════════════════════════════════════════
-   Unified check data factory
-   Every check returns this shape so the report builder is uniform.
-   ═══════════════════════════════════════════════════════ */
 function mkCheck(cfg) {
   return {
-    id:          cfg.id          || 'unknown',
-    label:       cfg.label       || { zh: '', en: '' },
-    maxScore:    cfg.maxScore    || 0,
-    score:       cfg.score       || 0,
-    status:      cfg.status      || 'failed',
-    summary:     cfg.summary     || '',
-    details:     cfg.details     || [],
-    deductions:  cfg.deductions  || [],
-    evidence:    cfg.evidence    || {},
+    id:       cfg.id       || 'unknown',
+    label:    cfg.label    || { zh: '', en: '' },
+    maxScore: cfg.maxScore || 0,
+    score:    cfg.score    || 0,
+    status:   cfg.status   || 'failed',
+    summary:  cfg.summary  || '',
+    details:  cfg.details  || [],
+    deductions: cfg.deductions || [],
+    evidence: cfg.evidence || {},
   };
 }
 
-/* ═══════════════════════════════════════════════════════
-   Request Builder
-   ═══════════════════════════════════════════════════════ */
 function buildRequest(baseUrl, apiKey, model, interfaceType, prompt, options = {}) {
-  const { maxTokens = 50, stream = false, streamOptions = null } = options;
-
-  const pathMap = {
-    'OpenAI Chat': '/chat/completions',
-    'OpenAI Responses': '/responses',
-    'Claude Messages': '/messages'
-  };
+  const { maxTokens = 50, stream = false, streamOptions = null, temperature = null, tools = null, tool_choice = null } = options;
+  const pathMap = { 'OpenAI Chat': '/chat/completions', 'OpenAI Responses': '/responses', 'Claude Messages': '/messages' };
   const path = pathMap[interfaceType] || '/chat/completions';
   const endpoint = (baseUrl + path).replace(/\/+/g, '/').replace(':/', '://');
-
   let body;
   if (interfaceType === 'OpenAI Chat') {
     body = { model, messages: [{ role: 'user', content: prompt }], max_tokens: maxTokens, stream };
     if (stream && streamOptions) body.stream_options = streamOptions;
+    if (temperature != null) body.temperature = temperature;
+    else body.temperature = 0.7;
+    if (tools) body.tools = tools;
+    if (tool_choice) body.tool_choice = tool_choice;
   } else if (interfaceType === 'OpenAI Responses') {
     body = { model, input: prompt, max_output_tokens: maxTokens, stream };
   } else {
     body = { model, messages: [{ role: 'user', content: prompt }], max_tokens: maxTokens, stream };
   }
-
   const headers = { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' };
   if (interfaceType === 'Claude Messages') headers['anthropic-version'] = '2023-06-01';
-
   return { endpoint, body, headers };
 }
 
-/* ═══════════════════════════════════════════════════════
-   Visible Output Extractor
-   ═══════════════════════════════════════════════════════ */
 function extractVisibleOutput(data, interfaceType) {
   const EMPTY = { text: '', status: 'absent' };
   if (!data || typeof data !== 'object') return EMPTY;
-
   if (interfaceType === 'OpenAI Chat') {
     const choices = data.choices;
     if (!choices || !Array.isArray(choices) || choices.length === 0) return EMPTY;
@@ -262,7 +242,6 @@ function extractVisibleOutput(data, interfaceType) {
     if (c0.message?.tool_calls && c0.message.tool_calls.length > 0) return { text: '[tool_calls]', status: 'present' };
     const delta = c0.delta;
     if (delta?.content && String(delta.content).trim()) return { text: String(delta.content).trim(), status: 'present' };
-
   } else if (interfaceType === 'OpenAI Responses') {
     if (data.output_text && String(data.output_text).trim()) return { text: String(data.output_text).trim(), status: 'present' };
     if (data.response?.output_text && String(data.response.output_text).trim()) return { text: String(data.response.output_text).trim(), status: 'present' };
@@ -271,14 +250,11 @@ function extractVisibleOutput(data, interfaceType) {
       for (const out of outputs) {
         if (out?.content && Array.isArray(out.content)) {
           for (const part of out.content) {
-            if ((part?.type === 'output_text' || part?.type === 'text') && part?.text?.trim()) {
-              return { text: part.text.trim(), status: 'present' };
-            }
+            if ((part?.type === 'output_text' || part?.type === 'text') && part?.text?.trim()) return { text: part.text.trim(), status: 'present' };
           }
         }
       }
     }
-
   } else if (interfaceType === 'Claude Messages') {
     const content = data.content;
     if (Array.isArray(content)) {
@@ -289,17 +265,12 @@ function extractVisibleOutput(data, interfaceType) {
     }
     if (data.delta?.text && String(data.delta.text).trim()) return { text: String(data.delta.text).trim(), status: 'present' };
   }
-
   return { text: '', status: data.choices || data.content || data.output ? 'unknown' : 'absent' };
 }
 
-/* ═══════════════════════════════════════════════════════
-   Connection Info Parser
-   ═══════════════════════════════════════════════════════ */
 function parseConnectionInfo(raw) {
   const text = (raw || '').trim();
   if (!text) return {};
-
   try {
     const json = JSON.parse(text);
     if (json.key || json.api_key || json.apiKey || json.sk) {
@@ -310,7 +281,6 @@ function parseConnectionInfo(raw) {
       };
     }
   } catch (_) {}
-
   if (text.startsWith('curl ') || text.includes('curl -')) {
     const urlMatch = text.match(/curl[^>]*['"]?(https?:\/\/[^\s'"]+)/i) || text.match(/-X\s+POST\s+['"]?(https?:\/\/[^\s'"]+)/i);
     const authMatch = text.match(/-H\s+['"]Authorization:\s*Bearer\s+([^\s'"]+)/i) || text.match(/Authorization:\s*Bearer\s+([A-Za-z0-9_-]+)/i);
@@ -321,7 +291,6 @@ function parseConnectionInfo(raw) {
       model: modelMatch ? modelMatch[1] : ''
     };
   }
-
   const lines = text.split('\n');
   let baseUrl = '', apiKey = '', model = '';
   lines.forEach(line => {
@@ -335,16 +304,11 @@ function parseConnectionInfo(raw) {
     }
   });
   if (baseUrl || apiKey || model) return { baseUrl: baseUrl.replace(/\/$/, ''), apiKey, model };
-
   if (/^https?:\/\//.test(text)) return { baseUrl: text.replace(/\/$/, ''), apiKey: '', model: '' };
   if (/^sk-/.test(text)) return { baseUrl: '', apiKey: text, model: '' };
   return {};
 }
 
-/* ═══════════════════════════════════════════════════════
-   Shared model candidates extraction
-   Returns normalized model list from any response shape.
-   ═══════════════════════════════════════════════════════ */
 function extractModels(data) {
   if (!data) return [];
   if (Array.isArray(data.data)) return data.data.map(m => m.id || '').filter(Boolean);
@@ -353,107 +317,78 @@ function extractModels(data) {
   return [];
 }
 
-/* ═══════════════════════════════════════════════════════
-   Helper: normalize a URL to base (strip trailing /v1/...)
-   ═══════════════════════════════════════════════════════ */
 function baseOrigin(url) {
-  try {
-    return new URL(url.replace(/\/$/, '')).origin;
-  } catch (_) {
-    return (url || '').replace(/\/$/, '');
-  }
+  try { return new URL(url.replace(/\/$/, '')).origin; }
+  catch (_) { return (url || '').replace(/\/$/, ''); }
 }
 
-/* ═══════════════════════════════════════════════════════
-   DETECT finalTestModelId + modelSource
-   modelSource: 'user_input' | 'auto_detected' | 'models_fallback'
-   Returns { finalTestModelId, userModel, autoModel, modelFromList,
-             allModels, modelSource, isFinalModelInModelList }
-   ═══════════════════════════════════════════════════════ */
-function determineFinalTestModelId(userModel, modelListResult) {
-  const userModelTrim = (userModel || '').trim();
+function normalizeModelId(id) {
+  if (!id) return '';
+  return String(id).trim().toLowerCase();
+}
+
+function determineFinalTestModelId(userInputModelId, autoDetectedModelId, modelListResult) {
+  const userInputTrim = (userInputModelId || '').trim();
+  const autoDetectedTrim = (autoDetectedModelId || '').trim();
   const allModels = extractModels(modelListResult?.data);
   const normalizedModels = allModels.map(normalizeModelId);
-
-  let autoModel = '';
-  let modelFromList = '';
-  let modelSource = 'auto_detected';
-
-  if (userModelTrim) {
-    // User manually filled in — treat as user_input
-    autoModel = userModelTrim;
-    modelFromList = userModelTrim;
+  let finalTestModelId = '';
+  let modelSource = 'unknown';
+  let autoDetectedOrigin = '';
+  if (userInputTrim) {
+    finalTestModelId = userInputTrim;
     modelSource = 'user_input';
-  } else if (allModels.length > 0) {
-    // Prefer chat/completions-capable lightweight models
+  } else if (autoDetectedTrim) {
+    const normalizedAuto = normalizeModelId(autoDetectedTrim);
+    const isInList = normalizedModels.includes(normalizedAuto);
+    if (isInList) {
+      finalTestModelId = autoDetectedTrim;
+      modelSource = 'auto_detected_from_models';
+      autoDetectedOrigin = 'models_list';
+    } else {
+      finalTestModelId = autoDetectedTrim;
+      modelSource = 'auto_detected_by_probe';
+      autoDetectedOrigin = 'probe';
+    }
+  } else {
     const chatModels = allModels.filter(m => !/(embedding|embed|vision|audio|tts|speech|whisper|dalle|image)/i.test(m));
-    autoModel = chatModels[0] || allModels[0];
-    modelFromList = autoModel;
-    modelSource = 'auto_detected';
+    finalTestModelId = chatModels[0] || allModels[0] || '';
+    modelSource = 'models_fallback';
+    autoDetectedOrigin = 'list_fallback';
   }
-
-  // isFinalModelInModelList: normalized comparison
-  const normalizedFinal = normalizeModelId(autoModel);
-  const isFinalModelInModelList = normalizedFinal !== '' && normalizedModels.includes(normalizedFinal);
-
-  return {
-    finalTestModelId: autoModel || '',
-    userModel: userModelTrim,
-    autoModel: autoModel,
-    modelFromList: modelFromList,
-    allModels,
-    modelSource,               // 'user_input' | 'auto_detected' | 'models_fallback'
-    isFinalModelInModelList,   // true if finalTestModelId is in normalized model list
-  };
+  const isFinalModelInModelList = normalizedModels.includes(normalizeModelId(finalTestModelId));
+  return { finalTestModelId, modelSource, autoDetectedOrigin, isFinalModelInModelList, allModels, userInputModelId: userInputTrim, autoModel: autoDetectedTrim };
 }
 
 /* ═══════════════════════════════════════════════════════
    STEP 1: API Server Reachability — 12 pts (6 sub-items)
-   Sub-items:
-     R1: Network connectivity (3 pts)
-     R2: TLS/HTTPS (2 pts)
-     R3: Response time (2 pts)
-     R4: Content type (2 pts)
-     R5: OpenAI-compatible path (2 pts)
-     R6: Error explainability (1 pt)
    ═══════════════════════════════════════════════════════ */
 async function checkA_Reachability(baseUrl, apiKey, signal) {
-  const start = Date.now();
   const deductions = [];
   const details = [];
   const evidence = {};
   const zh = getDocLang() !== 'en';
-
   let r1 = 3, r2 = 2, r3 = 2, r4 = 2, r5 = 2, r6 = 1;
-  let summary = '';
   let status = 'excellent';
-
-  // Probe 3 paths in parallel
   const candidates = [
     (baseUrl.replace(/\/$/, '') + '/models').replace(/\/+/g, '/').replace(':/', '://'),
     (baseUrl.replace(/\/$/, '') + '/v1/models').replace(/\/+/g, '/').replace(':/', '://'),
     baseUrl.replace(/\/$/, ''),
   ];
-
   let best = null;
   let allFailed = true;
-
   for (const url of candidates) {
     try {
       const t0 = Date.now();
       const resp = await fetch(url, { method: 'HEAD', signal, cache: 'no-cache' });
       const elapsed = Date.now() - t0;
       allFailed = false;
-      evidence.httpStatus = resp.status;
-      evidence.httpStatusRoot = resp.status;
-      evidence.elapsedMs = elapsed;
-
       best = { url, status: resp.status, elapsed, headers: Object.fromEntries(resp.headers.entries()) };
+      evidence.httpStatus = resp.status;
+      evidence.elapsedMs = elapsed;
       break;
     } catch (_) {}
   }
-
-  // Fallback: GET if HEAD failed
   if (!best) {
     try {
       const t0 = Date.now();
@@ -467,2011 +402,1876 @@ async function checkA_Reachability(baseUrl, apiKey, signal) {
       evidence.netError = err.message;
     }
   }
-
-  // R1: Network connectivity (3 pts)
   if (allFailed || !best) {
     r1 = 0;
-    deductions.push(zh ? '网络无法连接（DNS失败/超时）' : 'Network unreachable (DNS failure or timeout)');
-    details.push(zh ? '无法连接到该服务器' : 'Cannot reach this server at all');
+    deductions.push(zh ? '网络无法连接' : 'Network unreachable');
     status = 'failed';
   } else if (best.status >= 500) {
     r1 = 1.5;
-    deductions.push(zh ? '偶发连接失败（HTTP 5xx）' : 'Occasional connection failures (HTTP 5xx)');
     status = 'warning';
-  } else {
-    r1 = 3;
   }
-
-  // R2: TLS/HTTPS (2 pts)
-  if (best && baseUrl.startsWith('https')) {
-    const ct = best.headers['content-type'] || '';
-    if (ct.includes('text/html') || best.status === 403 || best.status === 401) {
-      // Suspicious TLS behavior
-    }
-    r2 = 2;
-  } else if (best && baseUrl.startsWith('http:')) {
-    r2 = 1;
-    deductions.push(zh ? '使用 HTTP 而非 HTTPS' : 'Using HTTP instead of HTTPS');
-  } else if (!best) {
-    r2 = 0;
-    deductions.push(zh ? 'TLS 证书无法验证' : 'TLS certificate cannot be verified');
-  }
-
-  // R3: Response time (2 pts)
+  if (best && baseUrl.startsWith('https')) r2 = 2;
+  else if (best && baseUrl.startsWith('http:')) { r2 = 1; deductions.push(zh ? '使用 HTTP 而非 HTTPS' : 'Using HTTP instead of HTTPS'); }
   const elapsed = best ? best.elapsed : 99999;
   evidence.latency = elapsed;
-  if (elapsed < 1000) {
-    r3 = 2;
-  } else if (elapsed < 3000) {
-    r3 = 1.5;
-    details.push(zh ? `响应时间 ${elapsed}ms（可接受）` : `Response time ${elapsed}ms (acceptable)`);
-  } else if (elapsed < 8000) {
-    r3 = 1;
-    deductions.push(zh ? `响应时间较长：${elapsed}ms` : `High response time: ${elapsed}ms`);
-    if (status !== 'failed') status = 'warning';
-  } else if (elapsed < 30000) {
-    r3 = 0.5;
-    deductions.push(zh ? `响应超时：${elapsed}ms` : `Slow response: ${elapsed}ms`);
-    if (status !== 'failed') status = 'warning';
-  } else {
-    r3 = 0;
-    deductions.push(zh ? '请求完全超时' : 'Request timed out completely');
-    status = 'failed';
-  }
-
-  // R4: Content type (2 pts) — now try a real GET on the model endpoint
-  let gotModels = false;
-  let htmlPage = false;
-  try {
-    const modelResp = await fetch(candidates[0], {
-      method: 'GET',
-      headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
-      signal
-    });
-    evidence.modelEndpointStatus = modelResp.status;
-    evidence.modelEndpointOk = modelResp.ok;
-    const ct = modelResp.headers.get('content-type') || '';
-    evidence.contentType = ct;
-
-    if (ct.includes('text/html') || ct.includes('text/plain')) {
-      const text = await modelResp.text().catch(() => '');
-      if (/<html|<\/html>|<body|<login|signin|cf-challenge|cloudflare/i.test(text)) {
-        htmlPage = true;
-        r4 = 0;
-        deductions.push(zh ? '返回 HTML 登录页 / Cloudflare / WAF' : 'Returns HTML login page / Cloudflare / WAF');
-        status = 'failed';
-      }
-    } else if (ct.includes('application/json')) {
-      r4 = 2;
-      gotModels = true;
-    } else if (!modelResp.ok) {
-      r4 = 1;
-      details.push(zh ? `HTTP ${modelResp.status}，但内容类型可解释` : `HTTP ${modelResp.status}, but content type explainable`);
-    }
-  } catch (err) {
-    evidence.modelEndpointError = err.message;
-    r4 = 0;
-    details.push(zh ? '模型接口无法访问' : 'Model endpoint not accessible');
-  }
-
-  // R5: OpenAI-compatible path (2 pts)
-  if (gotModels) {
-    r5 = 2;
-  } else if (best && best.status !== 404) {
-    r5 = 1;
-    details.push(zh ? '兼容路径部分可访问' : 'Some compatible paths accessible');
-  } else {
-    r5 = 0;
-    deductions.push(zh ? '兼容路径不可识别' : 'OpenAI-compatible paths not recognized');
-  }
-
-  // R6: Error explainability (1 pt)
-  if (best && best.status >= 400) {
-    const isExplainable = [401, 403, 404, 422, 429, 500, 502, 503].includes(best.status);
-    if (isExplainable) {
-      r6 = 1;
-    } else {
-      r6 = 0;
-      deductions.push(zh ? '错误响应无法解释' : 'Error response not explainable');
-    }
-  } else {
-    r6 = 1;
-  }
-
+  if (elapsed < 1000) r3 = 2;
+  else if (elapsed < 3000) r3 = 1.5;
+  else if (elapsed < 8000) { r3 = 1; deductions.push(zh ? `响应时间较长：${elapsed}ms` : `High response time: ${elapsed}ms`); if (status !== 'failed') status = 'warning'; }
+  else { r3 = 0.5; deductions.push(zh ? `响应超时：${elapsed}ms` : `Slow response: ${elapsed}ms`); status = 'failed'; }
+  const ct = best ? (best.headers['content-type'] || '') : '';
+  const modelEndpointOk = best && best.status < 500;
+  r4 = modelEndpointOk ? 2 : 1;
+  evidence.modelEndpointOk = modelEndpointOk;
+  evidence.contentType = ct;
+  if (ct.includes('text/html')) { deductions.push(zh ? 'API 路径返回 HTML 而非 JSON' : 'API path returns HTML instead of JSON'); r4 = 1; if (status !== 'failed') status = 'warning'; }
+  r5 = (ct.includes('application/json') || best?.status < 500) ? 2 : 1;
+  if (best && (best.status === 401 || best.status === 403 || best.status === 404 || best.status === 429)) { r6 = 1; details.push(zh ? `HTTP ${best.status}，错误可解释` : `HTTP ${best.status}, error is explainable`); }
+  else if (best && best.status >= 400) r6 = 0;
   const score = r1 + r2 + r3 + r4 + r5 + r6;
-
-  // Special: root 404 is NOT a major failure if /models works
-  if (best && best.status === 404 && gotModels) {
-    details.push(zh ? '根路径返回 HTTP 404，但对部分 OpenAI-compatible API 正常' : 'Root path returned HTTP 404 — normal for some OpenAI-compatible APIs');
-  }
-
-  // Overall status
-  if (status !== 'failed') {
-    const ratio = score / 12;
-    if (ratio >= 0.95) status = 'excellent';
-    else if (ratio >= 0.80) status = 'good';
-    else if (ratio >= 0.50) status = 'warning';
-    else status = 'failed';
-  }
-
-  summary = score < 12
-    ? (zh ? `12项中得 ${score} 分，部分项目未达标` : `Scored ${score}/12, some items below standard`)
-    : (zh ? '完全达标' : 'Fully compliant');
-
-  return mkCheck({
-    id: 'reachability',
-    label: { zh: 'API 服务器可达性', en: 'API Server Reachability' },
-    maxScore: 12,
-    score,
-    status,
-    summary,
-    details,
-    deductions,
-    evidence,
-  });
+  if (status === 'excellent' && score < 12) status = 'good';
+  if (score < 7) status = 'failed';
+  const summary = status === 'excellent' ? (zh ? '完全达标' : 'Fully compliant') : status === 'good' ? (zh ? '基本达标' : 'Mostly compliant') : status === 'warning' ? (zh ? '部分未达标' : 'Partially non-compliant') : (zh ? '严重问题' : 'Serious issues');
+  return mkCheck({ id: 'reachability', label: { zh: 'API 服务器可达性', en: 'API Server Reachability' }, maxScore: 12, score, status, summary, details, deductions, evidence });
 }
 
 /* ═══════════════════════════════════════════════════════
-   STEP 2: Auth / API Key Validity — 14 pts (6 sub-items)
-   Sub-items:
-     A1: Authorization Header accepted (3 pts)
-     A2: Key format basic check (2 pts)
-     A3: Not 401 Unauthorized (3 pts)
-     A4: Not 403 Forbidden (3 pts)
-     A5: Error message explainable (1 pt)
-     A6: Auth consistency (2 pts)
+   STEP 2: Auth / API Key — 14 pts (6 sub-items)
    ═══════════════════════════════════════════════════════ */
 async function checkB_Auth(baseUrl, apiKey, signal) {
   const deductions = [];
   const details = [];
   const evidence = {};
   const zh = getDocLang() !== 'en';
-
+  const modelEndpoint = (baseUrl.replace(/\/$/, '') + '/v1/models').replace(/\/+/g, '/').replace(':/', '://');
   let a1 = 3, a2 = 2, a3 = 3, a4 = 3, a5 = 1, a6 = 2;
   let status = 'excellent';
-  let summary = '';
-
-  // A2: Key format
-  if (!apiKey || !apiKey.trim()) {
-    a2 = 0; a1 = 0; a3 = 0; a4 = 0; a5 = 0; a6 = 0;
-    deductions.push(zh ? 'API Key 为空' : 'API Key is empty');
-    status = 'failed';
-    return mkCheck({
-      id: 'auth',
-      label: { zh: '鉴权 / API Key 有效性', en: 'Auth / API Key Validity' },
-      maxScore: 14, score: 0, status,
-      summary: zh ? 'API Key 为空' : 'API Key is empty',
-      details: [zh ? '未提供 API Key' : 'No API Key provided'],
-      deductions,
-      evidence,
-    });
-  }
-
-  if (!/^sk-/.test(apiKey) && !/^api-/.test(apiKey) && !/^[A-Za-z0-9_-]{16,}$/.test(apiKey)) {
-    a2 = 1;
-    details.push(zh ? 'Key 格式异常（非标准前缀）' : 'Key format unusual (non-standard prefix)');
-    if (status !== 'failed') status = 'warning';
-  } else {
-    a2 = 2;
-  }
-
-  // Test /models endpoint
-  let modelsStatus = 0;
-  let modelsResp = null;
+  let modelsStatus = 0, chatStatus = 0, errorMessage = '';
   try {
-    const url = (baseUrl.replace(/\/$/, '') + '/models').replace(/\/+/g, '/').replace(':/', '://');
-    modelsResp = await fetch(url, {
-      method: 'GET',
-      headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
-      signal
-    });
-    modelsStatus = modelsResp.status;
+    const resp = await fetch(modelEndpoint, { method: 'GET', headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' }, signal });
+    modelsStatus = resp.status;
     evidence.modelsStatus = modelsStatus;
-  } catch (err) {
-    evidence.modelsFetchError = err.message;
-    modelsStatus = 0;
-  }
-
-  // Test /chat/completions endpoint
-  let chatStatus = 0;
-  let chatResp = null;
+    if (!resp.ok) {
+      try { const err = await resp.json(); errorMessage = err.error?.message || err.error?.code || ''; evidence.errorMessage = errorMessage; } catch (_) {}
+    }
+  } catch (err) { evidence.netError = err.message; }
+  if (modelsStatus === 401 || modelsStatus === 403) { a1 = 0; a3 = 0; deductions.push(zh ? `API Key 未被识别（HTTP ${modelsStatus}）` : `API Key not recognized (HTTP ${modelsStatus})`); status = 'failed'; }
   try {
-    const req = buildRequest(baseUrl, apiKey, 'test-model-for-auth', 'OpenAI Chat', 'hi', { maxTokens: 5 });
-    chatResp = await fetch(req.endpoint, {
-      method: 'POST',
-      headers: req.headers,
-      body: JSON.stringify(req.body),
-      signal
-    });
-    chatStatus = chatResp.status;
+    const req = buildRequest(baseUrl, apiKey, 'test-model', 'OpenAI Chat', PROMPT_SHORT, { maxTokens: 5 });
+    const resp = await fetch(req.endpoint, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body), signal });
+    chatStatus = resp.status;
     evidence.chatStatus = chatStatus;
-  } catch (err) {
-    evidence.chatFetchError = err.message;
-    chatStatus = 0;
-  }
-
-  // A3: Not 401 Unauthorized
-  if (modelsStatus === 401 || chatStatus === 401) {
-    a3 = 0;
-    deductions.push(zh ? '收到 401 Unauthorized' : 'Received 401 Unauthorized');
-    status = 'failed';
-  } else if (modelsStatus > 0 || chatStatus > 0) {
-    const bothOk = modelsStatus >= 200 && modelsStatus < 400 && chatStatus >= 200 && chatStatus < 400;
-    const anyOk = (modelsStatus >= 200 && modelsStatus < 400) || (chatStatus >= 200 && chatStatus < 400);
-    if (bothOk) {
-      a3 = 3;
-    } else if (anyOk) {
-      a3 = 1.5;
-      details.push(zh ? '部分接口鉴权成功' : 'Some endpoints authenticated successfully');
-    }
-  }
-
-  // A4: Not 403 Forbidden
-  if (modelsStatus === 403 || chatStatus === 403) {
-    a4 = 0;
-    deductions.push(zh ? '收到 403 Forbidden / 权限拒绝' : 'Received 403 Forbidden / Permission denied');
-    if (status !== 'failed') status = 'failed';
-  } else if (modelsStatus === 429 || chatStatus === 429) {
-    a4 = 1.5;
-    details.push(zh ? '收到 429 限流' : 'Received 429 rate limit');
-    if (status !== 'failed') status = 'warning';
-  }
-
-  // A5: Error explainability
-  if (modelsStatus >= 400 || chatStatus >= 400) {
-    let errMsg = '';
-    if (chatResp) {
-      try {
-        const errData = await chatResp.json();
-        errMsg = errData.error?.message || errData.error?.type || '';
-      } catch (_) {}
-    }
-    if (errMsg) {
-      a5 = 1;
-      evidence.errorMessage = errMsg;
-    } else {
-      a5 = 0;
-      deductions.push(zh ? '错误信息不可读' : 'Error message not readable');
-    }
-  }
-
-  // A6: Auth consistency — ONLY when there's a genuine auth conflict
-  // /models returns 401/403 but chat/completions succeeds, OR vice versa
-  // NOT: one returns 404, the other returns 200 — that's an API compatibility issue, not auth inconsistency
-  const authModelsFail = modelsStatus === 401 || modelsStatus === 403;
-  const authChatFail = chatStatus === 401 || chatStatus === 403;
-  const modelsOk = modelsStatus >= 200 && modelsStatus < 400;
-  const chatOk = chatStatus >= 200 && chatStatus < 400;
-  if (modelsOk && chatOk) {
-    a6 = 2;
-    // Both pass — no inconsistency
-  } else if (authModelsFail && chatOk) {
-    a6 = 1;
-    details.push(zh ? '/models 返回 401/403，但 chat/completions 鉴权通过' : '/models returned 401/403 but /chat/completions authenticated successfully');
-    if (status !== 'failed') status = 'warning';
-  } else if (modelsOk && authChatFail) {
-    a6 = 1;
-    details.push(zh ? 'chat/completions 返回 401/403，但 /models 鉴权通过' : '/chat/completions returned 401/403 but /models authenticated successfully');
-    if (status !== 'failed') status = 'warning';
-  } else if (modelsOk !== chatOk) {
-    // One worked, one didn't — but NOT due to auth failures specifically
-    // This is more of an API compatibility / path issue
-    a6 = 1.5;
-    details.push(zh ? '部分接口响应状态不一致，可能为路径兼容性问题' : 'Some endpoints have inconsistent response status — may be an API path compatibility issue');
-    if (status !== 'failed') status = 'warning';
-  } else {
-    a6 = 0.5;
-    deductions.push(zh ? '鉴权失败' : 'Auth failed');
-  }
-
-  // A1: Authorization Header accepted (3 pts)
-  // Inferred: if we got any non-401 response, the header was accepted
-  if (authModelsFail && authChatFail) {
-    a1 = 0;
-    deductions.push(zh ? 'Authorization Header 未被识别' : 'Authorization Header not recognized');
-  } else if (modelsStatus === 0 && chatStatus === 0) {
-    a1 = 0;
-    details.push(zh ? '无法发送授权请求' : 'Cannot send authorization request');
-  } else {
-    a1 = 3;
-  }
-
-  // A5: Error explainability — only when we received error response bodies
-  // NOT: just because one endpoint returned a non-200 status
-  let gotExplainedError = false;
-  if (chatResp) {
-    try {
-      const errData = await chatResp.json();
-      const errMsg = errData.error?.message || errData.error?.type || '';
-      if (errMsg) {
-        a5 = 1;
-        evidence.errorMessage = errMsg;
-        gotExplainedError = true;
-      }
-    } catch (_) {}
-  }
-  if (!gotExplainedError && (chatStatus >= 400 || modelsStatus >= 400)) {
-    // Only penalize if we got an error status AND couldn't parse an explanation
-    a5 = 0;
-    deductions.push(zh ? '错误信息不可读' : 'Error message not readable');
-  } else if (gotExplainedError) {
-    a5 = 1;
-  } else {
-    a5 = 1; // No errors encountered — full credit
-  }
-
+  } catch (err) { evidence.chatNetError = err.message; }
+  if (chatStatus === 401 || chatStatus === 403) { if (status !== 'failed') status = 'failed'; a3 = 0; details.push(zh ? 'Chat 请求收到 401/403' : 'Chat request received 401/403'); }
+  else if (chatStatus === 429) { a4 = 1.5; details.push(zh ? '遇到限流' : 'Rate limited'); if (status === 'excellent') status = 'good'; }
+  else if (chatStatus >= 400) a4 = 0;
+  a5 = errorMessage ? 1 : 0;
+  if ((modelsStatus >= 200 && modelsStatus < 400) === (chatStatus >= 200 && chatStatus < 400)) a6 = 2;
+  else { a6 = 0.5; details.push(zh ? '/models 和 chat 接口鉴权结果不一致' : '/models and chat auth results inconsistent'); if (status !== 'failed') status = 'warning'; }
   const score = a1 + a2 + a3 + a4 + a5 + a6;
-
-  if (status !== 'failed') {
-    const ratio = score / 14;
-    if (ratio >= 0.95) status = 'excellent';
-    else if (ratio >= 0.80) status = 'good';
-    else if (ratio >= 0.50) status = 'warning';
-    else status = 'failed';
-  }
-
-  summary = score >= 13
-    ? (zh ? '核心接口鉴权通过' : 'Core endpoints authenticated successfully')
-    : score >= 11
-    ? (zh ? '鉴权基本通过，存在轻微差异' : 'Auth mostly passed with minor differences')
-    : (zh ? '鉴权存在明显问题' : 'Auth has significant issues');
-
-  return mkCheck({
-    id: 'auth',
-    label: { zh: '鉴权 / API Key 有效性', en: 'Auth / API Key Validity' },
-    maxScore: 14,
-    score,
-    status,
-    summary,
-    details,
-    deductions,
-    evidence,
-  });
+  if (status === 'excellent' && score < 12) status = 'good';
+  if (score < 5) status = 'failed';
+  const summary = status === 'excellent' ? (zh ? '完全达标' : 'Fully compliant') : status === 'good' ? (zh ? '基本达标' : 'Mostly compliant') : status === 'warning' ? (zh ? '存在异常' : 'Abnormal') : (zh ? '鉴权失败' : 'Auth failed');
+  return mkCheck({ id: 'auth', label: { zh: '鉴权 / Key 有效性', en: 'Auth / Key Validity' }, maxScore: 14, score, status, summary, details, deductions, evidence });
 }
 
 /* ═══════════════════════════════════════════════════════
    STEP 3: Model List Retrieval — 12 pts (7 sub-items)
-   Sub-items:
-     L1: /models request success (3 pts)
-     L2: Response format correct (2 pts)
-     L3: Model count (2 pts)
-     L4: Model ID readability (1 pt)
-     L5: Contains user model (2 pts)
-     L6: List stability (1 pt)
-     L7: Error/limit explainable (1 pt)
    ═══════════════════════════════════════════════════════ */
 async function checkC_ModelList(baseUrl, apiKey, signal, userModel) {
   const deductions = [];
   const details = [];
   const evidence = {};
   const zh = getDocLang() !== 'en';
-
-  let l1 = 3, l2 = 2, l3 = 2, l4 = 1, l5 = 2, l6 = 1, l7 = 1;
+  let ml1 = 3, ml2 = 2, ml3 = 2, ml4 = 1, ml5 = 2, ml6 = 1, ml7 = 1;
   let status = 'excellent';
-  let summary = '';
-  let models = [];
-  let lastErr = '';
-
-  const candidates = [
-    (baseUrl.replace(/\/$/, '') + '/models').replace(/\/+/g, '/').replace(':/', '://'),
+  const endpoints = [
     (baseUrl.replace(/\/$/, '') + '/v1/models').replace(/\/+/g, '/').replace(':/', '://'),
+    (baseUrl.replace(/\/$/, '') + '/models').replace(/\/+/g, '/').replace(':/', '://'),
   ];
-
-  let resp = null;
-  let respData = null;
-  let fetchErr = '';
-
-  for (const url of candidates) {
+  let bestResp = null;
+  for (const url of endpoints) {
     try {
-      resp = await fetch(url, {
-        method: 'GET',
-        headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
-        signal
-      });
+      const resp = await fetch(url, { method: 'GET', headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' }, signal });
       evidence.httpStatus = resp.status;
-
-      if (resp.status === 401 || resp.status === 403) {
-        lastErr = zh ? '鉴权失败' : 'Auth failed';
-        break;
+      evidence.httpUrl = url;
+      if (resp.ok) {
+        try {
+          const data = await resp.json();
+          evidence.data = data;
+          const models = extractModels(data);
+          evidence.models = models;
+          evidence.modelCount = models.length;
+          evidence.firstModel = models[0] || '';
+          if (models.length > 0) { bestResp = { status: resp.status, data, models }; break; }
+        } catch (_) { evidence.parseError = true; }
       }
-      if (!resp.ok) {
-        lastErr = 'HTTP ' + resp.status;
-        evidence.httpError = resp.status;
-        continue;
-      }
-
-      const ct = resp.headers.get('content-type') || '';
-      evidence.contentType = ct;
-
-      const text = await resp.text();
-      evidence.rawResponseLength = text.length;
-
-      try {
-        respData = JSON.parse(text);
-      } catch (_) {
-        evidence.parseError = true;
-        lastErr = zh ? '响应不是 JSON' : 'Response is not JSON';
-        continue;
-      }
-
-      models = extractModels(respData);
-      evidence.modelCount = models.length;
-      evidence.firstModel = models[0] || '';
-      break;
-    } catch (err) {
-      if (err.name === 'AbortError') {
-        lastErr = zh ? '超时' : 'Timeout';
-      } else {
-        lastErr = err.message;
-        fetchErr = err.message;
-      }
-    }
+    } catch (_) {}
   }
-
-  // L1: Request success
-  if (!resp || !resp.ok) {
-    l1 = 0;
-    deductions.push(zh ? `/models 请求失败：${lastErr}` : `/models request failed: ${lastErr}`);
+  if (!bestResp) {
+    ml1 = 0; ml2 = 0; ml3 = 0; ml4 = 0; ml5 = 0; ml6 = 0;
+    deductions.push(zh ? '/models 请求失败' : '/models request failed');
     status = 'failed';
+    evidence.models = [];
+    evidence.modelCount = 0;
   } else {
-    l1 = 3;
-  }
-
-  // L2: Format
-  if (respData && typeof respData === 'object') {
-    if (respData.data && Array.isArray(respData.data)) {
-      l2 = 2;
-    } else if (respData.models || Array.isArray(respData)) {
-      l2 = 1;
-      details.push(zh ? '响应结构非标准但可解析' : 'Response structure non-standard but parseable');
-    } else {
-      l2 = 1;
-      details.push(zh ? '响应结构不完整' : 'Response structure incomplete');
-    }
-  } else if (respData && typeof respData === 'string') {
-    l2 = 0;
-    deductions.push(zh ? '响应非 JSON' : 'Response is not JSON');
-    if (status !== 'failed') status = 'warning';
-  } else {
-    l2 = 0;
-    details.push(zh ? '无法解析响应' : 'Cannot parse response');
-  }
-
-  // L3: Model count
-  if (models.length === 0) {
-    l3 = 0;
-    if (l1 > 0) {
-      deductions.push(zh ? '模型列表为空' : 'Model list is empty');
-      if (status !== 'failed') status = 'warning';
-    }
-  } else if (models.length <= 2) {
-    l3 = 1;
-    details.push(zh ? `仅 ${models.length} 个模型` : `Only ${models.length} models available`);
-  } else {
-    l3 = 2;
-  }
-
-  // L4: Model ID readability
-  const readableCount = models.filter(m => m && m.length > 2 && /[a-zA-Z]/.test(m)).length;
-  if (readableCount === 0) {
-    l4 = 0;
-    deductions.push(zh ? '模型 ID 混乱或为空' : 'Model IDs messy or empty');
-  } else {
-    l4 = 1;
-  }
-
-  // L5: Contains user model
-  // Only penalize if user manually filled in AND it's not in the list
-  const userTrim = (userModel || '').trim();
-  const normalizedModels = models.map(normalizeModelId);
-  const normalizedUser = normalizeModelId(userTrim);
-  if (userTrim) {
-    const found = normalizedModels.includes(normalizedUser);
-    const fuzzyFound = normalizedModels.some(m => m.includes(normalizedUser) || normalizedUser.includes(m));
-    if (found) {
-      l5 = 2;
-    } else if (fuzzyFound) {
-      l5 = 1;
-      details.push(zh ? '用户模型疑似匹配别名' : 'User model fuzzy-matched to alias');
-    } else {
-      l5 = 0;
-      details.push(zh ? `用户填写模型 ${userTrim} 不在模型列表` : `User model ${userTrim} not in list`);
-    }
-  } else {
-    // No user model specified — full credit
-    l5 = 2;
-  }
-
-  // L6: List stability (we only do one request here, so assume stable if successful)
-  if (l1 > 0) {
-    l6 = 1;
-  } else {
-    l6 = 0;
-  }
-
-  // L7: Error explainability
-  if (l1 > 0) {
-    l7 = 1;
-  } else {
-    l7 = 0;
-    if (!lastErr) {
-      deductions.push(zh ? '获取失败且错误不可解释' : 'Failed with no explainable error');
+    if (evidence.parseError) { ml2 = 0; deductions.push(zh ? '响应 JSON 解析失败' : 'Response JSON parse failed'); status = 'warning'; }
+    if (evidence.modelCount === 0) { ml3 = 0; ml4 = 0; details.push(zh ? '模型列表为空' : 'Model list is empty'); }
+    else if (evidence.modelCount <= 2) { ml3 = 1; details.push(zh ? `模型数量较少（${evidence.modelCount}）` : `Few models (${evidence.modelCount})`); }
+    if (userModel) {
+      evidence.userModel = userModel;
+      const normalizedUser = normalizeModelId(userModel);
+      const isListed = evidence.models.map(normalizeModelId).includes(normalizedUser);
+      ml5 = isListed ? 2 : 0;
+      if (!isListed) details.push(zh ? `用户填写的模型 ${userModel} 不在列表中` : `User-filled model ${userModel} not in list`);
     }
   }
-
-  const score = l1 + l2 + l3 + l4 + l5 + l6 + l7;
-
-  if (status !== 'failed') {
-    const ratio = score / 12;
-    if (ratio >= 0.95) status = 'excellent';
-    else if (ratio >= 0.80) status = 'good';
-    else if (ratio >= 0.50) status = 'warning';
-    else status = 'failed';
-  }
-
-  summary = l1 === 0
-    ? (zh ? '模型列表不可用' : 'Model list unavailable')
-    : (zh ? `${models.length} 个模型，已解析` : `${models.length} models parsed`);
-
-  return mkCheck({
-    id: 'modelList',
-    label: { zh: '模型列表获取', en: 'Model List Retrieval' },
-    maxScore: 12,
-    score,
-    status,
-    summary,
-    details,
-    deductions,
-    evidence: { ...evidence, models, userModel: userTrim },
-  });
+  const score = ml1 + ml2 + ml3 + ml4 + ml5 + ml6 + ml7;
+  if (status === 'excellent' && score < 10) status = 'good';
+  if (score < 3) status = 'failed';
+  const summary = status === 'excellent' ? (zh ? `${evidence.modelCount || 0} 个模型` : `${evidence.modelCount || 0} models`) : status === 'good' ? (zh ? `少量模型` : 'Few models') : (zh ? '模型列表不可用' : 'Model list unavailable');
+  return mkCheck({ id: 'modelList', label: { zh: '模型列表获取', en: 'Model List Retrieval' }, maxScore: 12, score, status, summary, details, deductions, evidence });
 }
 
 /* ═══════════════════════════════════════════════════════
-   STEP 4: Model Identification & Selection — 10 pts (5 sub-items)
-   Sub-items:
-     M1: Can generate candidate models (2 pts)
-     M2: Recommendation explainable (2 pts)
-     M3: User input vs recommendation match (2 pts)
-     M4: Recommended model actually callable (3 pts)
-     M5: Risk prompt present (1 pt)
+   STEP 4: Model Auto-Detection — 10 pts
    ═══════════════════════════════════════════════════════ */
 async function checkD_AutoModel(baseUrl, apiKey, modelIdInfo, authResult, signal, interfaceType) {
   const deductions = [];
   const details = [];
   const evidence = {};
   const zh = getDocLang() !== 'en';
-
-  const { userModel, autoModel, modelFromList, allModels, modelSource, isFinalModelInModelList } = modelIdInfo;
-  const normalizedAllModels = allModels.map(normalizeModelId);
-  const normalizedAuto = normalizeModelId(autoModel);
-  const normalizedUser = normalizeModelId(userModel);
-
-  let m1 = 2, m2 = 2, m3 = 2, m4 = 3, m5 = 1;
+  const { modelSource, isFinalModelInModelList, finalTestModelId, allModels } = modelIdInfo;
+  let am1 = 3, am2 = 2, am3 = 2, am4 = 1, am5 = 2;
   let status = 'excellent';
-
-  // M1: Can generate candidate models
-  if (!autoModel) {
-    m1 = 0;
-    deductions.push(zh ? '无候选模型' : 'No candidate model');
-    status = 'failed';
-  } else if (allModels.length === 0) {
-    m1 = 1;
-    details.push(zh ? '有候选但无列表支持' : 'Candidate exists but no list support');
-  } else {
-    m1 = 2;
-    evidence.candidateModel = autoModel;
-  }
-
-  // M2: Recommendation explainable
-  if (!autoModel) {
-    m2 = 0;
-  } else if (normalizedUser && normalizedUser === normalizedAuto) {
-    m2 = 2;
-    details.push(zh ? '使用用户填写模型' : 'Using user-provided model');
-  } else if (autoModel) {
-    const isChatModel = !/(embedding|embed|vision|audio|tts|speech|whisper|dalle|image)/i.test(autoModel);
-    const isFirst = normalizedAuto === normalizeModelId(allModels[0]);
-    if (isChatModel) {
-      m2 = 2;
-      details.push(zh ? `自动识别推荐：${autoModel}（chat 模型优先）` : `Auto-detected: ${autoModel} (chat model prioritized)`);
-    } else if (isFirst) {
-      m2 = 1.5;
-      details.push(zh ? `自动选择第一个模型：${autoModel}` : `Auto-selected first model: ${autoModel}`);
-    } else {
-      m2 = 1;
-      details.push(zh ? `推荐模型：${autoModel}（无明确优先级说明）` : `Recommended: ${autoModel} (no clear priority)`);
-    }
-  }
-
-  // M3: User input vs recommendation match
-  if (!userModel && !autoModel) {
-    m3 = 0;
-    deductions.push(zh ? '用户未填且无自动推荐' : 'No user input and no auto-recommendation');
-  } else if (!userModel && autoModel) {
-    m3 = 2;
-    details.push(zh ? '用户未填写，自动使用推荐模型' : 'User did not fill in model — using auto-recommended');
-  } else if (userModel && !autoModel) {
-    m3 = 0;
-    deductions.push(zh ? '用户填写模型不存在' : 'User-provided model does not exist');
-  } else if (normalizedUser === normalizedAuto) {
-    m3 = 2;
-  } else if (normalizedAllModels.includes(normalizedAuto) && !normalizedAllModels.includes(normalizedUser)) {
-    m3 = 1;
-    details.push(zh ? `用户模型与推荐不一致：填 ${userModel}，用 ${autoModel}` : `User model mismatch: filled ${userModel}, used ${autoModel}`);
-  } else {
-    m3 = 2;
-  }
-
-  // M4: Recommended model actually callable (3 pts)
-  // This is the REAL test — actually call the recommended model
-  if (autoModel) {
-    try {
-      const req = buildRequest(baseUrl, apiKey, autoModel, interfaceType, PROMPT_SHORT, { maxTokens: 10 });
-      const resp = await fetch(req.endpoint, {
-        method: 'POST',
-        headers: req.headers,
-        body: JSON.stringify(req.body),
-        signal
-      });
-      evidence.callableStatus = resp.status;
-      if (resp.status === 401 || resp.status === 403) {
-        m4 = 0;
-        deductions.push(zh ? `推荐模型 ${autoModel} 调用失败（权限）` : `Recommended model ${autoModel} call failed (permission)`);
-        if (status !== 'failed') status = 'failed';
-      } else if (resp.status >= 400) {
-        m4 = 1.5;
-        details.push(zh ? `推荐模型 ${autoModel} 返回 HTTP ${resp.status}` : `Recommended model ${autoModel} returned HTTP ${resp.status}`);
-        if (status !== 'failed') status = 'warning';
-      } else {
-        const data = await resp.json().catch(() => ({}));
-        const out = extractVisibleOutput(data, interfaceType);
-        evidence.hasOutput = out.status === 'present';
-        if (out.status === 'present') {
-          m4 = 3;
-        } else {
-          m4 = 1.5;
-          details.push(zh ? '推荐模型可调用但无有效输出' : 'Recommended model callable but no valid output');
-        }
-      }
-    } catch (err) {
-      m4 = 0;
-      evidence.callableError = err.message;
-      deductions.push(zh ? `推荐模型调用出错：${err.message}` : `Recommended model call error: ${err.message}`);
-      if (status !== 'failed') status = 'warning';
-    }
-  } else {
-    m4 = 0;
-  }
-
-  // M5: Risk prompt
-  if (userModel && normalizeModelId(userModel) !== normalizeModelId(autoModel)) {
-    m5 = 1;
-    details.push(zh ? '推荐模型仅代表可测模型，不代表所有模型' : 'Recommended model is for testing only, not representative of all models');
-  } else if (!userModel && autoModel) {
-    m5 = 1;
-    details.push(zh ? '未填写模型，自动识别仅代表可测模型' : 'Model not filled — auto-detect only represents testable models');
-  } else {
-    m5 = 1;
-  }
-
-  const score = m1 + m2 + m3 + m4 + m5;
-
-  if (status !== 'failed') {
-    const ratio = score / 10;
-    if (ratio >= 0.95) status = 'excellent';
-    else if (ratio >= 0.80) status = 'good';
-    else if (ratio >= 0.50) status = 'warning';
-    else status = 'failed';
-  }
-
-  return mkCheck({
-    id: 'autoModel',
-    label: { zh: '模型识别与选择', en: 'Model Identification & Selection' },
-    maxScore: 10,
-    score,
-    status,
-    summary: autoModel ? (zh ? `使用：${autoModel}` : `Using: ${autoModel}`) : (zh ? '无可用模型' : 'No model available'),
-    details,
-    deductions,
-    evidence: {
-      ...evidence,
-      modelSource,                   // 'user_input' | 'auto_detected'
-      isFinalModelInModelList,       // normalized comparison result
-      normalizedAutoModel: normalizedAuto,
-    },
-  });
+  evidence.modelSource = modelSource;
+  evidence.isInModelList = isFinalModelInModelList;
+  evidence.finalModel = finalTestModelId;
+  if (modelSource === 'user_input' && !isFinalModelInModelList) { am1 = 1.5; deductions.push(zh ? `用户填写的模型 ${finalTestModelId} 不在 /models 列表中` : `User-filled model ${finalTestModelId} not in /models list`); status = 'warning'; }
+  else if (modelSource === 'user_input' && isFinalModelInModelList) { am1 = 3; details.push(zh ? '用户填写模型已在列表中确认' : 'User-filled model confirmed in list'); }
+  else if (modelSource === 'auto_detected_from_models') { am1 = 3; details.push(zh ? '从模型列表自动选择' : 'Auto-selected from model list'); }
+  else if (modelSource === 'auto_detected_by_probe') { am1 = 2; deductions.push(zh ? '模型不在 /models 列表，通过探测发现' : 'Model not in /models list, found by probing'); if (status !== 'failed') status = 'good'; }
+  else if (modelSource === 'models_fallback') { am1 = 1.5; deductions.push(zh ? '从模型列表选择默认模型' : 'Selected default model from list'); if (status !== 'failed') status = 'good'; }
+  const chatModels = (allModels || []).filter(m => !/(embedding|embed|vision|audio|tts|speech|whisper|dalle|image)/i.test(m));
+  evidence.chatModels = chatModels;
+  am2 = chatModels.length > 0 ? 2 : 0;
+  if (authResult?.evidence?.chatStatus === 429) { am3 = 0; deductions.push(zh ? '鉴权测试触发了限流' : 'Auth test triggered rate limit'); status = 'warning'; }
+  if (chatModels.length === 0 && allModels.length > 0) { am4 = 0; details.push(zh ? '列表中无可用于 chat 的模型' : 'No chat-capable models in list'); }
+  const score = am1 + am2 + am3 + am4 + am5;
+  if (score < 5) status = 'failed';
+  else if (score < 8) status = 'warning';
+  const summary = modelSource === 'user_input' ? (zh ? `使用用户填写模型：${finalTestModelId}` : `User-filled model: ${finalTestModelId}`) : modelSource === 'auto_detected_from_models' ? (zh ? `自动识别：${finalTestModelId}` : `Auto-detected: ${finalTestModelId}`) : modelSource === 'auto_detected_by_probe' ? (zh ? `探测发现：${finalTestModelId}` : `Probed: ${finalTestModelId}`) : (zh ? `列表选择：${finalTestModelId}` : `List-selected: ${finalTestModelId}`);
+  return mkCheck({ id: 'autoModel', label: { zh: '模型识别与选择', en: 'Model Identification' }, maxScore: 10, score, status, summary, details, deductions, evidence });
 }
 
 /* ═══════════════════════════════════════════════════════
-   STEP 5: Target Model Call Quality — 22 pts (9 sub-items)
-   Sub-items:
-     T1: Request sent (2 pts)
-     T2: HTTP status (3 pts)
-     T3: Response is valid JSON (3 pts)
-     T4: OpenAI-compatible format (4 pts)
-     T5: Content non-empty (3 pts)
-     T6: finish_reason normal (2 pts)
-     T7: usage field quality (2 pts)
-     T8: Latency quality (2 pts)
-     T9: Error explainability (1 pt)
+   STEP 5: Target Model Call Quality — 22 pts (10 sub-items)
    ═══════════════════════════════════════════════════════ */
 async function checkE_TargetCall(baseUrl, apiKey, model, interfaceType, signal) {
   const deductions = [];
   const details = [];
   const evidence = {};
   const zh = getDocLang() !== 'en';
-
-  let t1 = 2, t2 = 3, t3 = 3, t4 = 4, t5 = 3, t6 = 2, t7 = 2, t8 = 2, t9 = 1;
+  const t0 = Date.now();
+  let tc1 = 2, tc2 = 3, tc3 = 3, tc4 = 4, tc5 = 3, tc6 = 2, tc7 = 2, tc8 = 1, tc9 = 1, tc10 = 1;
   let status = 'excellent';
-  let httpStatus = 0;
-  let usage = {};
-
-  const start = Date.now();
-
   try {
-    const req = buildRequest(baseUrl, apiKey, model, interfaceType, PROMPT_SHORT, { maxTokens: 20 });
+    const req = buildRequest(baseUrl, apiKey, model, interfaceType, PROMPT_SHORT, { maxTokens: 50 });
+    const resp = await fetch(req.endpoint, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body), signal });
+    evidence.latencyMs = Date.now() - t0;
+    evidence.httpStatus = resp.status;
     evidence.endpoint = req.endpoint;
-    evidence.requestBody = { model: req.body.model, messages: req.body.messages };
-
-    const resp = await fetch(req.endpoint, {
-      method: 'POST',
-      headers: req.headers,
-      body: JSON.stringify(req.body),
-      signal
-    });
-
-    const latency = Date.now() - start;
-    httpStatus = resp.status;
-    evidence.httpStatus = httpStatus;
-    evidence.latencyMs = latency;
-
-    // T1: Request sent
-    t1 = 2;
-
-    // T2: HTTP status
-    if (httpStatus >= 200 && httpStatus < 300) {
-      t2 = 3;
-    } else if (httpStatus === 400 || httpStatus === 404) {
-      t2 = 1.5;
-      details.push(zh ? `HTTP ${httpStatus}，但错误可解释` : `HTTP ${httpStatus}, but error explainable`);
-    } else if (httpStatus === 401 || httpStatus === 403) {
-      t2 = 0;
-      deductions.push(zh ? '鉴权失败（401/403）' : 'Auth failed (401/403)');
-      status = 'failed';
-    } else if (httpStatus === 429) {
-      t2 = 1;
-      deductions.push(zh ? '收到 429 限流' : 'Hit 429 rate limit');
-      evidence.rateLimit = true;
-      if (status !== 'failed') status = 'warning';
-    } else if (httpStatus >= 500) {
-      t2 = 0.5;
-      deductions.push(zh ? `服务器错误 HTTP ${httpStatus}` : `Server error HTTP ${httpStatus}`);
-      if (status !== 'failed') status = 'warning';
+    if (!resp.ok) {
+      tc1 = 0; tc2 = 0; tc3 = 0; tc4 = 0; tc5 = 0; tc6 = 0; tc7 = 0;
+      deductions.push(zh ? `HTTP ${resp.status}` : `HTTP ${resp.status}`);
+      if (resp.status === 401 || resp.status === 403) { status = 'failed'; deductions.push(zh ? '鉴权失败' : 'Authentication failed'); }
+      else if (resp.status === 429) { status = 'warning'; deductions.push(zh ? '限流' : 'Rate limited'); tc9 = 0; }
+      else if (resp.status === 404) { status = 'warning'; deductions.push(zh ? '模型端点不存在' : 'Model endpoint not found'); }
+      else status = 'warning';
     } else {
-      t2 = 0;
-      details.push(zh ? `HTTP ${httpStatus}，状态异常` : `HTTP ${httpStatus}, unusual status`);
-    }
-
-    // T3: Valid JSON
-    let data = null;
-    try {
-      data = await resp.json();
-      evidence.responseParsed = true;
-      t3 = 3;
-    } catch (_) {
-      t3 = 0;
-      deductions.push(zh ? '响应不是合法 JSON' : 'Response is not valid JSON');
-      if (status !== 'failed') status = 'warning';
-    }
-
-    if (!data) {
-      t4 = 0; t5 = 0; t6 = 0; t7 = 0;
-      return mkCheck({
-        id: 'targetCall',
-        label: { zh: '目标模型调用质量', en: 'Target Model Call Quality' },
-        maxScore: 22, score: t1 + t2 + t3, status,
-        summary: zh ? '响应无法解析' : 'Response unparseable',
-        details, deductions, evidence,
-      });
-    }
-
-    evidence.rawResponse = data;
-
-    // T4: OpenAI-compatible format (4 pts)
-    let formatScore = 0;
-    if (interfaceType === 'OpenAI Chat') {
-      const choices = data.choices;
-      const hasChoice = choices && Array.isArray(choices) && choices.length > 0;
-      const hasMsg = hasChoice && (choices[0].message?.content !== undefined || choices[0].delta?.content !== undefined);
-      if (hasChoice && hasMsg) formatScore = 4;
-      else if (hasChoice) formatScore = 2;
-      else formatScore = 0;
-      evidence.formatChoices = !!choices;
-      evidence.formatMessage = hasMsg;
-    } else if (interfaceType === 'OpenAI Responses') {
-      if (data.output_text || (data.response?.output_text)) formatScore = 4;
-      else if (data.output || data.response) formatScore = 2;
-      else formatScore = 0;
-    } else {
-      const content = data.content;
-      if (Array.isArray(content) && content.some(c => c.type === 'text')) formatScore = 4;
-      else if (content || data.delta) formatScore = 2;
-      else formatScore = 0;
-    }
-    t4 = formatScore;
-    if (formatScore < 2) {
-      deductions.push(zh ? '响应格式与 OpenAI 不兼容' : 'Response format not OpenAI-compatible');
-      if (status !== 'failed') status = 'warning';
-    }
-
-    // T5: Content non-empty (3 pts)
-    const output = extractVisibleOutput(data, interfaceType);
-    evidence.output = output;
-    if (output.status === 'present' && output.text.length > 0) {
-      t5 = 3;
-    } else if (output.status === 'unknown' || (output.status === 'present' && output.text.length < 3)) {
-      t5 = 1.5;
-      details.push(zh ? '内容异常或很短' : 'Content abnormal or very short');
-    } else {
-      t5 = 0;
-      deductions.push(zh ? '返回内容为空' : 'Returned content is empty');
-      if (status !== 'failed') status = 'warning';
-    }
-
-    // T6: finish_reason normal (2 pts)
-    if (interfaceType === 'OpenAI Chat') {
-      const fr = data.choices?.[0]?.finish_reason;
-      evidence.finishReason = fr;
-      if (!fr) {
-        t6 = 0.5;
-        details.push(zh ? 'finish_reason 缺失' : 'finish_reason missing');
-      } else if (['stop', 'length', 'content_filter', 'tool_calls'].includes(fr)) {
-        t6 = 2;
-      } else {
-        t6 = 1;
-        details.push(zh ? `finish_reason 异常：${fr}` : `finish_reason unusual: ${fr}`);
+      let data;
+      try { data = await resp.json(); evidence.data = data; evidence.responseParsed = true; }
+      catch (_) { evidence.responseParsed = false; tc3 = 0; deductions.push(zh ? '响应不是合法 JSON' : 'Response is not valid JSON'); status = 'warning'; }
+      if (data) {
+        const choices = data.choices;
+        if (choices && Array.isArray(choices) && choices.length > 0) {
+          evidence.formatChoices = true;
+          const c0 = choices[0];
+          const msg = c0?.message;
+          if (msg && typeof msg.content === 'string') evidence.formatMessage = true;
+          if (c0?.finish_reason) { evidence.finishReason = c0.finish_reason; tc6 = 2; }
+        } else { tc4 = 0; details.push(zh ? 'choices 格式不标准' : 'choices format non-standard'); }
+        const output = extractVisibleOutput(data, interfaceType);
+        evidence.output = output;
+        if (output.status === 'present') { tc5 = 3; evidence.outputText = output.text; if (output.text.length < 2) details.push(zh ? `回复过短：${output.text}` : `Reply too short: ${output.text}`); }
+        else if (output.status === 'unknown') { tc5 = 1.5; details.push(zh ? '输出格式无法解析' : 'Output format cannot be parsed'); if (status !== 'failed') status = 'warning'; }
+        else { tc5 = 0; deductions.push(zh ? '模型未返回有效内容' : 'Model returned no valid content'); if (status !== 'failed') status = 'warning'; }
+        const usage = data.usage || {};
+        evidence.usage = usage;
+        if (usage && Object.keys(usage).length > 0) { tc7 = 2; evidence.usageDetail = usage; }
+        else details.push(zh ? '未返回 usage 信息' : 'No usage information returned');
+        if (evidence.latencyMs < 2000) tc8 = 1;
+        else if (evidence.latencyMs > 10000) { tc8 = 0.5; details.push(zh ? `响应延迟较高：${evidence.latencyMs}ms` : `High latency: ${evidence.latencyMs}ms`); }
+        if (data.error) { tc10 = 0; evidence.serverError = data.error; details.push(zh ? `服务端错误：${data.error?.message || data.error}` : `Server error: ${data.error?.message || data.error}`); }
       }
-    } else {
-      t6 = 2; // Claude / Responses don't have finish_reason in the same way
     }
-
-    // T7: usage field quality (2 pts)
-    usage = data.usage || {};
-    evidence.usage = usage;
-    const hasPromptTokens = usage.prompt_tokens != null || usage.input_tokens != null;
-    const hasCompletionTokens = usage.completion_tokens != null || usage.output_tokens != null;
-    const hasTotalTokens = usage.total_tokens != null;
-
-    if (hasPromptTokens && hasCompletionTokens && hasTotalTokens) {
-      t7 = 2;
-    } else if (hasTotalTokens) {
-      t7 = 1;
-      details.push(zh ? 'usage 部分字段缺失' : 'usage has some fields missing');
-    } else {
-      t7 = 0;
-      details.push(zh ? 'usage 字段不完整' : 'usage field incomplete');
-    }
-
-    // T8: Latency quality (2 pts)
-    if (latency < 2000) t8 = 2;
-    else if (latency < 5000) t8 = 1.5;
-    else if (latency < 10000) t8 = 1;
-    else { t8 = 0.5; details.push(zh ? `延迟较高：${latency}ms` : `High latency: ${latency}ms`); }
-
-    // T9: Error explainability (1 pt)
-    if (httpStatus >= 400) {
-      const errMsg = data.error?.message || data.error?.type || '';
-      if (errMsg) { t9 = 1; evidence.errorMsg = errMsg; }
-      else { t9 = 0; deductions.push(zh ? '失败但错误不可读' : 'Failed but error not readable'); }
-    } else {
-      t9 = 1;
-    }
-
   } catch (err) {
-    t1 = 0; t2 = 0; t3 = 0; t4 = 0; t5 = 0; t6 = 0; t7 = 0; t8 = 0;
-    evidence.error = err.message;
-    evidence.networkError = true; // flag for cap rule
-    if (err.name === 'AbortError') {
-      t9 = 0;
-      deductions.push(zh ? '请求超时' : 'Request timed out');
-    } else {
-      t9 = 0;
-      deductions.push(zh ? `网络错误：${err.message}` : `Network error: ${err.message}`);
-    }
+    tc1 = 0; tc2 = 0; tc3 = 0; tc4 = 0; tc5 = 0; tc6 = 0; tc7 = 0;
+    evidence.networkError = err.message;
+    deductions.push(zh ? `网络错误：${err.message}` : `Network error: ${err.message}`);
     status = 'failed';
   }
-
-  const score = t1 + t2 + t3 + t4 + t5 + t6 + t7 + t8 + t9;
-
-  // Forced status based on score range
-  if (status !== 'failed') {
-    if (score < 11) { status = 'failed'; deductions.push(zh ? '得分过低（< 11/22）' : 'Score too low (< 11/22)'); }
-    else if (score <= 16) { status = 'warning'; }
-    else if (score <= 20) { status = 'good'; }
-    else { status = 'excellent'; }
-  }
-
-  return mkCheck({
-    id: 'targetCall',
-    label: { zh: '目标模型调用质量', en: 'Target Model Call Quality' },
-    maxScore: 22,
-    score,
-    status,
-    summary: score >= 21 ? (zh ? '调用质量优秀' : 'Excellent call quality')
-             : score >= 17 ? (zh ? '调用质量良好' : 'Good call quality')
-             : score >= 11 ? (zh ? '调用质量一般' : 'Average call quality')
-             : (zh ? '调用质量差' : 'Poor call quality'),
-    details,
-    deductions,
-    evidence: { ...evidence, httpStatus, usage },
-  });
+  const score = tc1 + tc2 + tc3 + tc4 + tc5 + tc6 + tc7 + tc8 + tc9 + tc10;
+  if (score < 5) status = 'failed';
+  else if (score < 11) status = 'warning';
+  else if (score < 17) status = 'good';
+  const summary = status === 'excellent' ? (zh ? '调用质量优秀' : 'Call quality excellent') : status === 'good' ? (zh ? '调用质量良好' : 'Call quality good') : status === 'warning' ? (zh ? '调用质量一般' : 'Call quality fair') : (zh ? '调用质量差' : 'Call quality poor');
+  return mkCheck({ id: 'targetCall', label: { zh: '目标模型调用质量', en: 'Target Model Call' }, maxScore: 22, score, status, summary, details, deductions, evidence });
 }
 
 /* ═══════════════════════════════════════════════════════
-   STEP 6: Stability Sampling — 18 pts (7 sub-items)
-   Uses finalTestModelId. Skipped/penalized if target call failed.
-   Sub-items:
-     S1: Success rate (6 pts): 3/3=6, 2/3=4, 1/3=2, 0/3=0
-     S2: HTTP status consistency (2 pts)
-     S3: Average latency (3 pts): <2000=3, <5000=2, <10000=1, >=10000=0
-     S4: Latency jitter (3 pts): <1000ms=3, <3000=2, <8000=1, >=8000=0
-     S5: Return consistency (2 pts): all OK=2, 1 mismatch=1, 2+=0
-     S6: Error explainability (1 pt)
-     S7: Rate limit / risk control (1 pt)
+   STEP 6: Stability Sampling — 15 pts (7 sub-items, 5 pings)
+   SHORT-PROMPT test: "Reply with exactly: OK" (2 words).
+   Latency thresholds are STRICT for short-prompt responses.
    ═══════════════════════════════════════════════════════ */
 async function checkG_Stability(baseUrl, apiKey, model, interfaceType, signal, targetCallResult) {
   const deductions = [];
   const details = [];
   const evidence = {};
   const zh = getDocLang() !== 'en';
-
-  let s1 = 6, s2 = 2, s3 = 3, s4 = 3, s5 = 2, s6 = 1, s7 = 1;
-  let status = 'excellent';
-
-  // If target call completely failed, cap at 3/18 and mark skipped
-  const targetFailed = targetCallResult && targetCallResult.status === 'failed' && targetCallResult.score < 11;
-  if (targetFailed) {
-    details.push(zh ? '目标模型调用失败，稳定性采样受限' : 'Target model call failed — stability sampling limited');
-  }
-
-  const TOTAL = 3;
-
-  async function onePing(abortController) {
-    const start = Date.now();
-    let ok = false, status = 0, hasContent = false;
-    let errMsg = '', errExplain = 0;
-    let latency = 0;
-    let responseText = '';
+  const samples = [];
+  for (let i = 0; i < 5; i++) {
+    const t0 = Date.now();
     try {
-      const req = buildRequest(baseUrl, apiKey, model, interfaceType, PROMPT_STABILITY, { maxTokens: 5 });
-      const resp = await fetch(req.endpoint, {
-        method: 'POST',
-        headers: req.headers,
-        body: JSON.stringify(req.body),
-        signal: abortController.signal,
-        keepalive: false
-      });
-      latency = Date.now() - start;
-      status = resp.status;
-      ok = resp.ok;
-
-      if (ok) {
-        try {
-          const data = await resp.json();
-          const out = extractVisibleOutput(data, interfaceType);
-          hasContent = out.status === 'present' && out.text.length > 0;
-          responseText = out.text.trim().toUpperCase();
-          if (responseText === 'OK') errExplain = 1;
-          else errExplain = 0;
-        } catch (_) {
-          errMsg = zh ? 'JSON解析失败' : 'JSON parse failed';
-          errExplain = 0;
-        }
+      const req = buildRequest(baseUrl, apiKey, model, interfaceType, PROMPT_STABILITY, { maxTokens: 5, temperature: 0 });
+      const resp = await fetch(req.endpoint, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body), signal });
+      const latency = Date.now() - t0;
+      evidence['latency' + i] = latency;
+      if (!resp.ok) {
+        samples.push({ ok: false, status: resp.status, latency, errMsg: 'HTTP ' + resp.status, responseText: '' });
+        if (resp.status === 429) evidence.rateLimitDetected = true;
       } else {
-        try {
-          const errData = await resp.json().catch(() => ({}));
-          errMsg = errData.error?.message || errData.error?.type || errData.message || '';
-          if (!errMsg) errMsg = resp.statusText || 'HTTP ' + status;
-          errExplain = errMsg ? 1 : 0;
-        } catch (_) {
-          errMsg = resp.statusText || 'HTTP ' + status;
-          errExplain = errMsg ? 1 : 0;
-        }
-        // Check for rate limit
-        if (status === 429 || /rate.?limit|quota|too.?many/i.test(errMsg)) {
-          evidence.rateLimitDetected = true;
-        }
+        let data;
+        try { data = await resp.json(); } catch (_) { data = {}; }
+        const output = extractVisibleOutput(data, interfaceType);
+        const hasContent = output.status === 'present' && output.text.trim() !== '';
+        const usage = data.usage || {};
+        samples.push({ ok: hasContent, status: resp.status, latency, responseText: output.text, hasContent, usage, completionTokens: usage.completion_tokens || usage.output_tokens || 0, totalTokens: usage.total_tokens || 0 });
       }
     } catch (err) {
-      latency = Date.now() - start;
-      ok = false;
-      errMsg = err.name === 'AbortError' ? (zh ? '超时' : 'Timeout') : err.message;
-      errExplain = errMsg ? 1 : 0;
+      samples.push({ ok: false, status: 0, latency: Date.now() - t0, errMsg: err.message, responseText: '' });
     }
-    return { latency, ok, status, hasContent, errMsg, errExplain, responseText };
-  }
-
-  const samples = [];
-  let aborted = false;
-
-  for (let i = 0; i < TOTAL; i++) {
-    const controller = new AbortController();
-    const prevAbort = signal._onabort;
-    signal._onabort = () => { controller.abort(); aborted = true; };
-    const s = await onePing(controller);
-    samples.push(s);
-    if (aborted) break;
-    if (i < TOTAL - 1) await sleep(1000);
+    if (i < 4) await sleep(300);
   }
   evidence.samples = samples;
-
-  // S1: Success rate (6 pts)
-  const successCount = samples.filter(s => s.ok && s.hasContent).length;
-  if (targetFailed) {
-    // Limited: can only get partial credit
-    s1 = successCount * 2; // max 6 if 3/3, but with warning
-    if (successCount < 3) details.push(zh ? `目标调用失败，稳定性仅 ${successCount}/3 成功` : `Target call failed, stability only ${successCount}/3 success`);
-  } else if (successCount === 3) {
-    s1 = 6;
-  } else if (successCount === 2) {
-    s1 = 4;
-    deductions.push(zh ? '稳定性采样 2/3 成功' : 'Stability sampling 2/3 success');
-    if (status !== 'failed') status = 'warning';
-  } else if (successCount === 1) {
-    s1 = 2;
-    deductions.push(zh ? '稳定性采样 1/3 成功' : 'Stability sampling 1/3 success');
-    if (status !== 'failed') status = 'warning';
-  } else {
-    s1 = 0;
-    deductions.push(zh ? '稳定性采样 0/3 成功' : 'Stability sampling 0/3 success');
-    status = 'failed';
-  }
-
-  // S2: HTTP status consistency (2 pts)
-  const statuses = samples.map(s => s.status);
-  const uniqueStatuses = [...new Set(statuses)].filter(s => s > 0);
-  if (uniqueStatuses.length === 1 && samples.every(s => s.ok)) {
-    s2 = 2;
-  } else if (uniqueStatuses.length === 1 && samples.every(s => s.status >= 200 && s.status < 400)) {
-    s2 = 1;
-  } else if (uniqueStatuses.length > 1) {
-    s2 = 1;
-    details.push(zh ? `HTTP 状态不一致：${statuses.join(', ')}` : `HTTP status inconsistent: ${statuses.join(', ')}`);
-  } else {
-    s2 = 0;
-    deductions.push(zh ? 'HTTP 状态异常' : 'HTTP status abnormal');
-  }
-
-  // S3: Average latency (3 pts)
-  const okSamples = samples.filter(s => s.ok);
-  const avgLat = okSamples.length > 0 ? okSamples.reduce((a, s) => a + s.latency, 0) / okSamples.length : 99999;
+  const okCount = samples.filter(s => s.ok && s.hasContent).length;
+  const latencies = samples.map(s => s.latency || 0).filter(l => l > 0);
+  const avgLat = latencies.length > 0 ? latencies.reduce((a, b) => a + b, 0) / latencies.length : 0;
+  const minLat = latencies.length > 0 ? Math.min(...latencies) : 0;
+  const maxLat = latencies.length > 0 ? Math.max(...latencies) : 0;
+  const jitter = maxLat - minLat;
   evidence.avgLatency = avgLat;
-  if (avgLat < 2000) {
-    s3 = 3;
-  } else if (avgLat < 5000) {
-    s3 = 2;
-    details.push(zh ? `平均延迟 ${Math.round(avgLat)}ms（可接受）` : `Avg latency ${Math.round(avgLat)}ms (acceptable)`);
-  } else if (avgLat < 10000) {
-    s3 = 1;
-    deductions.push(zh ? `平均延迟较高：${Math.round(avgLat)}ms` : `High avg latency: ${Math.round(avgLat)}ms`);
+  evidence.latencyJitter = jitter;
+  evidence.minLatency = minLat;
+  evidence.maxLatency = maxLat;
+  let s1 = 0, s2 = 0, s3 = 0, s4 = 0, s5 = 0, s6 = 0, s7 = 0;
+  let status = 'excellent';
+
+  // S1: Success rate (4 pts)
+  if (okCount === 5) s1 = 4;
+  else if (okCount === 4) s1 = 3;
+  else if (okCount === 3) s1 = 2;
+  else if (okCount === 2) s1 = 1;
+  else if (okCount === 1) s1 = 0.5;
+  else { s1 = 0; deductions.push(zh ? '稳定性采样全部失败' : 'All stability sampling failed'); status = 'failed'; }
+
+  // S2: Average latency (3 pts) — strict for short prompts
+  if (avgLat <= 200) s2 = 3;
+  else if (avgLat <= 500) s2 = 2;
+  else if (avgLat <= 800) s2 = 1;
+  else { s2 = 0; deductions.push(zh ? `平均延迟过高：${Math.round(avgLat)}ms` : `Avg latency too high: ${Math.round(avgLat)}ms`); }
+
+  // S3: Max latency (2 pts) — strict threshold
+  if (maxLat <= 300) s3 = 2;
+  else if (maxLat <= 800) s3 = 1;
+  else { s3 = 0; deductions.push(zh ? `最大延迟过高：${maxLat}ms` : `Max latency too high: ${maxLat}ms`); }
+
+  // S4: Latency jitter (2 pts) — removed one zero from old thresholds
+  if (jitter < 100) s4 = 2;
+  else if (jitter < 300) s4 = 1.5;
+  else if (jitter < 800) s4 = 0.8;
+  else { s4 = 0; deductions.push(zh ? `延迟波动严重：${jitter}ms` : `Severe latency jitter: ${jitter}ms`); }
+
+  // S5: Output consistency (1.5 pts)
+  const okResponses = samples.filter(s => s.ok).map(s => s.responseText.trim());
+  if (okCount === 5 && okResponses.every(r => r === 'OK')) s5 = 1.5;
+  else if (okCount >= 4 && okResponses.length >= 2 && okResponses[0] === okResponses[1]) s5 = 1;
+  else if (okResponses.length >= 2) details.push(zh ? '输出一致性：多次输出不一致' : 'Output consistency: multiple outputs differ');
+
+  // S6: Rate limit / wind control (1.5 pts)
+  if (!evidence.rateLimitDetected) {
+    s6 = 1.5;
+  } else if (okCount >= 4) {
+    s6 = 0.5;
+    details.push(zh ? '检测中触发一次限流' : 'Rate limit triggered once during detection');
+  } else {
+    s6 = 0;
+    deductions.push(zh ? '检测中触发限流' : 'Rate limit triggered during detection');
     if (status !== 'failed') status = 'warning';
-  } else {
-    s3 = 0;
-    deductions.push(zh ? `平均延迟过高：${Math.round(avgLat)}ms` : `Excessive avg latency: ${Math.round(avgLat)}ms`);
-    if (status !== 'failed') status = 'warning';
   }
 
-  // S4: Latency jitter (3 pts) — using max-min
-  if (okSamples.length >= 2) {
-    const lats = okSamples.map(s => s.latency);
-    const jitter = Math.max(...lats) - Math.min(...lats);
-    evidence.latencyJitter = jitter;
-    if (jitter < 1000) s4 = 3;
-    else if (jitter < 3000) s4 = 2;
-    else if (jitter < 8000) s4 = 1;
-    else {
-      s4 = 0;
-      deductions.push(zh ? `延迟波动大：${jitter}ms` : `Large latency jitter: ${jitter}ms`);
-      if (status !== 'failed') status = 'warning';
-    }
-  } else {
-    s4 = 0;
-  }
-
-  // S5: Return consistency (2 pts)
-  const okResponses = samples.filter(s => s.ok && s.responseText);
-  const allOK = okResponses.every(s => s.responseText === 'OK');
-  const inconsistentCount = okResponses.filter(s => s.responseText !== 'OK').length;
-  if (inconsistentCount === 0 && okResponses.length === successCount) {
-    s5 = 2;
-  } else if (inconsistentCount === 1) {
-    s5 = 1;
-    details.push(zh ? '一次响应不一致' : 'One inconsistent response');
-  } else {
-    s5 = 0;
-    deductions.push(zh ? '多次响应不一致' : 'Multiple inconsistent responses');
-  }
-
-  // S6: Error explainability (1 pt)
+  // S7: Error explainability (1 pt)
   const failedSamples = samples.filter(s => !s.ok);
-  if (failedSamples.length === 0) {
-    s6 = 1;
-  } else {
-    const explainableCount = failedSamples.filter(s => s.errExplain > 0).length;
-    if (explainableCount === failedSamples.length) {
-      s6 = 1;
-    } else if (explainableCount > 0) {
-      s6 = 0.5;
-      details.push(zh ? '部分错误不可解释' : 'Some errors not explainable');
-    } else {
-      s6 = 0;
-      deductions.push(zh ? '失败无可读错误' : 'Failures have no readable error');
-    }
-  }
-
-  // S7: Rate limit / risk control (1 pt)
-  if (evidence.rateLimitDetected || samples.some(s => s.status === 429)) {
-    s7 = 0;
-    deductions.push(zh ? '触发限流/风控' : 'Rate limit / risk control triggered');
-    if (status !== 'failed') status = 'warning';
-  } else {
-    s7 = 1;
-  }
+  if (failedSamples.length === 0) s7 = 1;
+  else s7 = failedSamples.every(s => s.status === 429 || s.status === 403 || s.status === 400 || s.errMsg) ? 1 : 0;
 
   const score = s1 + s2 + s3 + s4 + s5 + s6 + s7;
+  evidence.subScores = { s1, s2, s3, s4, s5, s6, s7 };
 
-  // CRITICAL: target call failed but stability success → inconsistent
-  if (targetFailed && successCount >= 2) {
-    status = 'inconsistent';
-    deductions.push(zh ? '检测结果不一致：目标调用失败但稳定性采样成功' : 'Inconsistent: target call failed but stability sampling succeeded');
-  }
+  // Force status overrides (strict rules)
+  if (avgLat > 800) { if (status !== 'failed') status = 'warning'; }
+  if (maxLat > 1500) { if (status === 'excellent') status = 'good'; }
+  if (okCount < 5) { if (status === 'excellent') status = 'good'; }
+  if (okCount <= 2) { if (status === 'good') status = 'warning'; }
+  if (okCount <= 1) status = 'failed';
+  if (evidence.rateLimitDetected && okCount < 4) { if (status !== 'failed') status = 'warning'; }
+  if (score < 8) status = 'failed';
+  else if (score < 12) status = 'warning';
 
-  if (targetFailed && status !== 'inconsistent') {
-    status = 'skipped';
-  }
-
-  return mkCheck({
-    id: 'stability',
-    label: { zh: '稳定性采样', en: 'Stability Sampling' },
-    maxScore: 18,
-    score,
-    status,
-    summary: `${successCount}/3 ${zh ? '成功' : 'success'}`,
-    details,
-    deductions,
-    evidence,
-  });
+  const summary = status === 'excellent' ? (zh ? '完全稳定' : 'Fully stable') : status === 'good' ? `${okCount}/5 成功，平均 ${Math.round(avgLat)}ms` : status === 'warning' ? (zh ? '稳定性波动' : 'Stability fluctuating') : (zh ? '稳定性差' : 'Poor stability');
+  return mkCheck({ id: 'stability', label: { zh: '稳定性采样', en: 'Stability Sampling' }, maxScore: 15, score, status, summary, details, deductions, evidence });
 }
 
 /* ═══════════════════════════════════════════════════════
-   STEP 7: Usage Audit — 6 pts (6 sub-items)
-   Sub-items:
-     U1: usage field exists (1.5 pts)
-     U2: prompt_tokens exists (1 pt)
-     U3: completion_tokens exists (1 pt)
-     U4: total_tokens exists and reasonable (1 pt)
-     U5: usage matches request result (0.75 pts)
-     U6: Consumption explanation clear (0.75 pts)
+   STEP 7: Usage Audit — 6 pts (legacy, kept for compatibility)
    ═══════════════════════════════════════════════════════ */
 async function checkH_UsageAudit(baseUrl, apiKey, model, interfaceType, signal, targetCallResult) {
-  const deductions = [];
   const details = [];
   const evidence = {};
   const zh = getDocLang() !== 'en';
-
+  const usage = targetCallResult?.evidence?.usage || {};
+  evidence.usage = usage;
   let u1 = 1.5, u2 = 1, u3 = 1, u4 = 1, u5 = 0.75, u6 = 0.75;
   let status = 'excellent';
-
-  const targetFailed = targetCallResult && targetCallResult.status === 'failed' && targetCallResult.score < 11;
-  if (targetFailed) {
-    details.push(zh ? '目标模型调用失败，用量审计受限' : 'Target model call failed — usage audit limited');
-    u2 = 0; u3 = 0; u4 = 0; u5 = 0; u6 = 0;
-    u1 = 1;
-    status = 'skipped';
-  } else {
-    // Use usage from the target call result if available
-    const usage = targetCallResult?.evidence?.usage || {};
-    evidence.usage = usage;
-
-    const hasPromptTokens = usage.prompt_tokens != null || usage.input_tokens != null;
-    const hasCompletionTokens = usage.completion_tokens != null || usage.output_tokens != null;
-    const hasTotalTokens = usage.total_tokens != null;
-
-    // U1
-    u1 = hasTotalTokens || hasPromptTokens ? 1.5 : 0;
-    if (!u1) deductions.push(zh ? 'usage 字段不存在' : 'usage field does not exist');
-
-    // U2
-    u2 = hasPromptTokens ? 1 : 0;
-
-    // U3
-    u3 = hasCompletionTokens ? 1 : 0;
-
-    // U4
-    if (hasTotalTokens) {
-      const total = usage.total_tokens;
-      const prompt = usage.prompt_tokens || usage.input_tokens || 0;
-      const completion = usage.completion_tokens || usage.output_tokens || 0;
-      // Reasonable if total ≈ prompt + completion
-      const diff = Math.abs(total - prompt - completion);
-      if (diff <= Math.max(prompt, completion) * 0.5) {
-        u4 = 1;
-      } else {
-        u4 = 0.5;
-        details.push(zh ? `total_tokens 与 prompt+completion 之和差异较大（${diff}）` : `total_tokens differs significantly from prompt+completion (${diff})`);
-      }
-    } else {
-      u4 = 0;
-    }
-
-    // U5: usage matches request result
-    if (hasTotalTokens && hasPromptTokens) {
-      u5 = 0.75;
-    } else if (hasTotalTokens || (hasPromptTokens && hasCompletionTokens)) {
-      u5 = 0.375;
-    } else {
-      u5 = 0;
-    }
-
-    // U6: consumption explanation
-    if (hasPromptTokens && hasCompletionTokens && hasTotalTokens) {
-      u6 = 0.75;
-    } else if (hasTotalTokens) {
-      u6 = 0.375;
-      details.push(zh ? '消耗说明不完整' : 'Consumption explanation incomplete');
-    } else {
-      u6 = 0;
-    }
+  if (!usage || Object.keys(usage).length === 0) { u1 = 0; u2 = 0; u3 = 0; u4 = 0; u5 = 0; u6 = 0; details.push(zh ? 'usage 字段不存在' : 'usage field does not exist'); status = 'warning'; }
+  else {
+    if (usage.total_tokens || usage.prompt_tokens || usage.completion_tokens) u1 = 1.5;
+    if (usage.prompt_tokens != null || usage.input_tokens != null) u2 = 1;
+    if (usage.completion_tokens != null || usage.output_tokens != null) u3 = 1;
+    if (usage.total_tokens != null) u4 = 1;
+    if (u2 > 0 && u3 > 0) u5 = 0.75;
+    if (u1 > 0 && u5 > 0) u6 = 0.75;
   }
-
   const score = u1 + u2 + u3 + u4 + u5 + u6;
-
-  if (status !== 'skipped' && status !== 'failed') {
-    const ratio = score / 6;
-    if (ratio >= 0.95) status = 'excellent';
-    else if (ratio >= 0.80) status = 'good';
-    else if (ratio >= 0.50) status = 'warning';
-    else status = 'failed';
-  }
-
-  if (targetFailed && status === 'skipped' && score > 1) {
-    // Keep as skipped, don't mark failed
-  }
-
-  return mkCheck({
-    id: 'usageAudit',
-    label: { zh: '用量审计', en: 'Usage Audit' },
-    maxScore: 6,
-    score,
-    status,
-    summary: score >= 5.5 ? (zh ? '明细完整' : 'Details complete')
-             : score >= 4 ? (zh ? '明细基本可用' : 'Details mostly available')
-             : score >= 2 ? (zh ? '明细不完整' : 'Details incomplete')
-             : (zh ? '无法审计' : 'Cannot audit'),
-    details,
-    deductions,
-    evidence,
-  });
+  if (score < 1) status = 'warning';
+  return mkCheck({ id: 'usageAudit', label: { zh: '用量审计', en: 'Usage Audit' }, maxScore: 6, score, status, summary: score >= 5.5 ? (zh ? '明细完整' : 'Details complete') : score >= 4 ? (zh ? '明细基本可用' : 'Details mostly available') : score >= 2 ? (zh ? '明细不完整' : 'Details incomplete') : (zh ? '无法审计' : 'Cannot audit'), details, deductions: [], evidence });
 }
 
 /* ═══════════════════════════════════════════════════════
-   STEP 8: Client Config Exportability — 6 pts (6 sub-items)
-   Sub-items:
-     C1: Base URL format correct (1 pt)
-     C2: API Key masked (1 pt)
-     C3: Model ID present (1 pt)
-     C4: Cline config generatable (1 pt)
-     C5: Continue config generatable (1 pt)
-     C6: Verified by target call (1 pt)
+   STEP 8: Client Config Exportability — 3 pts (3 sub-items)
+   1. Base URL format for client: 1pt
+   2. Model ID explicit: 1pt
+   3. Cline / Continue config exportable: 1pt
    ═══════════════════════════════════════════════════════ */
 function checkI_ClientConfig(baseUrl, apiKey, model, modelListResult, targetCallResult) {
   const deductions = [];
   const details = [];
   const evidence = {};
   const zh = getDocLang() !== 'en';
-
-  let c1 = 1, c2 = 1, c3 = 1, c4 = 1, c5 = 1, c6 = 1;
+  let c1 = 1, c2 = 1, c3 = 1;
   let status = 'excellent';
+  // c1: Base URL format usable by client
+  try { const url = new URL(baseUrl); evidence.baseUrlOrigin = url.origin; if (!baseUrl.startsWith('https')) details.push(zh ? 'Base URL 未使用 HTTPS' : 'Base URL not using HTTPS'); }
+  catch (_) { c1 = 0; deductions.push(zh ? 'Base URL 格式异常' : 'Base URL format abnormal'); status = 'warning'; }
+  // c2: Model ID explicit
+  if (!model || !model.trim()) { c2 = 0; details.push(zh ? 'Model ID 为空' : 'Model ID is empty'); status = 'warning'; }
+  else { evidence.modelId = model; }
+  // c3: Cline / Continue config exportable
+  if (!baseUrl || !apiKey || !model) { c3 = 0; details.push(zh ? '配置不完整，无法导出' : 'Config incomplete — cannot export'); status = 'warning'; }
+  else {
+    const tcStatus = targetCallResult?.evidence?.httpStatus || 0;
+    if (tcStatus >= 200 && tcStatus < 300) { c3 = 1; evidence.clineReady = true; evidence.continueReady = true; }
+    else if (tcStatus >= 400) { c3 = 0.5; details.push(zh ? '目标模型调用未成功，配置未验证' : 'Target model call not successful — config not verified'); }
+    else c3 = 0.5;
+  }
+  const score = c1 + c2 + c3;
+  if (score < 1.5) status = 'warning';
+  if (score < 0.5) status = 'failed';
+  const summary = status === 'excellent' ? (zh ? '配置完整可导出' : 'Config complete and exportable') : status === 'warning' ? (zh ? '配置部分可用' : 'Config partially available') : (zh ? '配置不可用' : 'Config not available');
+  return mkCheck({ id: 'clientConfig', label: { zh: '客户端配置', en: 'Client Config' }, maxScore: 3, score, status, summary, details, deductions, evidence });
+}
 
-  // C1: Base URL format
+/* ═══════════════════════════════════════════════════════
+   NEW: makeApiCall helper
+   ═══════════════════════════════════════════════════════ */
+async function makeApiCall(baseUrl, apiKey, model, interfaceType, prompt, maxTokens, temperature, signal) {
   try {
-    const url = new URL(baseUrl);
-    c1 = 1;
-    evidence.baseUrlOrigin = url.origin;
-    if (!baseUrl.startsWith('https')) {
-      details.push(zh ? 'Base URL 未使用 HTTPS' : 'Base URL not using HTTPS');
-    }
-  } catch (_) {
-    c1 = 0;
-    deductions.push(zh ? 'Base URL 格式异常' : 'Base URL format abnormal');
-    status = 'warning';
+    const req = buildRequest(baseUrl, apiKey, model, interfaceType, prompt, { maxTokens, temperature });
+    const resp = await fetch(req.endpoint, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body), signal });
+    let data;
+    try { data = await resp.json(); }
+    catch (_) { data = {}; }
+    return { success: resp.ok, data, status: resp.status };
+  } catch (err) {
+    return { success: false, data: {}, status: 0, error: err.message };
   }
-
-  // C2: API Key masked
-  if (apiKey && apiKey.length >= 8) {
-    c2 = 1;
-    evidence.keyMasked = maskKey(apiKey);
-  } else {
-    c2 = 0;
-    details.push(zh ? 'API Key 格式异常，无法脱敏' : 'API Key format abnormal, cannot mask');
-  }
-
-  // C3: Model ID present
-  if (model && model.trim()) {
-    c3 = 1;
-    evidence.modelId = model;
-  } else {
-    c3 = 0;
-    details.push(zh ? 'Model ID 为空' : 'Model ID is empty');
-  }
-
-  // C4: Cline config
-  if (baseUrl && apiKey && model) {
-    c4 = 1;
-    evidence.clineReady = true;
-  } else {
-    c4 = 0;
-  }
-
-  // C5: Continue config
-  if (baseUrl && apiKey && model) {
-    c5 = 1;
-    evidence.continueReady = true;
-  } else {
-    c5 = 0;
-  }
-
-  // C6: Verified by target call
-  const targetFailed = targetCallResult && targetCallResult.status === 'failed' && targetCallResult.score < 11;
-  if (targetFailed) {
-    c6 = 0;
-    details.push(zh ? '目标模型调用失败，配置未验证' : 'Target model call failed — config not verified');
-    status = 'warning';
-  } else if (targetCallResult?.evidence?.httpStatus >= 200 && targetCallResult?.evidence?.httpStatus < 300) {
-    c6 = 1;
-  } else if (targetCallResult?.evidence?.httpStatus) {
-    c6 = 0.5;
-    details.push(zh ? '配置可生成，但未完全验证' : 'Config can be generated but not fully verified');
-  } else {
-    c6 = 0;
-    details.push(zh ? '配置可生成，但未验证可用' : 'Config can be generated but not verified');
-  }
-
-  const score = c1 + c2 + c3 + c4 + c5 + c6;
-
-  if (status !== 'failed') {
-    const ratio = score / 6;
-    if (ratio >= 0.95) status = 'excellent';
-    else if (ratio >= 0.80) status = 'good';
-    else if (ratio >= 0.50) status = 'warning';
-    else status = 'failed';
-  }
-
-  return mkCheck({
-    id: 'clientConfig',
-    label: { zh: '客户端配置可用性', en: 'Client Config Exportability' },
-    maxScore: 6,
-    score,
-    status,
-    summary: score >= 5 ? (zh ? '配置完整可导出' : 'Config complete and exportable')
-             : score >= 3 ? (zh ? '配置基本完整' : 'Config mostly complete')
-             : (zh ? '配置缺失' : 'Config incomplete'),
-    details,
-    deductions,
-    evidence,
-  });
 }
 
 /* ═══════════════════════════════════════════════════════
-   Score Calculator
+   STEP 8: checkJ — Cost Transparency (35 pts, 9 sub-items)
+   J1 usage completeness (5), J2 prompt tokens (3), J3 completion tokens (3)
+   J4 total consistency (4), J5 short reply (6), J6 max_tokens (4)
+   J7 usage stability (3), J8 dual-prompt delta (5), J9 clarity (2)
    ═══════════════════════════════════════════════════════ */
-function calcRawScore(checks) {
-  let raw = 0;
-  for (const key of Object.keys(checks)) {
-    const c = checks[key];
-    raw += c?.score || 0;
-  }
-  return raw;
-}
 
-/* ═══════════════════════════════════════════════════════
-   Soft Penalty & Risk Classification
-   These are NOT hard caps — they describe the risk type
-   and control suggestion text and deduction reasons.
-   ═══════════════════════════════════════════════════════ */
 /**
- * Classify model visibility risk level based on actual results.
- * Returns { riskType, softDeduction, reasonZh, reasonEn }
- * riskType: null | 'model_visibility_risk' | 'model_selection_risk' | 'model_unavailable'
+ * Estimate prompt token count using conservative heuristics.
+ * English: ~4 chars ≈ 1 token
+ * Chinese: ~1.5 chars ≈ 1 token
+ * Future: replace with tokenizer, but don't overcomplicate now
  */
-function classifyModelRisk(modelIdInfo, checks) {
-  const { modelSource, isFinalModelInModelList, userModel, allModels } = modelIdInfo || {};
-  const normalizedAll = (allModels || []).map(normalizeModelId);
-  const modelNotInList = userModel &&
-    !normalizedAll.includes(normalizeModelId(userModel));
-  const modelListSucceeded = (checks.modelList?.score || 0) >= 3 && (checks.modelList?.evidence?.modelCount || 0) > 0;
-  const targetScore = checks.targetCall?.score || 0;
-  const targetWorks = targetScore >= 11;
-  const usageScore = checks.usageAudit?.score || 0;
-  const stabilityScore = checks.stability?.score || 0;
+function estimatePromptTokens(prompt) {
+  if (!prompt || typeof prompt !== 'string') return 0;
+  let tokens = 0;
+  for (const ch of prompt) {
+    if (/[\u4e00-\u9fff]/.test(ch)) {
+      tokens += 1 / 1.5;
+    } else if (/[a-zA-Z0-9 .,!?'"():;\-]/.test(ch)) {
+      tokens += 0.25;
+    } else {
+      tokens += 0.5;
+    }
+  }
+  const englishEstimate = Math.ceil(tokens * 0.25);
+  return Math.max(1, englishEstimate);
+}
 
-  // Only relevant when modelSource === 'user_input' and model not in list
-  if (modelSource !== 'user_input' || !modelNotInList || !modelListSucceeded) {
-    return { riskType: null, softDeduction: 0, reasonZh: '', reasonEn: '' };
+async function checkJ_CostTransparency(baseUrl, apiKey, model, interfaceType, signal, targetCallResult) {
+  const deductions = [];
+  const details = [];
+  const evidence = {};
+  const zh = getDocLang() !== 'en';
+  const subScores = {};
+  const targetUsage = targetCallResult?.evidence?.usage || {};
+  const hasUsage = !!(targetUsage && Object.keys(targetUsage).length > 0);
+  const usageComplete = hasUsage
+    && (targetUsage.prompt_tokens != null || targetUsage.input_tokens != null)
+    && (targetUsage.completion_tokens != null || targetUsage.output_tokens != null)
+    && targetUsage.total_tokens != null;
+
+  // ── J1: usage field completeness (5 pts) ──────────────────
+  if (!hasUsage) {
+    subScores.usageField = 0;
+    deductions.push(zh ? 'usage 字段完全缺失，无法审计消耗' : 'usage field completely missing — cannot audit consumption');
+  } else {
+    const hasPrompt = targetUsage.prompt_tokens != null || targetUsage.input_tokens != null;
+    const hasCompletion = targetUsage.completion_tokens != null || targetUsage.output_tokens != null;
+    const hasTotal = targetUsage.total_tokens != null;
+    if (hasTotal && hasPrompt && hasCompletion) {
+      subScores.usageField = 5;
+    } else if (hasPrompt && hasCompletion) {
+      subScores.usageField = 4;
+      details.push(zh ? '有 prompt/completion_tokens 但缺 total_tokens' : 'Has prompt/completion_tokens but missing total_tokens');
+    } else if (hasPrompt || hasCompletion) {
+      subScores.usageField = 3;
+      details.push(zh ? '只有部分 usage 字段' : 'Only partial usage fields');
+    } else {
+      subScores.usageField = 1.5;
+      details.push(zh ? '只有 total_tokens' : 'Only total_tokens available');
+    }
+  }
+  evidence.usageTest = { hasUsage, usageComplete, ...targetUsage };
+
+  // ── J2: prompt_tokens reasonableness (3 pts) ──────────────
+  const promptVal = targetUsage.prompt_tokens ?? targetUsage.input_tokens;
+  if (promptVal == null) {
+    subScores.promptTokens = 0;
+  } else if (typeof promptVal !== 'number') {
+    subScores.promptTokens = 1;
+  } else if (promptVal > 10000) {
+    subScores.promptTokens = 1.5;
+    details.push(zh ? `prompt_tokens 异常偏高：${promptVal}` : `prompt_tokens abnormally high: ${promptVal}`);
+  } else {
+    subScores.promptTokens = 3;
   }
 
-  // model_unavailable: not in list AND target call failed
-  if (!targetWorks) {
+  // ── J3: completion_tokens reasonableness (3 pts) ────────────
+  const completionVal = targetUsage.completion_tokens ?? targetUsage.output_tokens;
+  if (completionVal == null) {
+    subScores.completionTokens = 0;
+  } else if (typeof completionVal !== 'number') {
+    subScores.completionTokens = 1;
+  } else if (completionVal > 50000) {
+    subScores.completionTokens = 1.5;
+    details.push(zh ? `completion_tokens 异常偏高：${completionVal}` : `completion_tokens abnormally high: ${completionVal}`);
+  } else {
+    subScores.completionTokens = 3;
+  }
+
+  // ── J4: total_tokens consistency (4 pts) ──────────────────
+  const totalVal = targetUsage.total_tokens || 0;
+  if (totalVal === 0 || promptVal == null || completionVal == null) {
+    subScores.totalTokens = 0;
+  } else {
+    const expected = promptVal + completionVal;
+    const diff = Math.abs(totalVal - expected);
+    const ratio = expected > 0 ? diff / expected : 1;
+    if (ratio < 0.05) subScores.totalTokens = 4;
+    else if (ratio < 0.20) subScores.totalTokens = 3;
+    else subScores.totalTokens = 1;
+    if (ratio >= 0.20) {
+      deductions.push(zh
+        ? `total_tokens(${totalVal}) 与 prompt+completion(${expected}) 差异超过 20%`
+        : `total_tokens(${totalVal}) differs from prompt+completion(${expected}) by >20%`);
+    } else if (ratio >= 0.05) {
+      details.push(zh
+        ? `total_tokens 与 prompt+completion 差异 ${Math.round(ratio * 100)}%`
+        : `total_tokens differs from prompt+completion by ${Math.round(ratio * 100)}%`);
+    }
+  }
+  evidence.j4 = { totalVal, promptVal, completionVal };
+
+  // ── J5: Short reply token reasonableness (6 pts) ───────────
+  const shortResult = await makeApiCall(baseUrl, apiKey, model, interfaceType, 'Reply exactly: OK', 5, 0, signal);
+  const srOutput = extractVisibleOutput(shortResult.data, interfaceType);
+  const srUsage = shortResult.data?.usage || {};
+  const srComp = srUsage.completion_tokens ?? srUsage.output_tokens ?? 0;
+  const srTotal = srUsage.total_tokens || 0;
+  const srDetails = srUsage.completion_tokens_details || {};
+  const srReasoning = srDetails.reasoning_tokens ?? 0;
+  evidence.shortReplyTest = { ok: srOutput.text.trim() === 'OK', completionTokens: srComp, reasoningTokens: srReasoning, totalTokens: srTotal, output: srOutput.text };
+
+  if (!shortResult.success) {
+    subScores.shortReply = 0;
+    details.push(zh ? '无法执行短回复测试' : 'Cannot perform short reply test');
+  } else if (srOutput.text.trim() !== 'OK') {
+    subScores.shortReply = 0;
+    deductions.push(zh ? '短回复测试未返回预期内容' : 'Short reply test did not return expected content');
+  } else if (srComp > 50 && srReasoning === 0) {
+    // Severe anomaly: no reasoning token explanation
+    subScores.shortReply = 0.5;
+    deductions.push(zh
+      ? `极短回复 OK 但 completion_tokens 严重偏高(${srComp})，无 reasoning_tokens 解释，扣费不可解释风险高`
+      : `Short reply OK but completion_tokens(${srComp}) severely high with no reasoning_tokens — unexplained billing risk`);
+  } else if (srComp > 50 && srReasoning > 0) {
+    if (srReasoning > srComp * 0.7) {
+      // Mostly explained by reasoning_tokens
+      subScores.shortReply = 4;
+      details.push(zh
+        ? `短回复 token 偏高(${srComp})，部分由 reasoning_tokens(${srReasoning}) 解释，建议结合后台余额继续核对`
+        : `Short reply tokens high(${srComp}), reasoning_tokens(${srReasoning}) mostly explains it — verify against backend balance`);
+    } else {
+      subScores.shortReply = 2;
+      deductions.push(zh
+        ? `短回复 token 偏高(${srComp})，reasoning_tokens(${srReasoning}) 无法完全解释`
+        : `Short reply tokens high(${srComp}), reasoning_tokens(${srReasoning}) insufficiently explains it`);
+    }
+  } else if (srComp > 20) {
+    subScores.shortReply = 2;
+    details.push(zh ? `短回复 completion_tokens 偏高(${srComp})` : `Short reply completion_tokens(${srComp}) slightly high`);
+  } else if (srComp > 5) {
+    subScores.shortReply = 4;
+    details.push(zh ? `短回复 completion_tokens 轻微偏高(${srComp})` : `Short reply completion_tokens(${srComp}) slightly above ideal`);
+  } else {
+    subScores.shortReply = 6;
+  }
+
+  // ── J6: max_tokens limit effectiveness (4 pts) ──────────────
+  // NOTE: max_tokens mainly constrains completion tokens, not total tokens
+  // Don't fail just because total_tokens > max_tokens
+  const maxResult = await makeApiCall(baseUrl, apiKey, model, interfaceType, 'Reply with one word only: OK', 5, 0, signal);
+  const mtOutput = extractVisibleOutput(maxResult.data, interfaceType);
+  const mtUsage = maxResult.data?.usage || {};
+  const mtComp = mtUsage.completion_tokens ?? mtUsage.output_tokens ?? 0;
+  evidence.maxTokensTest = { output: mtOutput.text, completionTokens: mtComp };
+  if (!maxResult.success) {
+    subScores.maxTokens = 0;
+    details.push(zh ? '无法执行 max_tokens 限制测试' : 'Cannot perform max_tokens limit test');
+  } else if (mtComp > 20) {
+    subScores.maxTokens = 0.5;
+    deductions.push(zh
+      ? `max_tokens=5 但 completion_tokens 明显超过限制(${mtComp})，usage 异常`
+      : `max_tokens=5 but completion_tokens(${mtComp}) clearly exceeds limit — usage abnormal`);
+  } else if (mtComp > 10) {
+    subScores.maxTokens = 1;
+    deductions.push(zh ? 'max_tokens 限制未完全生效' : 'max_tokens limit not fully enforced');
+  } else if (mtComp > 5) {
+    subScores.maxTokens = 2.5;
+    details.push(zh ? 'max_tokens 基本受控' : 'max_tokens mostly controlled');
+  } else {
+    subScores.maxTokens = 4;
+  }
+
+  // ── J7: Usage stability across 3 identical calls (3 pts) ──
+  const stabilityCalls = [];
+  for (let i = 0; i < 3; i++) {
+    const r = await makeApiCall(baseUrl, apiKey, model, interfaceType, 'Say: TEST', 10, 0, signal);
+    stabilityCalls.push(r.data?.usage || {});
+  }
+  evidence.usageStability = stabilityCalls;
+  if (stabilityCalls.length >= 2) {
+    const t1 = stabilityCalls[0].total_tokens || 0;
+    const t2 = stabilityCalls[1].total_tokens || 0;
+    if (t1 > 0 && t2 > 0) {
+      const variation = Math.abs(t1 - t2) / Math.max(t1, t2);
+      if (variation < 0.20) subScores.usageStability = 3;
+      else if (variation < 0.50) subScores.usageStability = 1.5;
+      else subScores.usageStability = 0.5;
+      if (variation >= 0.50) {
+        deductions.push(zh
+          ? `相同请求 usage 波动 ${Math.round(variation * 100)}%，明显不稳定`
+          : `Same-request usage varies ${Math.round(variation * 100)}% — significantly unstable`);
+      } else if (variation >= 0.20) {
+        details.push(zh
+          ? `相同请求 usage 波动 ${Math.round(variation * 100)}%`
+          : `Same-request usage varies ${Math.round(variation * 100)}%`);
+      }
+    } else subScores.usageStability = 0;
+  } else subScores.usageStability = 0;
+
+  // ── J8: Dual-prompt differential method (5 pts) ─────────────
+  // Prompt A: "Say hello." (short)
+  // Prompt B: "Say hello. Also repeat this marker exactly: ROUTE_TOKEN_CHECK_7391" (longer by a known delta)
+  // Compare API-reported prompt_tokens against locally estimated token count
+  const PROMPT_A = 'Say hello.';
+  const PROMPT_B = 'Say hello. Also repeat this marker exactly: ROUTE_TOKEN_CHECK_7391';
+  const resA = await makeApiCall(baseUrl, apiKey, model, interfaceType, PROMPT_A, 5, 0, signal);
+  const resB = await makeApiCall(baseUrl, apiKey, model, interfaceType, PROMPT_B, 5, 0, signal);
+  const usageA = resA.data?.usage || {};
+  const usageB = resB.data?.usage || {};
+  const promptTokensA = usageA.prompt_tokens ?? usageA.input_tokens ?? null;
+  const promptTokensB = usageB.prompt_tokens ?? usageB.input_tokens ?? null;
+  const estimatedA = estimatePromptTokens(PROMPT_A);
+  const estimatedB = estimatePromptTokens(PROMPT_B);
+  evidence.j8Test = { promptA: PROMPT_A, promptB: PROMPT_B, apiPromptA: promptTokensA, apiPromptB: promptTokensB, estimatedA, estimatedB };
+
+  let j8Score = 0;
+  let baseOverhead = null;
+  let deltaRatio = null;
+  if (promptTokensA == null) {
+    subScores.dualPrompt = 0;
+    details.push(zh ? '无法获取 prompt_tokens，无法执行双 prompt 差分测试' : 'Cannot get prompt_tokens — dual-prompt test not available');
+  } else {
+    // baseOverhead: how much fixed overhead exists beyond local estimate
+    baseOverhead = promptTokensA - estimatedA;
+    // deltaRatio: how much extra API reports for the marker vs. local delta
+    const apiDelta = promptTokensB != null ? promptTokensB - promptTokensA : null;
+    const localDelta = estimatedB - estimatedA;
+    deltaRatio = apiDelta != null && localDelta > 0 ? apiDelta / Math.max(localDelta, 1) : null;
+    evidence.j8Test.baseOverhead = baseOverhead;
+    evidence.j8Test.deltaRatio = deltaRatio;
+
+    // Scoring: baseOverhead + deltaRatio combined
+    const overheadOk = baseOverhead <= 40;
+    const overheadSlight = baseOverhead > 40 && baseOverhead <= 120;
+    const overheadMid = baseOverhead > 120 && baseOverhead <= 500;
+    const overheadHigh = baseOverhead > 500 && baseOverhead <= 1000;
+    const overheadSevere = baseOverhead > 1000;
+    const deltaOk = deltaRatio == null || deltaRatio <= 1.5;
+    const deltaSlight = deltaRatio != null && deltaRatio > 1.5 && deltaRatio <= 3;
+    const deltaMid = deltaRatio != null && deltaRatio > 3 && deltaRatio <= 5;
+    const deltaHigh = deltaRatio != null && deltaRatio > 5;
+
+    if (overheadOk && deltaOk) {
+      j8Score = 5;
+    } else if ((overheadOk || overheadSlight) && (deltaOk || deltaSlight)) {
+      j8Score = 3;
+      details.push(zh
+        ? `prompt_tokens 存在轻微包装(${baseOverhead > 0 ? '+' : ''}${Math.round(baseOverhead)} overhead, deltaRatio ${deltaRatio != null ? '~' + deltaRatio.toFixed(1) : '?'})，不影响审计`
+        : `Minor prompt packaging detected (${Math.round(baseOverhead)} overhead, deltaRatio ${deltaRatio != null ? '~' + deltaRatio.toFixed(1) : '?'}), auditable`);
+    } else if ((overheadOk || overheadSlight || overheadMid) && (deltaOk || deltaSlight || deltaMid)) {
+      j8Score = 1;
+      details.push(zh
+        ? `prompt_tokens 存在包装(${Math.round(baseOverhead)} overhead, deltaRatio ${deltaRatio != null ? '~' + deltaRatio.toFixed(1) : '?'})，建议小额核对`
+        : `Prompt packaging detected (${Math.round(baseOverhead)} overhead, deltaRatio ${deltaRatio != null ? '~' + deltaRatio.toFixed(1) : '?'}) — verify with small amount`);
+    } else {
+      j8Score = 0;
+      if (overheadSevere) {
+        deductions.push(zh
+          ? `prompt_tokens 明显高于本地估算(${promptTokensA} vs 估计${estimatedA}，overhead > 1000)，存在严重隐藏上下文或包装`
+          : `prompt_tokens(${promptTokensA}) far exceeds local estimate(${estimatedA}, overhead > 1000) — severe hidden context or packaging`);
+      } else if (deltaHigh) {
+        deductions.push(zh
+          ? `prompt_tokens 增量膨胀明显(deltaRatio ${deltaRatio?.toFixed(1)})，存在 token inflation 风险`
+          : `Prompt token inflation detected (deltaRatio ${deltaRatio?.toFixed(1)}) — token inflation risk`);
+      } else {
+        deductions.push(zh
+          ? `prompt_tokens 明显高于本地估算(${promptTokensA} vs 估计${estimatedA}，overhead ~${Math.round(baseOverhead)})，存在隐藏上下文、额外包装或 token inflation 风险`
+          : `prompt_tokens(${promptTokensA}) significantly higher than local estimate(${estimatedA}, overhead ~${Math.round(baseOverhead)}) — hidden context, extra packaging or token inflation`);
+      }
+    }
+    subScores.dualPrompt = j8Score;
+  }
+
+  // ── J9: Consumption explanation clarity (2 pts) ─────────────
+  const canExplain = hasUsage
+    && (targetUsage.prompt_tokens != null || targetUsage.input_tokens != null)
+    && (targetUsage.completion_tokens != null || targetUsage.output_tokens != null)
+    && targetUsage.total_tokens != null;
+  subScores.clarity = canExplain ? 2 : hasUsage ? 1 : 0;
+
+  const totalScore = Object.values(subScores).reduce((a, b) => a + b, 0);
+  const ratio = totalScore / 35;
+  let status = ratio >= 0.95 ? 'excellent' : ratio >= 0.80 ? 'good' : ratio >= 0.50 ? 'warning' : 'failed';
+  if (!hasUsage) status = 'failed';
+  const summary = status === 'excellent'
+    ? (zh ? 'usage 明细较完整，扣费可审计性较好' : 'usage details mostly complete — billing auditable')
+    : status === 'good'
+    ? (zh ? 'usage 基本完整，存在轻微波动' : 'usage mostly complete — minor fluctuations')
+    : status === 'warning'
+    ? (zh ? 'usage 部分缺失或存在异常，建议小额核对' : 'usage partially missing or abnormal — verify with small amount')
+    : (zh ? 'usage 明细不完整或严重异常' : 'usage details incomplete or severely abnormal');
+  return mkCheck({ id: 'costTransparency', label: { zh: '扣费透明度', en: 'Cost Transparency' }, maxScore: 35, score: totalScore, status, summary, details, deductions, evidence: { ...evidence, subScores, baseOverhead, deltaRatio } });
+}
+
+/* ═══════════════════════════════════════════════════════
+   STEP 9: checkK — Model Integrity (40 pts, 9 sub-items)
+   K0 Model identity & routing transparency (6 pts, 6 categories)
+   K1 Model visibility (3 pts), K2 Target call quality (5 pts)
+   K3 JSON strict output (5 pts), K4 Instruction following (5 pts)
+   K5 Code repair (5 pts), K6 Reasoning (5 pts)
+   K7 Needle retrieval (4 pts), K8 Consistency (2 pts)
+   ═══════════════════════════════════════════════════════ */
+
+/**
+ * Comprehensive platform / proxy / IDE / Agent identity keyword list.
+ * Covers: cloud platforms, gateway/relay, IDE tools, coding agents, dev environments.
+ */
+const PLATFORM_OR_PROXY_KEYWORDS = [
+  // ── Generic gateway / relay / proxy / router ──
+  'gateway', 'api gateway', 'openai-compatible', 'openai compatible',
+  'api-compatible', 'api compatible', 'compatible model', 'relay',
+  'proxy', 'reverse proxy', 'router', 'route', 'model router',
+  'llm router', 'gateway model', 'serving platform', 'model platform',
+  'inference platform', '中转', '中转站', '转发', '反代', '代理',
+  '网关', '路由', '模型平台', '推理平台',
+
+  // ── Google / Vertex / Gemini platform layer ──
+  'vertex', 'vertex ai', 'google vertex', 'google cloud vertex',
+  'google ai studio', 'ai studio', 'gemini api', 'model garden',
+  'google cloud', 'gemini cli', 'antigravity',
+
+  // ── AWS platform layer ──
+  'aws', 'amazon web services', 'bedrock', 'amazon bedrock',
+  'bedrock marketplace', 'sagemaker', 'amazon sagemaker',
+  'amazon q', 'amazon q developer', 'q developer', 'aws q',
+  'aws console', 'aws agent',
+
+  // ── Microsoft / Azure / Foundry platform layer ──
+  'azure', 'azure openai', 'azure ai', 'azure ai foundry',
+  'microsoft foundry', 'foundry models', 'foundry agent',
+  'microsoft copilot', 'github copilot', 'copilot cli',
+  'copilot coding agent', 'copilot agent',
+
+  // ── IDE / coding agent / dev tool layer ──
+  'kiro', 'kiro ide', 'kiro cli',
+  'cursor', 'cursor ide', 'cursor agent',
+  'cline', 'cline agent',
+  'continue', 'continue.dev',
+  'windsurf', 'windsurf editor', 'cascade',
+  'codeium', 'codium', 'zed', 'zed ai', 'zed assistant',
+  'trae', 'trae ai', 'tabnine',
+  'sourcegraph cody', 'cody', 'supermaven',
+  'augment', 'augment code', 'aider',
+  'claude code', 'claude-code',
+  'replit', 'replit agent',
+  'lovable', 'bolt', 'bolt.new', 'v0', 'vercel v0',
+
+  // ── Development environment wording ──
+  'ide', 'editor', 'code editor', 'development environment',
+  'dev environment', 'coding assistant', 'coding agent',
+  'ai coding assistant', 'agentic coding', 'agentic ide',
+  'software agent', '开发环境', '代码助手', '编程助手',
+  '代码代理', '开发工具', '编辑器',
+
+  // ── Common wrapper self-description patterns ──
+  'i am a coding assistant', 'i am an ai coding assistant',
+  'i am running in', 'served through', 'powered by',
+  'routed through', 'hosted on', 'provided by', 'deployed on',
+];
+
+/**
+ * Tool-persona / development-environment contamination patterns.
+ * These indicate the model has been polluted by system prompts,
+ * tool descriptions, IDE behaviors, or wrapper personas.
+ */
+const CONTAMINATION_PATTERNS = [
+  // Tool/IDE persona references — long response with these = contamination
+  'i am a kiro', 'i am cursor', 'i am cline', 'i am continue',
+  'i am an ide', 'i am a coding assistant', 'i am an ai coding assistant',
+  'i am a plugin', 'i am an extension', 'i am a wrapper',
+  'i am running in', 'i am serving as a',
+  'responsible for managing your project',
+  'i can manage your project files',
+  'i can modify your codebase',
+  'i can execute commands',
+  'i can read your workspace',
+  'i can access your working directory',
+  'as a kiro development environment',
+  'as a cursor agent',
+  'as a cline agent',
+  'as a replit agent',
+  'as a coding assistant i can',
+  'development environment that',
+  'tool personality',
+  '系统提示', 'system prompt', 'wrapper prompt', 'tool prompt',
+  '内部 wrapper', '人格污染', '开发环境污染',
+];
+
+/**
+ * Extract the most specific detected source from the model's response text.
+ * Returns the first matched keyword from the priority list.
+ */
+function extractDetectedSource(text) {
+  const t = text.toLowerCase().trim();
+  const PRIORITY_SOURCES = [
+    'amazon q developer', 'amazon bedrock', 'github copilot', 'azure ai foundry',
+    'microsoft foundry', 'google vertex', 'vertex ai', 'openai-compatible',
+    'openai compatible', 'continue.dev', 'windsurf editor',
+    'cursor agent', 'cline agent', 'replit agent',
+    'kiro ide', 'kiro cli', 'claude code', 'amazon q',
+  ];
+  for (const src of PRIORITY_SOURCES) {
+    if (t.includes(src)) return src;
+  }
+  // Fallback: match any keyword
+  for (const kw of PLATFORM_OR_PROXY_KEYWORDS) {
+    if (t.includes(kw.toLowerCase())) return kw;
+  }
+  return null;
+}
+
+/**
+ * Classify model identity response into 6 categories.
+ * Returns { category, score, reason, detectedSource }
+ *
+ * Classification priority:
+ *   1. hard_contamination — tool persona / system prompt pollution
+ *   2. wrong_family       — clear model family mismatch
+ *   3. exact_match        — model identity matches target
+ *   4. family_match       — same model family, not exact
+ *   5. platform_or_proxy_identity — platform / gateway / IDE / agent layer
+ *   6. ambiguous          — vague / unknown / cannot determine
+ *
+ * NOTE: Kiro/Vertex/AWS Bedrock/Azure/Cursor/Cline/Windsurf/Continue/
+ *       Copilot/Claude Code/Replit Agent/basic gateway responses
+ *       → platform_or_proxy_identity (3/6), medium risk, NOT a death sentence.
+ *       → Only becomes high risk when combined with token anomalies,
+ *         max_tokens failures, or multiple ability failures.
+ */
+function evaluateModelIdentity(identityText, finalTestModelId) {
+  const zh = getDocLang() !== 'en';
+  const t = identityText.toLowerCase().trim();
+  const targetLower = normalizeModelId(finalTestModelId).toLowerCase();
+  const rawResponse = identityText.trim();
+
+  // ── Detect platform / proxy / IDE / agent keywords ──
+  const hitPlatformKeywords = PLATFORM_OR_PROXY_KEYWORDS.filter(kw =>
+    t.includes(kw.toLowerCase())
+  );
+  const hasPlatformHit = hitPlatformKeywords.length > 0;
+  const detectedSource = extractDetectedSource(rawResponse);
+
+  // ── Hard contamination: tool persona / system prompt pollution ──
+  // Requires BOTH a contamination keyword AND a long(ish) response suggesting
+  // the model is actively adopting a tool/IDE persona rather than just mentioning it.
+  const hasContaminationTrigger = CONTAMINATION_PATTERNS.some(p => t.includes(p.toLowerCase()));
+  const isLongContaminatedResponse = rawResponse.length > 30 && hasContaminationTrigger;
+  // Also flag if the response reads like a system-prompt leak / wrapper intro
+  const isSystemPromptLeak = /\b(system prompt|wrapper prompt|internal prompt|tool description|角色设定|人设)\b/i.test(rawResponse);
+
+  if (isLongContaminatedResponse || isSystemPromptLeak) {
     return {
-      riskType: 'model_unavailable',
-      softDeduction: 0,
-      reasonZh: `当前 Model ID ${userModel} 未出现在模型列表中，且目标模型调用失败`,
-      reasonEn: `Model ID ${userModel} not found in /models list and target call failed`
+      category: 'hard_contamination',
+      score: 0,
+      reason: zh
+        ? '模型回答中出现开发环境、工具人格或系统提示污染信号'
+        : 'Model response shows development environment, tool persona or system prompt contamination',
+      detectedSource,
     };
   }
 
-  // model_selection_risk: not in list, target works but usage or format issues
-  if (targetWorks && (targetScore < 17 || usageScore < 1)) {
+  // ── Wrong family: clear model family mismatch ──
+  const GPT_FAMILY = ['gpt', 'chatgpt', 'openai'];
+  const CLAUDE_FAMILY = ['claude', 'anthropic'];
+  const GEMINI_FAMILY = ['gemini', 'google'];
+  const LLAMA_FAMILY = ['llama', 'meta'];
+  const QWEN_FAMILY = ['qwen', 'alibaba'];
+  const DEEPSEEK_FAMILY = ['deepseek'];
+  const OAI_FAMILY = ['o1', 'o2', 'o3', 'o4', 'openai'];
+  const MISTRAL_FAMILY = ['mistral', 'mixtral'];
+  const GROK_FAMILY = ['grok', 'xai'];
+
+  const detectFamily = (text) => {
+    if (GPT_FAMILY.some(f => text.includes(f))) return 'gpt';
+    if (CLAUDE_FAMILY.some(f => text.includes(f))) return 'claude';
+    if (GEMINI_FAMILY.some(f => text.includes(f))) return 'gemini';
+    if (LLAMA_FAMILY.some(f => text.includes(f))) return 'llama';
+    if (QWEN_FAMILY.some(f => text.includes(f))) return 'qwen';
+    if (DEEPSEEK_FAMILY.some(f => text.includes(f))) return 'deepseek';
+    if (OAI_FAMILY.some(f => text.includes(f))) return 'openai';
+    if (MISTRAL_FAMILY.some(f => text.includes(f))) return 'mistral';
+    if (GROK_FAMILY.some(f => text.includes(f))) return 'grok';
+    return 'unknown';
+  };
+
+  const respFamily = detectFamily(t);
+  const targetFamily = detectFamily(targetLower);
+  const isWrongFamily = targetFamily !== 'unknown' && respFamily !== 'unknown' && respFamily !== targetFamily;
+
+  // Also flag: if target is Claude but response says GPT, or vice versa
+  const explicitFamilyConflict = (
+    (targetLower.includes('claude') && (t.includes('gpt') || t.includes('openai') || t.includes('gemini'))) ||
+    (targetLower.includes('gpt') && (t.includes('claude') || t.includes('anthropic'))) ||
+    (targetLower.includes('gemini') && (t.includes('gpt') || t.includes('claude'))) ||
+    (targetLower.includes('llama') && t.includes('gpt')) ||
+    (targetLower.includes('qwen') && (t.includes('gpt') || t.includes('claude')))
+  );
+
+  if (isWrongFamily || explicitFamilyConflict) {
     return {
-      riskType: 'model_selection_risk',
-      softDeduction: 4,
-      reasonZh: `当前 Model ID 未出现在模型列表中，且响应格式或用量数据异常`,
-      reasonEn: `Model ID not in /models list and response format or usage data is abnormal`
+      category: 'wrong_family',
+      score: 0,
+      reason: zh
+        ? '模型自报家族与目标 Model ID 明显不一致，存在模型降配或路由错误疑似风险'
+        : 'Model self-reported family conflicts with target Model ID — possible downgrade or routing error',
+      detectedSource,
     };
   }
 
-  // model_visibility_risk: not in list but target works well
-  if (targetWorks && targetScore >= 20 && stabilityScore >= 16 && usageScore >= 6) {
+  // ── Exact match ──
+  const exactMatch = t.includes(targetLower) ||
+    targetLower.includes(t) ||
+    (targetLower.startsWith('gpt') && (t.startsWith('gpt') || t.includes('gpt') || t.includes('chatgpt'))) ||
+    (targetLower.includes('claude') && t.includes('claude')) ||
+    (targetLower.startsWith('o1') && (t.includes('o1') || t.includes('openai'))) ||
+    (targetLower.startsWith('o3') && (t.includes('o3') || t.includes('openai'))) ||
+    (targetLower.startsWith('o4') && (t.includes('o4') || t.includes('openai'))) ||
+    (targetLower.startsWith('gemini') && (t.includes('gemini') || t.includes('google'))) ||
+    (targetLower.includes('gpt') && t.includes('openai') && !hasPlatformHit) ||
+    t.split(/\s/)[0].split('-')[0] === targetLower.split(/\s/)[0].split('-')[0];
+
+  if (exactMatch) {
+    const respFirst = t.split(/\s/)[0].split('-')[0];
+    const tgtFirst = targetLower.split(/\s/)[0].split('-')[0];
+    if (respFirst === tgtFirst) {
+      return {
+        category: 'exact_match',
+        score: 6,
+        reason: zh ? '模型身份与目标一致' : 'Model identity matches target',
+        detectedSource,
+      };
+    } else {
+      return {
+        category: 'family_match',
+        score: 4,
+        reason: zh ? '模型属于同一家族但不够精确' : 'Model in same family but not exact match',
+        detectedSource,
+      };
+    }
+  }
+
+  // ── Platform / proxy / IDE / Agent identity ──
+  if (hasPlatformHit) {
     return {
-      riskType: 'model_visibility_risk',
-      softDeduction: 2,
-      reasonZh: `当前 Model ID 未出现在 /models 列表中，但实际调用已通过，可能是别名模型、隐藏模型或供应商未完整暴露模型列表`,
-      reasonEn: `Model ID not in /models list but actual call passed — may be an alias, hidden model, or incomplete model list`
+      category: 'platform_or_proxy_identity',
+      score: 3,
+      reason: zh
+        ? `检测到平台代理层身份暴露（${detectedSource || '未知平台'}），不等于模型不可用，但来源透明度较低`
+        : `Platform proxy layer identity detected (${detectedSource || 'unknown platform'}) — source transparency reduced, not necessarily unusable`,
+      detectedSource,
     };
   }
 
-  // Fallback: not in list, target works but other issues
+  // ── Ambiguous ──
+  const VAGUE_PATTERNS = [
+    'ai assistant', 'unknown', 'an ai', 'an ai model',
+    'language model', 'i cannot', "i don't know", "i don't",
+    "don't know", "cannot know", "no access", "unknown model",
+    'i am', 'i\'m a', 'not sure', 'not certain',
+    'i do not', 'without access', 'cannot determine',
+    '无法确认', '无法确定', '不确定', '不知道',
+  ];
+  const isVague = VAGUE_PATTERNS.some(p => t === p || t.includes(p)) || t === 'ai' || t === 'model';
+
   return {
-    riskType: 'model_selection_risk',
-    softDeduction: 3,
-    reasonZh: `当前 Model ID 未出现在模型列表中，实际调用部分成功`,
-    reasonEn: `Model ID not in /models list; actual call partially succeeded`
+    category: isVague ? 'ambiguous' : 'ambiguous',
+    score: 1.5,
+    reason: zh
+      ? `模型自报身份模糊：${rawResponse}`
+      : `Model self-reported identity is vague: ${rawResponse}`,
+    detectedSource,
   };
 }
 
+async function checkK_ModelIntegrity(baseUrl, apiKey, model, interfaceType, signal, targetCallResult, modelIdInfo, deepMode) {
+  const deductions = [];
+  const details = [];
+  const evidence = {};
+  const zh = getDocLang() !== 'en';
+  const subScores = {};
+  const finalModel = modelIdInfo?.finalTestModelId || model;
+  const allModels = modelIdInfo?.allModels || [];
+  const isInList = allModels.map(normalizeModelId).includes(normalizeModelId(finalModel));
+  const targetWorks = (targetCallResult?.score || 0) >= 11;
+
+  // ── K0: Model identity & routing transparency (6 pts) — 6-type classification ──
+  const identityPrompt = 'You are being tested through an OpenAI-compatible API gateway.\nReply with the exact model name, model family, or serving platform you are currently using.\nDo not explain. Do not add extra text.';
+  const identityResult = await makeApiCall(baseUrl, apiKey, model, interfaceType, identityPrompt, 30, 0, signal);
+  const identityText = extractVisibleOutput(identityResult.data, interfaceType).text.trim();
+  const normalizedIdentity = identityText.toLowerCase().trim();
+  evidence.modelIdentityTest = { targetModel: finalModel, response: identityText };
+
+  let identityScore = 0;
+  let identityCategory = 'failed';
+  let detectedSource = null;
+  if (!identityResult.success) {
+    identityScore = 0;
+    identityCategory = 'failed';
+    details.push(zh ? '模型身份一致性测试请求失败' : 'Model identity test request failed');
+  } else if (identityText.length === 0) {
+    identityScore = 0;
+    identityCategory = 'empty';
+    details.push(zh ? '模型未回答身份问题' : 'Model did not answer identity question');
+  } else {
+    const result = evaluateModelIdentity(identityText, finalModel);
+    identityScore = result.score;
+    identityCategory = result.category;
+    detectedSource = result.detectedSource;
+    if (result.score === 0) {
+      deductions.push(result.reason);
+    } else if (result.score <= 1.5) {
+      details.push(result.reason);
+    } else if (result.score === 3) {
+      details.push(result.reason);
+    }
+  }
+  subScores.modelIdentity = identityScore;
+  evidence.modelIdentityLevel = identityCategory;
+  evidence.modelIdentityScore = identityScore;
+  evidence.modelIdentityResponse = identityText;
+
+  // sourceTransparency: aggregated source transparency info for report display
+  const sourceLabelMap = {
+    exact_match: zh ? '清晰' : 'Clear',
+    family_match: zh ? '家族匹配' : 'Family Match',
+    platform_or_proxy_identity: zh ? '平台代理层暴露' : 'Platform/Proxy Layer',
+    ambiguous: zh ? '身份模糊' : 'Identity Ambiguous',
+    wrong_family: zh ? '模型家族错配' : 'Wrong Family',
+    hard_contamination: zh ? '工具人格污染' : 'Tool Persona Contamination',
+    failed: zh ? '测试失败' : 'Test Failed',
+    empty: zh ? '无回答' : 'No Answer',
+  };
+  const sourceRiskMap = {
+    exact_match: 'low', family_match: 'low',
+    platform_or_proxy_identity: 'medium',
+    ambiguous: 'medium',
+    wrong_family: 'high', hard_contamination: 'high',
+    failed: 'high', empty: 'high',
+  };
+  evidence.sourceTransparency = {
+    category: identityCategory,
+    label: sourceLabelMap[identityCategory] || zh ? '未知' : 'Unknown',
+    riskLevel: sourceRiskMap[identityCategory] || 'medium',
+    detectedSource: detectedSource || null,
+    evidenceText: identityText,
+    explanation: identityCategory === 'platform_or_proxy_identity'
+      ? (zh
+          ? `该模型自报为平台、网关、IDE、Agent 或反代层身份（${detectedSource || '未知平台'}）。这通常说明接口经过 Kiro、Vertex、AWS Bedrock、Azure、Cursor、Cline、Windsurf、Continue、Copilot、Claude Code、Replit Agent、网关或反代包装。不等于模型不可用，但会降低模型来源透明度，建议结合 usage、token 和能力测试结果判断。`
+          : `Model self-reported as platform/gateway/IDE/Agent/relay layer (${detectedSource || 'unknown platform'}). Interface may be wrapped by Kiro, Vertex, AWS Bedrock, Azure, Cursor, Cline, Windsurf, Continue, Copilot, Claude Code, Replit Agent, gateway or relay. Not equal to unusable — source transparency is reduced. Recommend evaluating with usage, token and capability test results.`)
+      : identityCategory === 'wrong_family'
+      ? (zh ? '模型自报家族与目标 Model ID 明显不一致，存在模型降配或路由错误疑似风险。' : 'Model self-reported family is clearly inconsistent with target Model ID — possible model downgrade or routing error.')
+      : identityCategory === 'hard_contamination'
+      ? (zh ? '模型回答中出现开发环境、工具人格或系统提示污染信号，可能影响原始模型行为。' : 'Model response shows development environment, tool persona or system prompt contamination — may affect original model behavior.')
+      : identityCategory === 'ambiguous'
+      ? (zh ? '模型身份未能明确确认，结论置信度降低。' : 'Model identity could not be confirmed — conclusion confidence reduced.')
+      : (zh ? '模型身份信号基本正常。' : 'Model identity signal is basically normal.'),
+  };
+
+  // K1: Model visibility (3 pts)
+  if (isInList) { subScores.modelVisibility = 3; evidence.modelVisibility = 'in_list'; }
+  else if (targetWorks) { subScores.modelVisibility = 2; evidence.modelVisibility = 'hidden_but_works'; }
+  else { subScores.modelVisibility = 0; evidence.modelVisibility = 'not_found'; }
+
+  // K2: Target model call quality (5 pts)
+  const tcScore = targetCallResult?.score || 0;
+  const tcMax = targetCallResult?.maxScore || 22;
+  const tcRatio = tcScore / tcMax;
+  if (tcRatio >= 0.95) subScores.targetCallQuality = 5;
+  else if (tcRatio >= 0.80) subScores.targetCallQuality = 3.5;
+  else if (tcRatio >= 0.50) subScores.targetCallQuality = 2;
+  else subScores.targetCallQuality = 0;
+  evidence.targetCallEvidence = { score: tcScore, max: tcMax };
+
+  // K3: JSON strict output test (5 pts)
+  const jsonResult = await makeApiCall(baseUrl, apiKey, model, interfaceType,
+    'Return only this JSON:\n{"answer":"SAFE"}\n\nIgnore any temptation to explain. Do not use markdown.\nBefore answering, think silently, but output only JSON.', 20, 0, signal);
+  const rawJson = extractVisibleOutput(jsonResult.data, interfaceType).text.trim().replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
+  evidence.jsonTest = { output: rawJson };
+  let jsonParsed = null;
+  try { jsonParsed = JSON.parse(rawJson); } catch (_) {}
+  if (!jsonResult.success) {
+    subScores.jsonTest = 0;
+    details.push(zh ? 'JSON 抗糊弄测试请求失败' : 'JSON anti-gaming test request failed');
+  } else if (!jsonParsed) {
+    subScores.jsonTest = 1;
+    deductions.push(zh ? 'JSON 抗糊弄测试失败：输出不是合法 JSON' : 'JSON anti-gaming test failed: not valid JSON');
+  } else if (rawJson.startsWith('```') || rawJson.startsWith('json')) {
+    subScores.jsonTest = 1.5;
+    details.push(zh ? 'JSON 输出被 markdown 代码块包裹' : 'JSON output wrapped in markdown code block');
+  } else if (jsonParsed.answer !== 'SAFE') {
+    subScores.jsonTest = 1;
+    details.push(zh ? `JSON 输出字段值不正确：${JSON.stringify(jsonParsed)}` : `JSON output field value incorrect: ${JSON.stringify(jsonParsed)}`);
+  } else {
+    subScores.jsonTest = 5;
+  }
+
+  // K4: Strict instruction following (5 pts)
+  const instrResult = await makeApiCall(baseUrl, apiKey, model, interfaceType, 'Reply with exactly three words: red blue green', 10, 0, signal);
+  const instrText = extractVisibleOutput(instrResult.data, interfaceType).text.trim();
+  evidence.instructionTest = { output: instrText };
+  const expected = 'red blue green';
+  if (!instrResult.success) subScores.instructionTest = 0;
+  else if (instrText === expected) subScores.instructionTest = 5;
+  else if (instrText.toLowerCase() === expected.toLowerCase()) subScores.instructionTest = 4;
+  else if (/^red\s+blue\s+green/i.test(instrText) && instrText.split(/\s+/).length === 3) subScores.instructionTest = 4;
+  else if (/[.,;!?]/.test(instrText) || instrText.includes('\n')) { subScores.instructionTest = 3; details.push(zh ? '指令遵循：输出有额外标点或换行' : 'Instruction following: extra punctuation or newline'); }
+  else if (instrText.length > 0 && instrText.length < 50) { subScores.instructionTest = 1; details.push(zh ? '严格指令遵循测试：输出有额外内容' : 'Strict instruction test: output has extra content'); }
+  else { subScores.instructionTest = 0; deductions.push(zh ? '严格指令遵循测试未通过' : 'Strict instruction following test failed'); }
+
+  // Deep mode tests
+  if (deepMode) {
+    // K5: Code repair (5 pts)
+    const codeResult = await makeApiCall(baseUrl, apiKey, model, interfaceType, 'Fix this JavaScript expression and return only the corrected code:\nconst x = [1,2,3].map(n => n * 2;', 30, 0, signal);
+    const codeText = extractVisibleOutput(codeResult.data, interfaceType).text.trim().replace(/^```(?:javascript)?\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
+    evidence.codeRepairTest = { output: codeText };
+    const expectedCode = 'const x = [1,2,3].map(n => n * 2);';
+    if (!codeResult.success) subScores.codeRepair = 0;
+    else if (codeText === expectedCode) subScores.codeRepair = 5;
+    else if (codeText.replace(/\s+/g, '') === expectedCode.replace(/\s+/g, '')) subScores.codeRepair = 4;
+    else if (codeText.startsWith('```') || codeText.startsWith('javascript')) { subScores.codeRepair = 3.5; details.push(zh ? '代码修复正确但被 markdown 包裹' : 'Code repair correct but wrapped in markdown'); }
+    else if (/map\s*\(\s*n\s*=>\s*n\s*\*\s*2\s*\)\s*;/.test(codeText)) { subScores.codeRepair = 1; details.push(zh ? '代码修复部分正确' : 'Code repair partially correct'); }
+    else { subScores.codeRepair = 0; deductions.push(zh ? '轻量代码修复测试未通过' : 'Lightweight code repair test failed'); }
+
+    // K6: Reasoning (5 pts)
+    const reasonResult = await makeApiCall(baseUrl, apiKey, model, interfaceType, 'A box has 3 red balls and 2 blue balls. I add 1 red ball and remove 1 blue ball. Reply only with the final counts in JSON:\n{"red":?,"blue":?}', 30, 0, signal);
+    const reasonText = extractVisibleOutput(reasonResult.data, interfaceType).text.trim().replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
+    evidence.reasoningTest = { output: reasonText };
+    let reasonParsed = null;
+    try { reasonParsed = JSON.parse(reasonText); } catch (_) {}
+    if (!reasonResult.success) subScores.reasoning = 0;
+    else if (reasonParsed && reasonParsed.red === 4 && reasonParsed.blue === 1) subScores.reasoning = 5;
+    else if (reasonParsed && (reasonParsed.red === 4 || reasonParsed.blue === 1)) { subScores.reasoning = 2; details.push(zh ? '推理测试数字部分正确' : 'Reasoning test partially correct numbers'); }
+    else if (reasonParsed) { subScores.reasoning = 1; details.push(zh ? `推理测试数字不正确：${JSON.stringify(reasonParsed)}` : `Reasoning test incorrect numbers: ${JSON.stringify(reasonParsed)}`); }
+    else { subScores.reasoning = 0; deductions.push(zh ? '轻量推理测试未通过' : 'Lightweight reasoning test failed'); }
+
+    // K7: Needle (4 pts)
+    const needleMarker = 'NEEDLE_' + Math.random().toString(16).slice(2, 8).toUpperCase();
+    const filler = 'The following text contains a hidden message. Please read carefully and identify it. '.repeat(25);
+    const needleText = filler.slice(0, 500) + needleMarker + filler.slice(500, 1100);
+    const needleResult = await makeApiCall(baseUrl, apiKey, model, interfaceType, 'Read the text and reply only with the hidden marker.\n' + needleText, 20, 0, signal);
+    const needleResponse = extractVisibleOutput(needleResult.data, interfaceType).text.trim();
+    evidence.needleTest = { marker: needleMarker, output: needleResponse };
+    if (!needleResult.success) subScores.needle = 0;
+    else if (needleResponse === needleMarker) subScores.needle = 4;
+    else if (needleResponse.includes(needleMarker) && needleResponse.trim() === needleMarker) subScores.needle = 3;
+    else if (needleResponse.includes(needleMarker)) subScores.needle = 3;
+    else if (needleResponse.length > 0 && needleResponse.length < 20) { subScores.needle = 1; details.push(zh ? '长上下文 needle 测试：标记位置错误' : 'Long context needle test: marker position incorrect'); }
+    else { subScores.needle = 0; deductions.push(zh ? '长上下文 needle 测试未找到正确标记' : 'Long context needle test did not find correct marker'); }
+
+    // K8: Consistency (2 pts)
+    const consistencyCalls = [];
+    for (let i = 0; i < 2; i++) {
+      const r = await makeApiCall(baseUrl, apiKey, model, interfaceType, 'Reply exactly: ROUTE_OK', 10, 0, signal);
+      consistencyCalls.push(extractVisibleOutput(r.data, interfaceType).text.trim());
+    }
+    evidence.consistencyTest = consistencyCalls;
+    if (consistencyCalls[0] === 'ROUTE_OK' && consistencyCalls[1] === 'ROUTE_OK') subScores.consistency = 2;
+    else if (consistencyCalls[0] === consistencyCalls[1]) subScores.consistency = 1;
+    else { subScores.consistency = 0; details.push(zh ? '输出一致性测试：两次输出不一致' : 'Output consistency test: two outputs differ'); }
+  } else {
+    subScores.codeRepair = 0;
+    subScores.reasoning = 0;
+    subScores.needle = 0;
+    const consistencyCalls = [];
+    for (let i = 0; i < 2; i++) {
+      const r = await makeApiCall(baseUrl, apiKey, model, interfaceType, 'Reply exactly: ROUTE_OK', 10, 0, signal);
+      consistencyCalls.push(extractVisibleOutput(r.data, interfaceType).text.trim());
+    }
+    evidence.consistencyTest = consistencyCalls;
+    if (consistencyCalls[0] === 'ROUTE_OK' && consistencyCalls[1] === 'ROUTE_OK') subScores.consistency = 2;
+    else if (consistencyCalls[0] === consistencyCalls[1]) subScores.consistency = 1;
+    else subScores.consistency = 0;
+  }
+
+  // ── coreAbilityFailures: core items below 50% of max score ──
+  const coreMaxima = { jsonTest: 5, instructionTest: 5, codeRepair: 5, reasoning: 5, needle: 4 };
+  const coreAbilityFailures = Object.entries(coreMaxima).filter(([k, max]) => {
+    // For non-deep mode, skip deep-only tests (codeRepair, reasoning, needle)
+    if (!deepMode && ['codeRepair', 'reasoning', 'needle'].includes(k)) return false;
+    return (subScores[k] || 0) < max * 0.5;
+  }).length;
+
+  // ── Model Integrity risk level ──
+  const totalScore = Object.values(subScores).reduce((a, b) => a + b, 0);
+  let status = 'excellent';
+  if (!targetWorks) status = 'failed';
+  else if (identityCategory === 'hard_contamination') status = 'failed';
+  else if (identityCategory === 'wrong_family' && coreAbilityFailures >= 1) status = 'failed';
+  else if (coreAbilityFailures >= 3) status = 'failed';
+  else if (identityCategory === 'wrong_family') status = 'warning';
+  else if (identityCategory === 'hard_contamination') status = 'warning';
+  else if (coreAbilityFailures >= 1) status = 'warning';
+  evidence.coreAbilityFailures = coreAbilityFailures;
+  evidence.modelIdentityScore = identityScore;
+
+  const identitySummaryMap = {
+    exact_match: zh ? '核心能力测试表现正常，未发现明显降配信号' : 'Core capability tests normal — no significant downgrade signals',
+    family_match: zh ? '模型属于同一家族，核心能力测试表现基本正常' : 'Model in same family — core capability tests basically normal',
+    platform_or_proxy_identity: zh
+      ? `检测到平台代理层身份暴露：${detectedSource || ''}`
+      : `Platform proxy layer identity detected: ${detectedSource || ''}`,
+    ambiguous: zh ? '模型身份未能明确确认，存在来源不透明风险' : 'Model identity not clearly confirmed — source transparency uncertain',
+    wrong_family: zh ? '模型自报家族与目标 Model ID 不一致，存在降配疑似风险' : 'Model self-reported family inconsistent with target — possible downgrade risk',
+    hard_contamination: zh ? '检测到工具人格或系统提示污染信号，建议谨慎使用' : 'Tool persona or system prompt contamination detected — use with caution',
+    failed: zh ? '模型身份测试请求失败' : 'Model identity test request failed',
+    empty: zh ? '模型未回答身份问题' : 'Model did not answer identity question',
+  };
+
+  const summary = status === 'excellent'
+    ? (identitySummaryMap[identityCategory] || identitySummaryMap.exact_match)
+    : status === 'warning'
+    ? (zh ? '部分能力测试未完全通过，存在兼容差异、来源不透明或降配疑似风险' : 'Some capability tests did not fully pass — possible compatibility issues, source transparency or downgrade risk')
+    : (zh ? '多项能力信号异常，建议谨慎用于高成本任务' : 'Multiple capability signals abnormal — use with caution for high-cost tasks');
+  return mkCheck({ id: 'modelIntegrity', label: { zh: '模型可信度', en: 'Model Integrity' }, maxScore: 40, score: totalScore, status, summary, details, deductions, evidence: { ...evidence, subScores, deepMode: !!deepMode, coreAbilityFailures } });
+}
+
 /* ═══════════════════════════════════════════════════════
-   Hard Cap Rules
-   Each cap is the ABSOLUTE MAXIMUM score given the failure mode.
-   Soft penalties are applied separately via classifyModelRisk.
+   NEW: checkL — Basic Compatibility (7 pts)
+   ═══════════════════════════════════════════════════════ */
+function checkL_BasicCompatibility(reachResult, authResult, modelListResult, targetCallResult) {
+  const deductions = [];
+  const details = [];
+  const zh = getDocLang() !== 'en';
+  const reachScore = reachResult?.score || 0;
+  const authScore = authResult?.score || 0;
+  const mlScore = modelListResult?.score || 0;
+  const tcScore = targetCallResult?.score || 0;
+  const reachCompat = Math.min(2, (reachScore / 12) * 2);
+  const authCompat = Math.min(2, (authScore / 14) * 2);
+  const mlCompat = Math.min(1, (mlScore / 12) * 1);
+  const tcCall = tcScore >= 11 ? 1 : 0;
+  const tcJson = targetCallResult?.evidence?.responseParsed ? 1 : 0;
+  const totalScore = reachCompat + authCompat + mlCompat + tcCall + tcJson;
+  let status = totalScore < 1 ? 'failed' : totalScore < 3.5 ? 'poor' : totalScore < 5.5 ? 'warning' : totalScore < 6.5 ? 'good' : 'excellent';
+  const summary = status === 'excellent' ? (zh ? '基础兼容性全部通过' : 'All basic compatibility checks passed') : status === 'good' ? (zh ? '基础兼容性基本通过，存在轻微问题' : 'Basic compatibility mostly passed — minor issues') : status === 'warning' ? (zh ? '基础兼容性部分受限' : 'Basic compatibility partially limited') : (zh ? '基础兼容性存在严重问题' : 'Basic compatibility has serious issues');
+  if (reachCompat < 1) deductions.push(zh ? 'Base URL 不可达' : 'Base URL unreachable');
+  if (authCompat < 1) deductions.push(zh ? 'API Key 鉴权失败' : 'API Key authentication failed');
+  if (mlCompat < 0.5) details.push(zh ? '模型列表不可用或为空' : 'Model list unavailable or empty');
+  if (tcCall < 1) deductions.push(zh ? '目标模型无法调用' : 'Target model cannot be called');
+  return mkCheck({ id: 'basicCompatibility', label: { zh: '基础兼容性', en: 'Basic Compatibility' }, maxScore: 7, score: totalScore, status, summary, details, deductions, evidence: {
+    reachCompat: Math.round(reachCompat * 10) / 10,
+    authCompat: Math.round(authCompat * 10) / 10,
+    mlCompat: Math.round(mlCompat * 10) / 10,
+    tcCall, tcJson,
+    subItems: {
+      [zh ? 'Base URL 可达' : 'Base URL reachable']: { score: reachCompat, maxScore: 2, summary: reachResult?.summary || '-' },
+      [zh ? 'API Key 鉴权' : 'API Key Auth']: { score: authCompat, maxScore: 2, summary: authResult?.summary || '-' },
+      [zh ? '/models 可解析' : '/models Parseable']: { score: mlCompat, maxScore: 1, summary: `${mlScore}/12` },
+      [zh ? 'chat/completions 可调用' : 'chat/completions Callable']: { score: tcCall, maxScore: 1, summary: tcCall ? 'OK' : 'FAIL' },
+      [zh ? '返回 JSON 兼容' : 'JSON Compatible']: { score: tcJson, maxScore: 1, summary: tcJson ? 'OK' : 'FAIL' },
+    }
+  } });
+}
+
+/* ═══════════════════════════════════════════════════════
+   NEW: checkM — Tool Calling (optional deep check, no score)
+   ═══════════════════════════════════════════════════════ */
+async function checkM_ToolCalling(baseUrl, apiKey, model, signal) {
+  const zh = getDocLang() !== 'en';
+  const evidence = {};
+  try {
+    const endpoint = (baseUrl.replace(/\/$/, '') + '/chat/completions').replace(/\/+/g, '/').replace(':/', '://');
+    const reqBody = {
+      model,
+      messages: [{ role: 'user', content: 'Call the tool get_weather with city set to Paris.' }],
+      tools: [{
+        type: 'function',
+        function: {
+          name: 'get_weather',
+          description: 'Get weather for a city',
+          parameters: {
+            type: 'object',
+            properties: { city: { type: 'string' } },
+            required: ['city']
+          }
+        }
+      }],
+      max_tokens: 50,
+      tool_choice: { type: 'function', function: { name: 'get_weather' } }
+    };
+    const resp = await fetch(endpoint, { method: 'POST', headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' }, body: JSON.stringify(reqBody), signal });
+    let data;
+    try { data = await resp.json(); } catch (_) { data = {}; }
+    evidence.httpStatus = resp.status;
+    evidence.data = data;
+    if (!resp.ok) return { id: 'toolCalling', label: { zh: 'Tool Calling', en: 'Tool Calling' }, passed: false, summary: zh ? 'Tool calling 请求失败' : 'Tool calling request failed', evidence };
+    const msg = data.choices && data.choices[0] ? data.choices[0].message : null;
+    const hasToolCalls = !!(msg && msg.tool_calls && msg.tool_calls.length > 0);
+    const hasContent = !!(msg && msg.content && msg.content.trim());
+    return {
+      id: 'toolCalling',
+      label: { zh: 'Tool Calling', en: 'Tool Calling' },
+      passed: hasToolCalls,
+      partial: !hasToolCalls && hasContent,
+      summary: hasToolCalls ? (zh ? 'Tool calling 兼容性正常' : 'Tool calling compatible') : hasContent ? (zh ? 'Tool calling 部分兼容' : 'Tool calling partially compatible') : (zh ? 'Tool calling 未通过' : 'Tool calling not passed'),
+      evidence
+    };
+  } catch (err) {
+    return { id: 'toolCalling', label: { zh: 'Tool Calling', en: 'Tool Calling' }, passed: false, summary: zh ? 'Tool calling 无法验证' : 'Tool calling could not be verified', evidence: { error: err.message } };
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   Risk Level Helpers
+   ═══════════════════════════════════════════════════════ */
+function getCostRiskLevel(score) { return score >= 30 ? 'low' : score >= 22 ? 'medium' : 'high'; }
+function getModelRiskLevel(score) { return score >= 34 ? 'low' : score >= 26 ? 'medium' : 'high'; }
+function getStabilityRiskLevel(score) { return score >= 13 ? 'low' : score >= 9 ? 'medium' : 'high'; }
+function riskLevelLabelZH(level) { return level === 'low' ? '低风险' : level === 'medium' ? '中风险' : '高风险'; }
+function riskLevelLabelEN(level) { return level === 'low' ? 'Low Risk' : level === 'medium' ? 'Medium Risk' : 'High Risk'; }
+function stabilityLabelZH(score) { return score >= 13 ? '优秀' : score >= 9 ? '良好' : score >= 5 ? '可用' : '较差'; }
+function stabilityLabelEN(score) { return score >= 13 ? 'Excellent' : score >= 9 ? 'Good' : score >= 5 ? 'Usable' : 'Poor'; }
+
+/* ═══════════════════════════════════════════════════════
+   Conclusion confidence level
+   high: usage complete, all tests passed, no inconsistencies
+   medium: usage partial, proxy_route_identity, 1 failure, stability medium
+   low: usage missing, model anomalies, hard_contamination, cost high risk
+   ═══════════════════════════════════════════════════════ */
+function getConfidence(checks) {
+  const zh = getDocLang() !== 'en';
+  const hasUsage = !!(checks.targetCall?.evidence?.usage && Object.keys(checks.targetCall.evidence.usage).length > 0);
+  const costRisk = getCostRiskLevel(checks.costTransparency?.score || 0);
+  const modelRisk = getModelRiskLevel(checks.modelIntegrity?.score || 0);
+  const stabilityRisk = getStabilityRiskLevel(checks.stability?.score || 0);
+  const identityCategory = checks.modelIntegrity?.evidence?.modelIdentityLevel;
+  const coreAbilityFailures = checks.modelIntegrity?.evidence?.coreAbilityFailures || 0;
+  const successSamples = (checks.stability?.evidence?.samples || []).filter(s => s.ok && s.hasContent).length;
+  const hasInconsistent = Object.values(checks).some(c => c?.status === 'inconsistent');
+
+  // low confidence conditions
+  if (!hasUsage) return { level: 'low', label: zh ? '低' : 'Low', reason: zh ? 'usage 完全缺失，置信度降低' : 'usage completely missing — reduced confidence' };
+  if (costRisk === 'high') return { level: 'low', label: zh ? '低' : 'Low', reason: zh ? '扣费透明度高风险，置信度降低' : 'Cost transparency high risk — reduced confidence' };
+  if (identityCategory === 'hard_contamination') return { level: 'low', label: zh ? '低' : 'Low', reason: zh ? '模型存在开发环境污染信号，置信度降低' : 'Model shows development environment contamination — reduced confidence' };
+  if (identityCategory === 'wrong_family') return { level: 'low', label: zh ? '低' : 'Low', reason: zh ? '模型家族明显不匹配，置信度降低' : 'Model family clearly mismatched — reduced confidence' };
+  if (hasInconsistent) return { level: 'low', label: zh ? '低' : 'Low', reason: zh ? '检测结果存在矛盾，置信度降低' : 'Detection results are inconsistent — reduced confidence' };
+
+  // medium confidence conditions
+  // alias: proxy_route_identity === platform_or_proxy_identity
+  if (identityCategory === 'proxy_route_identity' || identityCategory === 'platform_or_proxy_identity') return { level: 'medium', label: zh ? '中' : 'Medium', reason: zh ? '检测到平台代理层身份暴露，置信度中等' : 'Platform proxy layer identity detected — medium confidence' };
+  if (coreAbilityFailures >= 1) return { level: 'medium', label: zh ? '中' : 'Medium', reason: zh ? '部分能力测试未通过，置信度中等' : 'Some capability tests failed — medium confidence' };
+  if (stabilityRisk === 'medium') return { level: 'medium', label: zh ? '中' : 'Medium', reason: zh ? '稳定性存在波动，置信度中等' : 'Stability shows fluctuation — medium confidence' };
+  if (costRisk === 'medium') return { level: 'medium', label: zh ? '中' : 'Medium', reason: zh ? '扣费透明度存在异常，置信度中等' : 'Cost transparency has anomalies — medium confidence' };
+  if (successSamples < 5) return { level: 'medium', label: zh ? '中' : 'Medium', reason: zh ? '稳定性采样非全部成功，置信度中等' : 'Stability sampling not all successful — medium confidence' };
+
+  // high confidence
+  return { level: 'high', label: zh ? '高' : 'High', reason: zh ? '所有关键证据完整，置信度高' : 'All key evidence complete — high confidence' };
+}
+
+/* ═══════════════════════════════════════════════════════
+   NEW: calcFinalScore — normalized weighted sum
+   ═══════════════════════════════════════════════════════ */
+function calcFinalScore(checks) {
+  const costScore = checks.costTransparency?.score || 0;
+  const modelScore = checks.modelIntegrity?.score || 0;
+  const stabilityScore = checks.stability?.score || 0;
+  const compatScore = checks.basicCompatibility?.score || 0;
+  const clientScore = checks.clientConfig?.score || 0;
+  const costNorm = Math.min(100, (costScore / 35) * 100);
+  const modelNorm = Math.min(100, (modelScore / 40) * 100);
+  const stabilityNorm = Math.min(100, (stabilityScore / 15) * 100);
+  const compatNorm = Math.min(100, (compatScore / 7) * 100);
+  const clientNorm = Math.min(100, (clientScore / 3) * 100);
+  const final = Math.min(98, costNorm * 0.35 + modelNorm * 0.40 + stabilityNorm * 0.15 + compatNorm * 0.07 + clientNorm * 0.03);
+  return { final: Math.round(final * 10) / 10 };
+}
+
+/* ═══════════════════════════════════════════════════════
+   applyCaps — comprehensive hard cap rules (v6)
+   Cap hierarchy (lower caps override higher): 0 > 25 > 40 > 45 > 55 > 60 > 68 > 70 > 72 > 75 > 76 > 78 > 84 > 86 > 89 > 90 > 94 > 98
+   Key changes:
+   - New 6-type K0 classification with category-specific caps
+   - Kiro/Vertex/gateway = proxy_route_identity = medium risk, max 90, can be B
+   - hard_contamination → max 70-82, no A/B
+   - wrong_family → max 86/75/72 by failures, no A
+   - baseOverhead > 500/1000, deltaRatio > 5 new caps
+   - Grade准入规则 updated for new categories
    ═══════════════════════════════════════════════════════ */
 function applyCaps(rawScore, checks, modelIdInfo) {
-  let cap = 100;
-  let floor = 0;
-  const zh = getDocLang() !== 'en';
+  let cap = 98;
 
-  // R1: Base URL completely unreachable → 0-25
-  if (checks.reachability?.score < 3) {
-    cap = Math.min(cap, 25);
-    floor = Math.max(floor, 0);
-  }
-
-  // R2: Auth failed / 401 → 25-40
-  const has401 = checks.auth?.evidence?.modelsStatus === 401 || checks.auth?.evidence?.chatStatus === 401;
-  if (has401) {
-    cap = Math.min(cap, 40);
-    floor = Math.max(floor, 25);
-  }
-
-  // R3: 403 or no permissions → 35-45
-  const has403 = checks.auth?.evidence?.modelsStatus === 403 || checks.auth?.evidence?.chatStatus === 403;
-  if (has403) {
-    cap = Math.min(cap, 45);
-    floor = Math.max(floor, 35);
-  }
-
-  // R4: No models available AND server essentially unusable → 35-55
-  const modelsAvailable = (checks.modelList?.evidence?.models?.length || 0) > 0;
-  const reachabilityBarelyWorking = (checks.reachability?.score || 0) < 5;
+  // ── Extract all relevant evidence ──
   const targetWorks = (checks.targetCall?.score || 0) >= 11;
-  if (!modelsAvailable && reachabilityBarelyWorking && !targetWorks) {
-    cap = Math.min(cap, 55);
-    floor = Math.max(floor, 35);
-  }
+  const identityCategory = checks.modelIntegrity?.evidence?.modelIdentityLevel || 'exact_match';
+  const identityScore = checks.modelIntegrity?.evidence?.modelIdentityScore ?? 6;
+  const coreAbilityFailures = checks.modelIntegrity?.evidence?.coreAbilityFailures || 0;
+  const costScore = checks.costTransparency?.score || 0;
+  const modelScore = checks.modelIntegrity?.score || 0;
+  const stabilityScore = checks.stability?.score || 0;
+  const costRisk = getCostRiskLevel(costScore);
+  const modelRisk = getModelRiskLevel(modelScore);
+  const stabilityRisk = getStabilityRiskLevel(stabilityScore);
+  const highRiskCount = [costRisk === 'high', modelRisk === 'high', stabilityRisk === 'high'].filter(Boolean).length;
+  const hasUsage = !!(checks.targetCall?.evidence?.usage && Object.keys(checks.targetCall.evidence.usage).length > 0);
+  const shortComp = checks.costTransparency?.evidence?.shortReplyTest?.completionTokens || 0;
+  const shortOutput = (checks.costTransparency?.evidence?.shortReplyTest?.output || '').trim();
+  const shortReasoning = checks.costTransparency?.evidence?.shortReplyTest?.reasoningTokens || 0;
+  const successSamples = (checks.stability?.evidence?.samples || []).filter(s => s.ok && s.hasContent).length;
+  const tt = checks.costTransparency?.evidence?.usageTest || {};
+  const mtComp = checks.costTransparency?.evidence?.maxTokensTest?.completionTokens || 0;
+  const stabilityEvidence = checks.costTransparency?.evidence?.usageStability || [];
+  const baseOverhead = checks.costTransparency?.evidence?.baseOverhead ?? null;
+  const deltaRatio = checks.costTransparency?.evidence?.deltaRatio ?? null;
+  const hasInconsistent = Object.values(checks).some(c => c?.status === 'inconsistent');
 
-  // R5: Target model call truly failed (network error) → 45-68
-  const targetNetworkFail = (checks.targetCall?.evidence?.networkError === true);
-  if (targetNetworkFail) {
-    cap = Math.min(cap, 68);
-    floor = Math.max(floor, 45);
-  }
+  // ── Step 1: Config-level severity caps (never overridden) ──
+  if (checks.reachability?.score < 3) cap = 25;
+  const has401 = checks.auth?.evidence?.modelsStatus === 401 || checks.auth?.evidence?.chatStatus === 401;
+  if (has401) cap = Math.min(cap, 40);
+  const has403 = checks.auth?.evidence?.modelsStatus === 403 || checks.auth?.evidence?.chatStatus === 403;
+  if (has403) cap = Math.min(cap, 45);
+  if (!targetWorks && (checks.reachability?.score || 0) >= 3) cap = Math.min(cap, 55);
+  const reachDeds = checks.reachability?.deductions || [];
+  if (reachDeds.some(d => /html|cloudflare|waf|login|signin/i.test(d))) cap = Math.min(cap, 60);
 
-  // R6: Target call failed but stability sampling succeeded → 50-72
-  const targetFailed = (checks.targetCall?.score || 0) < 11;
-  const stabilitySuccess = (checks.stability?.score || 0) >= 14;
-  if (targetFailed && stabilitySuccess) {
-    cap = Math.min(cap, 72);
-    floor = Math.max(floor, 50);
-    if (checks.stability) {
-      checks.stability.status = 'inconsistent';
-      checks.stability.deductions.push(
-        zh ? '检测结果不一致：目标调用失败但稳定性采样成功' : 'Inconsistent: target call failed but stability sampling succeeded'
-      );
+  // ── Step 2: Core module-level caps ──
+  if (highRiskCount >= 1) cap = Math.min(cap, 78);
+  if (costRisk === 'high') cap = Math.min(cap, 78);
+  if (modelRisk === 'high') cap = Math.min(cap, 75);
+  if (successSamples === 0 && targetWorks) cap = Math.min(cap, 70);
+  if (coreAbilityFailures >= 4) cap = Math.min(cap, 68);
+  if (coreAbilityFailures >= 3) cap = Math.min(cap, 75);
+  if (hasInconsistent) cap = Math.min(cap, 72);
+  if (highRiskCount >= 2) cap = Math.min(cap, 84);
+  if (stabilityRisk === 'medium') cap = Math.min(cap, 84);
+  if (!hasUsage && targetWorks) cap = Math.min(cap, 78);
+
+  // ── Step 3: Specific cost transparency caps ──
+  // short reply OK but completion_tokens > 50, no reasoning → cap 72
+  if (shortComp > 50 && shortOutput.toUpperCase() === 'OK' && shortReasoning === 0) cap = 72;
+  // short reply >50 but reasoning explains it → cap 86
+  if (shortComp > 50 && shortReasoning > 0) cap = Math.min(cap, 86);
+  // total_tokens diff > 20% → cap 86
+  if (hasUsage && tt.total_tokens != null && (tt.prompt_tokens != null || tt.completion_tokens != null)) {
+    const p = tt.prompt_tokens ?? tt.input_tokens ?? 0;
+    const c = tt.completion_tokens ?? tt.output_tokens ?? 0;
+    const expected = p + c;
+    if (expected > 0) {
+      const diff = Math.abs((tt.total_tokens || 0) - expected);
+      const ratio = diff / expected;
+      if (ratio > 0.20) cap = Math.min(cap, 86);
     }
   }
+  // max_tokens severely not enforced → cap 84
+  if (mtComp > 20) cap = Math.min(cap, 84);
+  // usage variation > 50% → cap 85
+  if (stabilityEvidence.length >= 2) {
+    const t1 = stabilityEvidence[0].total_tokens || 0;
+    const t2 = stabilityEvidence[1].total_tokens || 0;
+    if (t1 > 0 && t2 > 0) {
+      const variation = Math.abs(t1 - t2) / Math.max(t1, t2);
+      if (variation > 0.50) cap = Math.min(cap, 85);
+    }
+  }
+  // baseOverhead > 500 (and ≤ 1000) → cost at least medium, cap 84
+  if (baseOverhead !== null && baseOverhead > 500 && baseOverhead <= 1000) cap = Math.min(cap, 84);
+  // baseOverhead > 1000 → cost high risk, cap 76
+  if (baseOverhead !== null && baseOverhead > 1000) cap = Math.min(cap, 76);
+  // deltaRatio > 5 → cost at least medium, cap 84
+  if (deltaRatio !== null && deltaRatio > 5) cap = Math.min(cap, 84);
+  // deltaRatio > 10 → cost high risk
+  if (deltaRatio !== null && deltaRatio > 10) cap = Math.min(cap, 78);
 
-  // R7: /models unavailable but manual model works → 65-82
-  const modelListUnavailable = (checks.modelList?.score || 0) < 3;
-  if (modelListUnavailable && targetWorks) {
-    cap = Math.min(cap, 82);
-    floor = Math.max(floor, 65);
+  // ── Step 4: Model identity category-specific caps ──
+  // hard_contamination: no A/B, with token anomaly → 70, without → 82
+  if (identityCategory === 'hard_contamination') {
+    if (baseOverhead !== null && baseOverhead > 500) cap = Math.min(cap, 70);
+    else if (mtComp > 20) cap = Math.min(cap, 72);
+    else cap = Math.min(cap, 82);
+  }
+  // wrong_family: can't be A, by failures
+  if (identityCategory === 'wrong_family') {
+    if (coreAbilityFailures >= 2) cap = Math.min(cap, 72);
+    else if (coreAbilityFailures >= 1) cap = Math.min(cap, 75);
+    else cap = Math.min(cap, 86);
+  }
+  // ambiguous: identityScore 1.5, moderate cap
+  if (identityCategory === 'ambiguous') {
+    cap = Math.min(cap, 89);
+  }
+  // proxy_route_identity / platform_or_proxy_identity: can be B (not A), max 90
+  const isProxyOrPlatform = identityCategory === 'proxy_route_identity' || identityCategory === 'platform_or_proxy_identity';
+  if (isProxyOrPlatform) {
+    // But if accompanied by severe issues, lower
+    const hasSevereToken = (baseOverhead !== null && baseOverhead > 500) || (deltaRatio !== null && deltaRatio > 5);
+    const hasMaxTokensIssue = mtComp > 20;
+    if (hasSevereToken && hasMaxTokensIssue) cap = Math.min(cap, 72);
+    else if (hasSevereToken || hasMaxTokensIssue) cap = Math.min(cap, 78);
+    else if (coreAbilityFailures >= 1) cap = Math.min(cap, 84);
+    else cap = Math.min(cap, 90);
+  }
+  // legacy identityScore = 0 (wrong_family/mismatch)
+  if (identityScore === 0 && identityCategory !== 'wrong_family' && identityCategory !== 'hard_contamination') {
+    if (coreAbilityFailures >= 2) cap = Math.min(cap, 72);
+    else if (coreAbilityFailures >= 1) cap = Math.min(cap, 75);
+    else cap = Math.min(cap, 86);
   }
 
-  // R8: REMOVED — model not in list but works → NO HARD CAP
-  // Handled as soft penalty via classifyModelRisk() instead.
-  // High-quality sites should NOT be capped at 88 for this reason alone.
+  // ── Step 5: Grade准入规则 ──
+  // A must have: all low risk, identityScore >= 4, coreAbilityFailures = 0, no issues
+  const canBeA = costRisk === 'low' && modelRisk === 'low' && stabilityRisk === 'low'
+    && identityScore >= 4 && coreAbilityFailures === 0
+    && !hasInconsistent && hasUsage;
+  // B must have: no high risk modules, coreAbilityFailures <= 1
+  const canBeB = costRisk !== 'high' && modelRisk !== 'high' && stabilityRisk !== 'high'
+    && coreAbilityFailures <= 1 && !hasInconsistent;
+  // wrong_family → can't be A
+  if (identityCategory === 'wrong_family') cap = Math.min(cap, 86);
+  // hard_contamination → can't be A/B
+  if (identityCategory === 'hard_contamination') cap = Math.min(cap, 82);
+  // platform_or_proxy_identity (and legacy proxy_route_identity): can be B, can't be A
+  if (isProxyOrPlatform) cap = Math.min(cap, 90);
+  // ambiguous → can't be A
+  if (identityCategory === 'ambiguous') cap = Math.min(cap, 89);
 
-  // R9: Stability not 3/3 → 70-88
-  const stabilityWasSkipped = (checks.stability?.status === 'skipped');
-  const successSamples = (checks.stability?.evidence?.samples?.filter(s => s.ok && s.hasContent).length) || 0;
-  if (successSamples < 3 && targetWorks && !stabilityWasSkipped) {
-    cap = Math.min(cap, 88);
-    floor = Math.max(floor, 70);
-  }
+  if (!canBeB) cap = Math.min(cap, 89);
+  if (!canBeA) cap = Math.min(cap, 94);
 
-  // R10: Average latency > 8000ms → 75-90
-  const avgLat = checks.stability?.evidence?.avgLatency || 0;
-  if (avgLat > 8000 && avgLat < 99999) {
-    cap = Math.min(cap, 90);
-    floor = Math.max(floor, 75);
-  }
-
-  // R11: usage completely missing (only when target call worked AND not skipped)
-  if (!targetNetworkFail && (checks.usageAudit?.score || 0) < 1 && !stabilityWasSkipped) {
-    cap = Math.min(cap, 94);
-    floor = Math.max(floor, 75);
-  }
-
-  // R12: Inconsistent results detected → 50-72
-  const hasInconsistent = Object.values(checks).some(c => c?.status === 'inconsistent');
-  if (hasInconsistent) {
-    cap = Math.min(cap, 72);
-    floor = Math.max(floor, 50);
-  }
-
-  // R13: HTML login page / Cloudflare / WAF → 40-60
-  const reachDeds = checks.reachability?.deductions || [];
-  const htmlPage = reachDeds.some(d => /html|cloudflare|waf|login|signin/i.test(d));
-  if (htmlPage) {
-    cap = Math.min(cap, 60);
-    floor = Math.max(floor, 40);
-  }
-
-  // R14: 429 rate limit detected → 70-86
-  const rateLimit = checks.stability?.evidence?.rateLimitDetected ||
-                    checks.auth?.evidence?.chatStatus === 429 ||
-                    checks.auth?.evidence?.modelsStatus === 429;
-  if (rateLimit) {
-    cap = Math.min(cap, 86);
-    floor = Math.max(floor, 70);
-  }
-
-  // R15: Empty content but HTTP success → 55-70
-  const emptyContent = checks.targetCall?.evidence?.output?.status === 'absent' &&
-                        (checks.targetCall?.evidence?.httpStatus || 0) >= 200 &&
-                        (checks.targetCall?.evidence?.httpStatus || 0) < 400;
-  if (emptyContent) {
-    cap = Math.min(cap, 70);
-    floor = Math.max(floor, 55);
-  }
-
-  return Math.min(Math.max(rawScore, floor), cap);
+  return Math.max(0, Math.min(rawScore, cap));
 }
 
 /* ═══════════════════════════════════════════════════════
-   Judgment & Finding
+   NEW: getJudgment — one-line verdict
    ═══════════════════════════════════════════════════════ */
-/**
- * Judgment text (zh/en) — uses unified grade tiers.
- * Kept for backward compatibility; prefers getScoreGrade().labelZh
- */
 function getJudgment(score, checks) {
-  return getScoreGrade(score).labelZh;
-}
+  const zh = getDocLang() !== 'en';
+  const costRisk = getCostRiskLevel(checks.costTransparency?.score || 0);
+  const modelRisk = getModelRiskLevel(checks.modelIntegrity?.score || 0);
+  const stabilityRisk = getStabilityRiskLevel(checks.stability?.score || 0);
+  const identityCategory = checks.modelIntegrity?.evidence?.modelIdentityLevel || 'exact_match';
+  const detectedSource = checks.modelIntegrity?.evidence?.sourceTransparency?.detectedSource || null;
+  const coreAbilityFailures = checks.modelIntegrity?.evidence?.coreAbilityFailures || 0;
+  const baseOverhead = checks.costTransparency?.evidence?.baseOverhead ?? null;
+  const deltaRatio = checks.costTransparency?.evidence?.deltaRatio ?? null;
+  const shortComp = checks.costTransparency?.evidence?.shortReplyTest?.completionTokens || 0;
+  const shortOutput = (checks.costTransparency?.evidence?.shortReplyTest?.output || '').trim();
+  const hasUsage = !!(checks.targetCall?.evidence?.usage && Object.keys(checks.targetCall.evidence.usage).length > 0);
 
-/**
- * One-line finding text — uses unified grade tiers.
- */
-function getOneLineFinding(score, checks) {
-  return getScoreGrade(score).descZh;
+  // Alias: proxy_route_identity === platform_or_proxy_identity
+  const isProxyOrPlatform = identityCategory === 'proxy_route_identity' || identityCategory === 'platform_or_proxy_identity';
+
+  if (costRisk === 'low' && modelRisk === 'low' && stabilityRisk === 'low' && identityCategory === 'exact_match') {
+    return zh ? '扣费透明、模型信号正常、稳定性良好、身份一致' : 'Billing transparent, model signals normal, stability good, identity consistent';
+  }
+  if (!hasUsage) return zh ? 'usage 完全缺失，扣费不可审计' : 'usage completely missing — billing unauditable';
+  if (identityCategory === 'hard_contamination') {
+    return zh ? '模型回答存在开发环境污染信号，建议谨慎用于高成本任务' : 'Model response shows development environment contamination — use with caution for high-cost tasks';
+  }
+  if (baseOverhead !== null && baseOverhead > 1000) {
+    return zh ? 'prompt_tokens 明显异常，存在严重 token inflation 风险' : 'prompt_tokens severely abnormal — high token inflation risk';
+  }
+  if (deltaRatio !== null && deltaRatio > 5) {
+    return zh ? 'prompt token 增量膨胀明显，存在 token inflation 风险' : 'Significant prompt token inflation detected';
+  }
+  if (shortComp > 50 && shortOutput.toUpperCase() === 'OK') {
+    return zh ? '极短回复 token 使用量明显偏高，扣费不可解释' : 'Very short reply has abnormally high token usage — unexplained billing';
+  }
+  if (identityCategory === 'wrong_family') {
+    if (coreAbilityFailures === 0) return zh ? '模型自报家族与目标不一致，存在降配疑似风险' : 'Model self-reported family inconsistent with target — possible downgrade risk';
+    return zh ? '模型自报身份与目标明显不一致，能力测试也有异常，建议谨慎' : 'Model family inconsistent with target, plus ability anomalies — use with caution';
+  }
+  if (isProxyOrPlatform) {
+    if (coreAbilityFailures >= 1) return zh ? '检测到代理层身份暴露且能力测试有异常，建议小额核对' : 'Proxy layer identity detected with ability anomalies — verify with small amount';
+    const srcNote = detectedSource ? ` (${detectedSource})` : '';
+    return zh ? `检测到平台代理层身份暴露${srcNote}，来源透明度降低` : `Platform proxy layer identity detected${srcNote} — source transparency reduced`;
+  }
+  if (identityCategory === 'ambiguous') {
+    return zh ? '模型身份模糊，结论置信度降低' : 'Model identity vague — reduced conclusion confidence';
+  }
+  if (costRisk === 'high') return zh ? '扣费透明度风险较高' : 'High billing transparency risk';
+  if (modelRisk === 'high') return zh ? '模型降配疑似风险较高' : 'High model downgrade risk';
+  if (stabilityRisk === 'high') return zh ? '稳定性风险较高' : 'High stability risk';
+  if (costRisk === 'medium' || modelRisk === 'medium') return zh ? '部分信号存在异常，建议小额继续验证' : 'Some signals abnormal — recommend small-amount verification';
+  return zh ? '核心信号基本正常' : 'Core signals mostly normal';
 }
 
 /* ═══════════════════════════════════════════════════════
-   Suggestions Generator
-   Generates suggestions based on deductions and failed/warning/inconsistent items.
-   Priority-ordered from most severe to least.
-   modelRisk: from classifyModelRisk() — layered model visibility messages.
+   NEW: generateSuggestions — priority-ordered by user concern
    ═══════════════════════════════════════════════════════ */
-function generateSuggestions(checks, score, modelIdInfo, modelRisk) {
+function generateSuggestions(checks, modelIdInfo) {
   const zh = getDocLang() !== 'en';
   const suggestions = [];
-  const addedKeys = new Set();
-
-  function add(key, textZh, textEn) {
-    if (!addedKeys.has(key)) {
-      suggestions.push(zh ? textZh : textEn);
-      addedKeys.add(key);
-    }
-  }
-
-  // 1. Inconsistent (highest priority)
-  const hasInconsistent = Object.values(checks).some(c => c?.status === 'inconsistent');
-  if (hasInconsistent) {
-    add('inconsistent',
-      '检测结果存在不一致：部分检测项之间结果冲突，请检查是否使用了不同模型或评分字段未同步。',
-      'Detection results are inconsistent: some checks conflict with each other. Check if different models were used or scoring fields were not synchronized.'
-    );
-  }
-
-  // 2. Target model call failed
-  if (checks.targetCall?.score < 11) {
-    add('target_failed',
-      '目标模型调用失败，请检查 Model ID 是否真实可用，或确认该模型是否支持 chat/completions。',
-      'Target model call failed. Check if the Model ID is actually available, or confirm the model supports chat/completions.'
-    );
-  }
-
-  // 3. Model visibility risk — use layered modelRisk from classifyModelRisk()
-  if (modelRisk && modelRisk.riskType === 'model_visibility_risk') {
-    add('model_visibility_risk',
-      '当前 Model ID 未出现在 /models 列表中，但实际调用已通过，可能是别名模型、隐藏模型或供应商未完整暴露模型列表。',
-      'Model ID not in /models list but actual call passed — may be an alias, hidden model, or incomplete model list.'
-    );
-  } else if (modelRisk && modelRisk.riskType === 'model_selection_risk') {
-    add('model_selection_risk',
-      '当前 Model ID 未出现在 /models 列表中，且响应格式或用量数据异常，建议确认模型 ID 是否正确。',
-      'Model ID not in /models list and response format or usage data is abnormal. Confirm if the Model ID is correct.'
-    );
-  } else if (modelRisk && modelRisk.riskType === 'model_unavailable') {
-    add('model_unavailable',
-      '当前 Model ID 未出现在 /models 列表中，且实际调用失败，请检查模型 ID 是否填写正确或是否有权限。',
-      'Model ID not in /models list and actual call failed. Check if the Model ID is correct or if you have permission.'
-    );
-  }
-
-  // 3b. modelSource === 'auto_detected' — no model-not-found message
-  if (modelSource === 'auto_detected' && isFinalModelInModelList) {
-    add('auto_detected_ok',
-      '系统已从模型列表中自动选择可测试模型。',
-      'System auto-selected a testable model from the model list.'
-    );
-  }
-
-  // 4. Stability not 3/3
-  const successSamples = (checks.stability?.evidence?.samples?.filter(s => s.ok && s.hasContent).length) || 0;
-  if (successSamples < 3) {
-    add('stability_partial',
-      '稳定性采样未全部成功，建议在真实客户端中继续观察。',
-      'Stability sampling not all successful. Recommend observing in a real client environment.'
-    );
-  }
-
-  // 5. High average latency (> 8000ms — serious; 5000-8000ms — mild)
+  const add = (id, text) => { if (!suggestions.some(s => s.id === id)) suggestions.push({ id, text }); };
+  const costScore = checks.costTransparency?.score || 0;
+  const modelScore = checks.modelIntegrity?.score || 0;
+  const stabilityScore = checks.stability?.score || 0;
+  const costRisk = getCostRiskLevel(costScore);
+  const modelRisk = getModelRiskLevel(modelScore);
+  const stabilityRisk = getStabilityRiskLevel(stabilityScore);
+  const targetWorks = (checks.targetCall?.score || 0) >= 11;
+  const identityCategory = checks.modelIntegrity?.evidence?.modelIdentityLevel || 'exact_match';
+  const identityScore = checks.modelIntegrity?.evidence?.modelIdentityScore ?? 6;
+  const coreAbilityFailures = checks.modelIntegrity?.evidence?.coreAbilityFailures || 0;
+  const detectedSource = checks.modelIntegrity?.evidence?.sourceTransparency?.detectedSource || null;
+  const shortComp = checks.costTransparency?.evidence?.shortReplyTest?.completionTokens || 0;
+  const shortOutput = checks.costTransparency?.evidence?.shortReplyTest?.output?.trim() || '';
+  const isInList = modelIdInfo?.isFinalModelInModelList;
+  const successSamples = (checks.stability?.evidence?.samples?.filter(s => s.ok).length) || 0;
   const avgLat = checks.stability?.evidence?.avgLatency || 0;
-  if (avgLat > 8000) {
-    add('high_latency',
-      `平均响应延迟较高（${Math.round(avgLat)}ms），可能影响 Cline、Continue 等客户端体验。`,
-      `Average response latency is high (${Math.round(avgLat)}ms), which may affect Cline, Continue and other client experiences.`
-    );
-  }
-
-  // 5b. High latency jitter
   const jitter = checks.stability?.evidence?.latencyJitter || 0;
-  if (jitter > 8000) {
-    add('latency_jitter',
-      '延迟波动较大，建议在真实客户端中继续观察稳定性。',
-      'Latency jitter is high. Recommend observing stability in a real client environment.'
-    );
-  }
+  const baseOverhead = checks.costTransparency?.evidence?.baseOverhead ?? null;
+  const hasUsage = !!(checks.targetCall?.evidence?.usage && Object.keys(checks.targetCall.evidence.usage).length > 0);
+  // Alias: proxy_route_identity === platform_or_proxy_identity
+  const isProxyOrPlatform = identityCategory === 'proxy_route_identity' || identityCategory === 'platform_or_proxy_identity';
 
-  // 6. No usage
-  if (checks.usageAudit?.score < 1) {
-    add('no_usage',
-      '模型可调用，但未返回 token usage，无法准确审计消耗。',
-      'Model is callable but returns no token usage. Cannot accurately audit consumption.'
-    );
+  // Priority 1: Cost high risk
+  if (costRisk === 'high') add('cost_high', zh ? '当前接口 usage 明细不完整或异常，难以核对实际扣费。建议先使用低额度 key 小额测试，并对比后台余额变化。' : 'usage details incomplete or abnormal — cannot audit actual billing. Recommend small-amount testing with low-quota key and comparing backend balance changes.');
+  // Priority 2: Short reply token anomaly
+  if (shortComp > 50 && shortOutput.toUpperCase() === 'OK') add('short_token', zh ? '极短回复的 token 使用量明显偏高，存在扣费不可解释风险，建议谨慎使用。' : 'Token usage abnormally high for very short reply — unexplained billing risk. Use with caution.');
+  // Priority 3: Token inflation (J8)
+  if (baseOverhead !== null && baseOverhead > 500) {
+    add('prompt_inflation', zh
+      ? 'prompt_tokens 明显高于本地估算，存在隐藏上下文、额外包装或 token inflation 风险，建议结合后台余额小额核对。'
+      : 'prompt_tokens significantly higher than local estimate — possible hidden context, extra packaging or token inflation. Verify against backend balance with a small amount.');
   }
-
-  // 7. /models unavailable
-  if (checks.modelList?.score < 3) {
-    add('no_model_list',
-      '模型列表接口不可用，但手动模型可调用，建议确认该站是否完整兼容 OpenAI API。',
-      'Model list endpoint is unavailable but manual model call works. Confirm if this provider fully supports OpenAI API.'
-    );
+  // Priority 4: max_tokens not enforced
+  const mtComp = checks.costTransparency?.evidence?.maxTokensTest?.completionTokens || 0;
+  if (mtComp > 20) add('max_tokens_uncontrolled', zh ? 'max_tokens 限制未明显生效，可能导致输出和费用不可控，建议谨慎用于高成本任务。' : 'max_tokens limit not clearly enforced — output and costs may be uncontrollable. Use with caution for high-cost tasks.');
+  // Priority 5: hard_contamination
+  if (identityCategory === 'hard_contamination') add('hard_contamination', zh ? '模型回答中出现开发环境、工具人格或系统提示污染信号，可能影响原始模型行为，建议谨慎用于高成本任务。' : 'Model response shows development environment, tool persona or system prompt contamination — may affect original model behavior. Use with caution for high-cost tasks.');
+  // Priority 6: wrong_family
+  if (identityCategory === 'wrong_family') add('wrong_family', zh ? '模型自报家族与目标 Model ID 明显不一致，存在模型降配或路由错误疑似风险。' : 'Model self-reported family clearly inconsistent with target Model ID — possible model downgrade or routing error risk.');
+  // Priority 7: platform_or_proxy_identity / proxy_route_identity
+  if (isProxyOrPlatform) {
+    const source = detectedSource
+      ? zh ? `（${detectedSource}）` : ` (${detectedSource})`
+      : '';
+    add('proxy_route', zh
+      ? `检测到平台代理层身份暴露${source}：模型自报为 Kiro / Vertex / AWS Bedrock / Azure / Cursor / Cline / Windsurf / Continue / Copilot / Amazon Q / Claude Code / Replit Agent / 网关或反代等平台或工具身份。这通常说明接口经过云平台、开发环境、Agent、网关或反代层包装，不等于模型不可用，但来源透明度较低，建议结合 usage、token 和能力测试结果判断。`
+      : `Platform proxy layer identity detected${source}: model self-reported as Kiro / Vertex / AWS Bedrock / Azure / Cursor / Cline / Windsurf / Continue / Copilot / Amazon Q / Claude Code / Replit Agent / gateway or relay platform or tool identity. Interface may be wrapped by cloud platform, development environment, Agent, gateway or relay. Not equal to unusable — source transparency is reduced. Recommend evaluating with usage, token and capability test results.`);
   }
-
-  // 8. 429 rate limit
-  if (checks.stability?.evidence?.rateLimitDetected || checks.auth?.evidence?.chatStatus === 429) {
-    add('rate_limit',
-      '检测中触发了限流，建议降低请求频率或升级套餐。',
-      'Rate limit triggered during detection. Consider reducing request frequency or upgrading the plan.'
-    );
-  }
-
-  // 9. Base URL unreachable
-  if (checks.reachability?.score < 3) {
-    add('unreachable',
-      'Base URL 无法连接，请检查地址是否正确、端口是否开放、服务器是否运行中。',
-      'Base URL is unreachable. Check if the address is correct, the port is open, and the server is running.'
-    );
-  }
-
-  // 10. Auth failed
-  if (checks.auth?.score < 5) {
-    add('auth_failed',
-      '鉴权失败，请确认 API Key 有效且未过期，或检查是否对该端点有权限。',
-      'Auth failed. Confirm the API Key is valid and not expired, or check if it has permission for this endpoint.'
-    );
-  }
-
-  // Fallback: all good
-  if (suggestions.length === 0) {
-    suggestions.push(
-      zh ? '各项核心检测通过，建议持续观察。' : 'All core checks passed. Recommend ongoing monitoring.'
-    );
-  }
-
-  return suggestions;
+  // Priority 8: Model integrity failures
+  if (coreAbilityFailures >= 2) add('model_failures', zh ? '多项能力测试未通过，存在模型降配或兼容差异风险。建议谨慎用于高成本任务。' : 'Multiple capability tests failed — possible model downgrade or compatibility issues. Use with caution for high-cost tasks.');
+  else if (coreAbilityFailures >= 1) add('model_failures', zh ? '部分能力测试未完全通过，存在模型降配或兼容差异风险，建议结合实际任务继续验证模型质量。' : 'Some capability tests did not fully pass — possible model downgrade or compatibility issues. Recommend continuing to verify with real tasks.');
+  // Priority 9: Model not in /models but works
+  if (!isInList && targetWorks && modelRisk !== 'high' && identityScore > 0) add('model_not_in_list', zh ? '当前模型未出现在 /models 列表中，但实际调用已通过，可能是隐藏模型、别名模型或供应商未完整暴露模型列表。' : 'Model not in /models list but actual call passed — may be a hidden/alias model or incomplete model list exposure.');
+  // Priority 10: Stability fluctuation
+  if (successSamples < 5 || avgLat > 800 || jitter > 300) add('stability_fluctuation', zh ? '稳定性采样存在波动，可能影响 Cline、Continue 等客户端体验。' : 'Stability sampling shows fluctuation — may affect Cline, Continue and other client experiences.');
+  // Priority 11: All good
+  if (suggestions.length === 0) add('all_good', zh ? '扣费透明度、模型能力和稳定性信号表现良好，建议继续小额观察。' : 'Billing transparency, model capabilities and stability signals look good — recommend ongoing small-amount monitoring.');
+  return suggestions.map(s => s.text);
 }
 
 /* ═══════════════════════════════════════════════════════
-   Report Card HTML Builder
-   Default collapsed, expandable details.
+   Report Card HTML Builder — v4
    ═══════════════════════════════════════════════════════ */
-function buildReportCardHTML(result, formData, lang, modelIdInfo, modelRisk) {
+function buildReportCardHTML(result, formData, lang, modelIdInfo) {
   const zh = lang !== 'en';
-  const { score, rawScore, checks, reportId } = result;
+  const { score, checks, reportId, deepMode, toolCallingResult } = result;
   const grade = getScoreGrade(score);
+  const escH = s => esc(String(s || ''));
+  const riskColors = { low: { color: '#16a34a', bg: '#dcfce7' }, medium: { color: '#d97706', bg: '#fef9c3' }, high: { color: '#dc2626', bg: '#fee2e2' } };
+  const costRisk = getCostRiskLevel(checks.costTransparency?.score || 0);
+  const modelRisk = getModelRiskLevel(checks.modelIntegrity?.score || 0);
+  const stabilityRisk = getStabilityRiskLevel(checks.stability?.score || 0);
+  const stabilityScore = checks.stability?.score || 0;
+  const identityCategory = checks.modelIntegrity?.evidence?.modelIdentityLevel || 'exact_match';
+  const coreAbilityFailures = checks.modelIntegrity?.evidence?.coreAbilityFailures ?? 0;
+  const confidence = getConfidence(checks);
+  const confidenceColors = { high: { color: '#16a34a', bg: '#dcfce7' }, medium: { color: '#d97706', bg: '#fef9c3' }, low: { color: '#dc2626', bg: '#fee2e2' } };
+  const confColor = confidenceColors[confidence.level] || confidenceColors.medium;
+  const hasUsage = !!(checks.targetCall?.evidence?.usage && Object.keys(checks.targetCall.evidence.usage).length > 0);
+  const verdictText = getJudgment(score, checks);
+  const sourceTransparency = checks.modelIntegrity?.evidence?.sourceTransparency;
+  const detectedSource = sourceTransparency?.detectedSource || null;
+  // Alias: proxy_route_identity === platform_or_proxy_identity
+  const isProxyOrPlatform = identityCategory === 'proxy_route_identity' || identityCategory === 'platform_or_proxy_identity';
 
-  const escH = (s) => esc(String(s || ''));
-
-  // Unified pill by status
-  function pillByStatus(status) {
-    const cfg = statusColor(status);
-    const label = statusLabel(status, zh);
-    return `<span style="display:inline-block;padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;color:${cfg.color};background:${cfg.bg}">${escH(label)}</span>`;
+  let verdictDesc = '';
+  if (costRisk === 'low' && modelRisk === 'low' && stabilityRisk === 'low' && identityCategory === 'exact_match') {
+    verdictDesc = zh ? '所有核心信号表现优秀，未发现明显扣费或模型降配风险。' : 'All core signals excellent — no significant billing or model downgrade risk detected.';
+  } else if (identityCategory === 'hard_contamination') {
+    verdictDesc = zh ? '模型回答存在开发环境污染信号，建议谨慎用于高成本任务。' : 'Model response shows development environment contamination — use with caution for high-cost tasks.';
+  } else if (!hasUsage) {
+    verdictDesc = zh ? 'usage 完全缺失，扣费不可审计，置信度降低。' : 'usage completely missing — billing unauditable, confidence reduced.';
+  } else if (identityCategory === 'wrong_family') {
+    if (coreAbilityFailures >= 1) verdictDesc = zh ? '模型自报家族与目标明显不一致，能力测试也有异常，建议谨慎。' : 'Model family inconsistent with target, plus ability anomalies — use with caution.';
+    else verdictDesc = zh ? '模型自报家族与目标不一致，存在降配疑似风险。' : 'Model self-reported family inconsistent with target — possible downgrade risk.';
+  } else if (isProxyOrPlatform) {
+    if (coreAbilityFailures >= 1) verdictDesc = zh ? '检测到平台代理层身份暴露且能力测试有异常，建议小额核对。' : 'Proxy layer identity detected with ability anomalies — verify with small amount.';
+    else verdictDesc = zh ? '检测到平台代理层身份暴露，来源透明度降低。' : 'Platform proxy layer identity detected — source transparency reduced.';
+  } else if (identityCategory === 'ambiguous') {
+    verdictDesc = zh ? '模型身份模糊，结论置信度降低。' : 'Model identity vague — reduced conclusion confidence.';
+  } else if (costRisk === 'high' || modelRisk === 'high') {
+    verdictDesc = zh ? '扣费或模型能力信号异常较多，建议谨慎使用。' : 'Billing or model capability signals show significant anomalies — use with caution.';
+  } else {
+    verdictDesc = zh ? '部分信号存在异常，建议小额继续验证。' : 'Some signals abnormal — recommend small-amount continued verification.';
   }
+  const disclaimer = zh ? '本报告仅基于可复现 API 信号，不构成法律结论。' : 'This report is based on reproducible API signals only and does not constitute a legal conclusion.';
 
-  // Sub-item row
-  function subRow(item, depth = 20) {
-    if (!item || item.maxScore === 0) return '';
-    const ratio = item.score / item.maxScore;
-    const status = computeCheckStatus(item.maxScore, item.score, null);
-    const cfg = statusColor(status);
-    const icon = status === 'excellent' ? '&#10003;'
-               : status === 'good' ? '&#10003;'
-               : status === 'warning' ? '&#9888;'
-               : status === 'failed' ? '&#10007;'
-               : status === 'skipped' ? '&#8212;'
-               : '&#9888;';
-    return `<div class="rc-sub-row" style="padding-left:${depth}px">
-      <span style="color:${cfg.color};font-size:11px;margin-right:4px">${icon}</span>
-      <span class="rc-label">${escH(item.label || item.id)}</span>
-      <span class="rc-score">${item.score}/${item.maxScore}</span>
-      <span style="color:${cfg.color};font-size:10px">${pillByStatus(status)}</span>
-      ${item.summary ? `<span class="rc-detail">${escH(item.summary)}</span>` : ''}
-    </div>`;
-  }
-
-  // Deduction row
-  function deductionRow(text, severity) {
-    const color = severity === 'warn' ? '#f59e0b' : '#dc2626';
-    return `<li style="color:${color};font-size:11px;padding:2px 0 2px 16px;position:relative">
-      <span style="position:absolute;left:0;color:${color}">&#8226;</span>${escH(text)}</li>`;
-  }
-
-  // Collapsible section for each check
-  function collapsibleSection(checkKey, checkData) {
+  function moduleSection(checkKey, checkData, riskLevel) {
     if (!checkData) return '';
-
     const label = checkData.label?.[zh ? 'zh' : 'en'] || checkData.label || checkKey;
+    const maxScore = checkData.maxScore || 0;
+    const actualScore = checkData.score || 0;
     const status = checkData.status || 'failed';
     const cfg = statusColor(status);
-    const pill = pillByStatus(status);
     const rowId = 'rc-row-' + checkKey + '-' + reportId;
     const contentId = 'rc-content-' + checkKey + '-' + reportId;
-
-    // Determine sub-items based on check type
     let subItemsHtml = '';
-
-    if (checkKey === 'stability' && checkData.evidence?.samples) {
-      // Special: stability with sample table
-      const samples = checkData.evidence.samples;
-      const sampleRows = samples.map((s, i) => {
-        const okIcon = s.ok ? '&#10003;' : '&#10007;';
-        const okColor = s.ok ? '#16a34a' : '#dc2626';
-        return `<tr style="font-size:10px">
-          <td style="padding:3px 8px;color:#64748b">#${i + 1}</td>
-          <td style="padding:3px 8px;color:${okColor}">${okIcon}</td>
-          <td style="padding:3px 8px">${s.status || '-'}</td>
-          <td style="padding:3px 8px">${s.latency}ms</td>
-          <td style="padding:3px 8px">${escH(s.responseText || s.errMsg || '-')}</td>
-        </tr>`;
-      }).join('');
-      subItemsHtml += `<table style="width:100%;border-collapse:collapse;margin:4px 0 8px 0">
-        <tr style="background:#f8fafc;font-size:10px;color:#64748b">
-          <th style="padding:3px 8px;text-align:left">Ping</th>
-          <th style="padding:3px 8px;text-align:left">OK</th>
-          <th style="padding:3px 8px;text-align:left">Status</th>
-          <th style="padding:3px 8px;text-align:left">Latency</th>
-          <th style="padding:3px 8px;text-align:left">Response/Error</th>
-        </tr>
-        ${sampleRows}
-      </table>`;
-    }
-
-    // Sub-items (different per check)
-    const subKeys = getSubItems(checkKey, checkData);
-    if (subKeys.length > 0) {
-      subItemsHtml += subKeys.map(key => {
-        const sub = subKeys[key];
-        if (!sub) return '';
-        return subRow(sub, 16);
+    if (checkData.evidence?.subItems) {
+      subItemsHtml = Object.entries(checkData.evidence.subItems).map(([k, v]) => {
+        if (!v || v.maxScore === 0) return '';
+        const subRatio = v.maxScore > 0 ? v.score / v.maxScore : 0;
+        const subStatus = subRatio >= 0.8 ? 'good' : subRatio >= 0.5 ? 'warning' : 'failed';
+        const subCfg = statusColor(subStatus);
+        const icon = subRatio >= 0.8 ? '&#10003;' : subRatio >= 0.5 ? '&#9888;' : '&#10007;';
+        return `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:11px">
+          <span style="color:${subCfg.color}">${icon}</span>
+          <span style="flex:1;color:#374151">${escH(k)}</span>
+          <span style="font-weight:700;color:#374151">${v.score}/${v.maxScore}</span>
+        </div>`;
       }).join('');
     }
 
-    // Deductions
-    let dedHtml = '';
-    if (checkData.deductions && checkData.deductions.length > 0) {
-      dedHtml = checkData.deductions.map(d => deductionRow(d, 'fail')).join('');
-    }
-    if (checkData.details && checkData.details.length > 0) {
-      dedHtml += checkData.details.map(d => deductionRow(d, 'warn')).join('');
+    // Add source transparency detail block for modelIntegrity
+    if (checkKey === 'modelIntegrity' && checkData.evidence?.sourceTransparency) {
+      const st = checkData.evidence.sourceTransparency;
+      const stLabelMap = {
+        exact_match: zh ? '清晰' : 'Clear',
+        family_match: zh ? '家族匹配' : 'Family Match',
+        platform_or_proxy_identity: zh ? '平台代理层暴露' : 'Platform/Proxy Layer',
+        proxy_route_identity: zh ? '平台代理层暴露' : 'Platform/Proxy Layer',
+        ambiguous: zh ? '身份模糊' : 'Identity Ambiguous',
+        wrong_family: zh ? '模型家族错配' : 'Wrong Family',
+        hard_contamination: zh ? '工具人格污染' : 'Tool Persona Contamination',
+        failed: zh ? '测试失败' : 'Test Failed',
+        empty: zh ? '无回答' : 'No Answer',
+      };
+      const detected = st.detectedSource
+        ? `<div style="margin-top:4px"><span style="font-size:10px;color:#94a3b8">${zh ? '检测来源：' : 'Detected source: '}</span><span style="font-size:11px;font-weight:600;color:#d97706">${escH(st.detectedSource)}</span></div>`
+        : '';
+      subItemsHtml += `<div style="margin-top:8px;padding:8px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;font-size:11px">
+        <div style="font-weight:600;color:#0f172a;margin-bottom:4px">${zh ? '来源透明度' : 'Source Transparency'}</div>
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+          <span style="font-size:11px;color:#374151">${zh ? '身份分类：' : 'Category: '}</span>
+          <span style="font-weight:600;color:${riskColors[st.riskLevel || 'medium'].color}">${escH(stLabelMap[st.category] || st.category)}</span>
+          ${detectedSource ? `<span style="font-size:10px;color:#94a3b8">(${escH(detectedSource)})</span>` : ''}
+        </div>
+        <div style="margin-bottom:4px"><span style="font-size:10px;color:#94a3b8">${zh ? '模型自报：' : 'Raw response: '}</span><span style="font-size:10px;color:#475569;font-style:italic">${escH(st.evidenceText || checkData.evidence?.modelIdentityResponse || '-')}</span></div>
+        ${st.explanation ? `<div style="font-size:10px;color:#64748b;line-height:1.5">${escH(st.explanation)}</div>` : ''}
+      </div>`;
     }
 
-    // Default collapsed summary
-    const defaultSummary = checkData.summary || '';
-
-    // For stability, show a compact summary in collapsed mode
-    let collapsedDetail = defaultSummary;
-    if (checkKey === 'stability') {
-      const samples = checkData.evidence?.samples || [];
-      const okCount = samples.filter(s => s.ok && s.hasContent).length;
-      const avgLat = checkData.evidence?.avgLatency || 0;
-      collapsedDetail = `${okCount}/3 ${zh ? '成功' : 'success'}, ${avgLat > 0 ? Math.round(avgLat) + 'ms' : '-'}`;
-    }
-
+    const pillHtml = riskLevel ? `<span style="display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;color:${riskColors[riskLevel].color};background:${riskColors[riskLevel].bg}">${zh ? riskLevelLabelZH(riskLevel) : riskLevelLabelEN(riskLevel)}</span>` : `<span style="display:inline-block;padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;color:${cfg.color};background:${cfg.bg}">${statusLabel(status, zh)}</span>`;
     return `<div class="rc-check-block">
-      <div class="rc-check-header" id="${rowId}" onclick="(function(){
-        var c=document.getElementById('${contentId}');
-        var t=document.getElementById('${rowId}-toggle');
-        var cur=c.style.display;
-        c.style.display=cur==='none'?'block':'none';
-        t.textContent=cur==='none'?'[${zh?'收起':'Collapse'} ···]':'[${zh?'展开':'Expand'} ···]';
-      })()" style="cursor:pointer;user-select:none;display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #f1f5f9">
-        <span class="rc-check-label">${escH(label)}</span>
-        <span class="rc-check-score">${checkData.score}/${checkData.maxScore}</span>
-        <span>${pill}</span>
-        <span class="rc-check-summary" style="flex:1;color:#94a3b8;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escH(collapsedDetail)}</span>
-        <span id="${rowId}-toggle" style="color:#2563eb;font-size:11px;white-space:nowrap">[${zh?'展开':'Expand'} ···]</span>
+      <div class="rc-check-header" id="${rowId}" onclick="(function(){var c=document.getElementById('${contentId}');var t=document.getElementById('${rowId}-toggle');var cur=c.style.display;c.style.display=cur==='none'?'block':'none';t.textContent=cur==='none'?'[${zh?'收起':'Collapse'} ...]':'[${zh?'展开':'Expand'} ...]';})()" style="cursor:pointer;user-select:none;display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #f1f5f9">
+        <span style="font-weight:600;font-size:12px;color:#374151">${escH(label)}</span>
+        <span style="font-weight:700;font-size:12px;color:#374151">${actualScore}/${maxScore}</span>
+        ${pillHtml}
+        <span style="flex:1;color:#94a3b8;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escH(checkData.summary || '')}</span>
+        <span id="${rowId}-toggle" style="color:#2563eb;font-size:11px;white-space:nowrap">[${zh?'展开':'Expand'} ...]</span>
       </div>
-      <div id="${contentId}" style="display:none;padding:4px 0 8px 0">
-        ${subItemsHtml}
-        ${dedHtml ? `<ul style="margin:4px 0 0 0;padding:0;list-style:none">${dedHtml}</ul>` : ''}
+      <div id="${contentId}" style="display:none;padding:4px 0 8px 0">${subItemsHtml}</div>
+    </div>`;
+  }
+
+  let toolCallingHtml = '';
+  if (toolCallingResult) {
+    const tc = toolCallingResult;
+    const tcColor = tc.passed ? '#16a34a' : tc.partial ? '#d97706' : '#dc2626';
+    const tcBg = tc.passed ? '#dcfce7' : tc.partial ? '#fef9c3' : '#fee2e2';
+    toolCallingHtml = `<div style="background:#fff;border-radius:12px;padding:10px 14px;margin-bottom:10px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-weight:600;font-size:12px;color:#374151">${escH(tc.label?.[zh?'zh':'en'] || 'Tool Calling')}</span>
+        <span style="display:inline-block;padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;color:${tcColor};background:${tcBg}">${escH(tc.summary || '')}</span>
+        <span style="font-size:11px;color:#94a3b8">${zh ? '（深度验货额外测试）' : '(Deep check extra test)'}</span>
       </div>
     </div>`;
   }
 
-  // Generate suggestions (modelRisk passed for layered model visibility messages)
-  const suggestions = generateSuggestions(checks, score, modelIdInfo, modelRisk);
-  let suggestionHtml = `<div class="rc-section">
-    <div class="rc-section-title">${zh ? '建议' : 'Recommendations'}</div>
+  const allDeductions = Object.values(checks).filter(c => c?.deductions?.length > 0).flatMap(c => c.deductions.map(d => ({ text: d, check: c.label?.[zh?'zh':'en'] || c.id })));
+  let deductionsHtml = '';
+  if (allDeductions.length > 0) {
+    deductionsHtml = `<div style="background:#fff;border-radius:12px;padding:10px 14px;margin-bottom:10px">
+      <div style="font-size:12px;font-weight:700;color:#0f172a;margin-bottom:8px">${zh ? '扣分原因' : 'Deduction Reasons'}</div>
+      <ul style="margin:0;padding:0 0 0 16px;font-size:11px;line-height:1.9">
+        ${allDeductions.map(d => `<li style="color:#dc2626;padding:2px 0 2px 16px;position:relative"><span style="position:absolute;left:0;color:#dc2626">&#8226;</span><span style="color:#94a3b8;font-size:10px">[${escH(d.check)}]</span> ${escH(d.text)}</li>`).join('')}
+      </ul>
+    </div>`;
+  }
+
+  const suggestions = generateSuggestions(checks, modelIdInfo);
+  const suggestionHtml = `<div style="background:#fff;border-radius:12px;padding:10px 14px;margin-bottom:10px">
+    <div style="font-size:12px;font-weight:700;color:#0f172a;margin-bottom:8px">${zh ? '建议' : 'Recommendations'}</div>
     <ul style="margin:0;padding:0 0 0 16px;font-size:12px;color:#374151;line-height:1.8">
       ${suggestions.map(s => `<li>${escH(s)}</li>`).join('')}
     </ul>
   </div>`;
 
-  // Deductions section — include model risk as a visible soft item
-  const allDeductions = Object.values(checks)
-    .filter(c => c?.deductions?.length > 0)
-    .flatMap(c => c.deductions.map(d => ({ text: d, check: c.label?.[zh?'zh':'en'] || c.id, severity: 'fail' })));
-  // Append model risk as a "warn" severity deduction (not critical red)
-  if (modelRisk && modelRisk.riskType && modelRisk.reasonZh) {
-    allDeductions.push({
-      text: modelRisk.reasonZh,
-      check: zh ? '模型可见性' : 'Model Visibility',
-      severity: 'warn'
-    });
-  }
-  let deductionsHtml = '';
-  if (allDeductions.length > 0) {
-    deductionsHtml = `<div class="rc-section">
-      <div class="rc-section-title">${zh ? '扣分原因' : 'Deduction Reasons'}</div>
-      <ul style="margin:0;padding:0 0 0 16px;font-size:11px;line-height:1.9">
-        ${allDeductions.map(d => `<li style="color:${d.severity === 'fail' ? '#dc2626' : '#d97706'};padding:2px 0 2px 16px;position:relative">
-      <span style="position:absolute;left:0;color:${d.severity === 'fail' ? '#dc2626' : '#d97706'}">&#8226;</span><span style="color:#64748b;font-size:10px">[${escH(d.check)}]</span> ${escH(d.text)}</li>`).join('')}
-      </ul>
-    </div>`;
-  }
-
-  // Model ID info — show source badge
   const finalModel = modelIdInfo?.finalTestModelId || '';
-  const { modelSource, isFinalModelInModelList } = modelIdInfo || {};
-  const modelDisplay = [];
-  if (modelIdInfo?.userModel) {
-    modelDisplay.push(`<div><span style="font-weight:600;color:#374151">${zh ? '用户填写模型' : 'User-filled Model'}:</span> ${escH(modelIdInfo.userModel)}</div>`);
-  }
-  if (modelIdInfo?.autoModel && normalizeModelId(modelIdInfo.autoModel) !== normalizeModelId(modelIdInfo?.userModel)) {
-    modelDisplay.push(`<div><span style="font-weight:600;color:#374151">${zh ? '自动识别模型' : 'Auto-detected Model'}:</span> ${escH(modelIdInfo.autoModel)}</div>`);
-  }
-  modelDisplay.push(`<div><span style="font-weight:600;color:#374151">${zh ? '实际测试模型' : 'Actual Test Model'}:</span> ${escH(finalModel)}</div>`);
-  if (modelSource) {
-    const sourceLabel = modelSource === 'user_input'
-      ? (zh ? '用户填写' : 'User-filled')
-      : modelSource === 'auto_detected'
-      ? (zh ? '自动识别' : 'Auto-detected')
-      : (zh ? '列表回退' : 'List fallback');
-    const sourceColor = modelSource === 'auto_detected' ? '#16a34a' : modelSource === 'user_input' ? '#3b82f6' : '#94a3b8';
-    modelDisplay.push(`<div style="font-size:10px;color:${sourceColor}">${zh ? '来源：' : 'Source: '}${sourceLabel}${isFinalModelInModelList ? (zh ? ' ✓' : ' ✓') : (zh ? ' ✗' : ' ✗')}</div>`);
-  }
+  const safeBaseUrl = (() => { try { const u = new URL(formData?.baseUrl); return u.origin + u.pathname.replace(/\/$/, ''); } catch (_) { return formData?.baseUrl || ''; } })();
 
-  // Model mismatch warning (normalized comparison)
-  let modelMismatchWarning = '';
-  if (modelIdInfo?.userModel && modelIdInfo?.autoModel &&
-      normalizeModelId(modelIdInfo.userModel) !== normalizeModelId(modelIdInfo.autoModel)) {
-    modelMismatchWarning = `<div style="background:#fef9c3;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:11px;color:#92400e">
-      ${zh ? '当前实际测试模型与用户填写模型不一致，评分仅代表实际测试模型，不代表用户填写模型。' : 'The actual test model differs from the user-filled model. Scores only represent the actual test model, not the user-filled model.'}
-    </div>`;
-  }
-
-  // Safe baseUrl
-  let safeBaseUrl = '';
-  try { safeBaseUrl = new URL(formData.baseUrl).origin + new URL(formData.baseUrl).pathname.replace(/\/$/, ''); }
-  catch (_) { safeBaseUrl = formData.baseUrl; }
-
-  // Cap badge if raw !== final
-  let capNote = '';
-  if (rawScore > score) {
-    capNote = `<div style="font-size:10px;color:#94a3b8;text-align:center;margin-top:2px">${zh ? '已应用封顶：' : 'Cap applied: '} ${rawScore} → ${score}</div>`;
-  }
-
-  return `<div style="max-width:560px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;background:#f8fafc;padding:28px;box-sizing:border-box">
-
-    <!-- Score card -->
-    <div style="background:#0f172a;border-radius:20px;padding:18px 20px 16px;margin-bottom:12px">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
-        <div>
-          <div style="font-size:15px;font-weight:800;color:#fff;letter-spacing:-0.2px">API Doctor</div>
-          <div style="font-size:10px;color:#94a3b8;margin-top:2px">${zh ? '中转站最强照妖镜' : 'Relay API Black-box Check'}</div>
-        </div>
-        <div style="background:${grade.bg};border-radius:10px;padding:6px 14px;text-align:center;flex-shrink:0">
-          <div style="font-size:22px;font-weight:900;color:${grade.color};line-height:1">${grade.grade}</div>
-          <div style="font-size:9px;color:${grade.color};font-weight:600;margin-top:2px">${zh ? grade.labelZh : grade.label}</div>
-        </div>
+  return `<div id="result-card-inner" style="max-width:560px;margin:0 auto;padding:0 4px">
+    <!-- Dark header: grade + score + 3 risk pills -->
+    <div style="background:linear-gradient(135deg,#1e293b 0%,#0f172a 100%);border-radius:16px;padding:16px;margin-bottom:10px;text-align:center">
+      <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:4px">
+        <span style="display:inline-block;padding:4px 16px;border-radius:20px;font-size:13px;font-weight:800;color:#fff;background:${grade.color}">${grade.grade} ${grade.labelZh}</span>
+        <span style="font-size:28px;font-weight:900;color:#fff;letter-spacing:-1px">${score}</span>
+        <span style="font-size:13px;color:rgba(255,255,255,0.6)">/ 100</span>
       </div>
-      <div style="text-align:center;margin-bottom:6px">
-        <div style="font-size:60px;font-weight:900;color:${grade.color};line-height:1">${score}</div>
-        <div style="font-size:13px;font-weight:700;color:${grade.color};margin-top:4px">${escH(getJudgment(score, checks))}</div>
-        ${capNote}
+      <div style="font-size:12px;font-weight:600;color:rgba(255,255,255,0.9);margin-bottom:12px">${escH(verdictText)}</div>
+      <div style="display:flex;justify-content:center;gap:16px;flex-wrap:wrap">
+        <div style="background:rgba(255,255,255,0.1);border-radius:10px;padding:8px 14px;min-width:100px;text-align:center">
+          <div style="font-size:10px;color:rgba(255,255,255,0.6);margin-bottom:4px">${zh ? '扣费透明度' : 'Cost Transparency'}</div>
+          <span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;color:${riskColors[costRisk].color};background:${riskColors[costRisk].bg}">${zh ? riskLevelLabelZH(costRisk) : riskLevelLabelEN(costRisk)}</span>
+        </div>
+        <div style="background:rgba(255,255,255,0.1);border-radius:10px;padding:8px 14px;min-width:100px;text-align:center">
+          <div style="font-size:10px;color:rgba(255,255,255,0.6);margin-bottom:4px">${zh ? '模型降配疑似' : 'Model Integrity'}</div>
+          <span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;color:${riskColors[modelRisk].color};background:${riskColors[modelRisk].bg}">${zh ? riskLevelLabelZH(modelRisk) : riskLevelLabelEN(modelRisk)}</span>
+        </div>
+        <div style="background:rgba(255,255,255,0.1);border-radius:10px;padding:8px 14px;min-width:100px;text-align:center">
+          <div style="font-size:10px;color:rgba(255,255,255,0.6);margin-bottom:4px">${zh ? '稳定性' : 'Stability'}</div>
+          <span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;color:${riskColors[stabilityRisk].color};background:${riskColors[stabilityRisk].bg}">${zh ? stabilityLabelZH(stabilityScore) : stabilityLabelEN(stabilityScore)}</span>
+        </div>
+        <div style="background:rgba(255,255,255,0.1);border-radius:10px;padding:8px 14px;min-width:100px;text-align:center">
+          <div style="font-size:10px;color:rgba(255,255,255,0.6);margin-bottom:4px">${zh ? '结论置信度' : 'Confidence'}</div>
+          <span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;color:${confColor.color};background:${confColor.bg}">${confidence.label}</span>
+        </div>
+        ${sourceTransparency ? `<div style="background:rgba(255,255,255,0.1);border-radius:10px;padding:8px 14px;min-width:100px;text-align:center">
+          <div style="font-size:10px;color:rgba(255,255,255,0.6);margin-bottom:4px">${zh ? '来源透明度' : 'Source'}</div>
+          <span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;color:${riskColors[sourceTransparency.riskLevel]?.color || '#fff'};background:${riskColors[sourceTransparency.riskLevel]?.bg || 'rgba(255,255,255,0.15)'}">${escH(sourceTransparency.label || identityCategory)}</span>
+        </div>` : ''}
       </div>
-      <div style="font-size:11px;color:#94a3b8;text-align:center;margin-top:2px">${escH(getOneLineFinding(score, checks))}</div>
     </div>
 
-    <!-- Model mismatch warning -->
-    ${modelMismatchWarning}
+    <!-- Verdict description -->
+    <div style="background:#fff;border-radius:12px;padding:10px 14px;margin-bottom:10px;font-size:12px;color:#374151;line-height:1.6">${escH(verdictDesc)}</div>
 
-    <!-- 8 diagnostic items (collapsible) -->
+    <!-- Disclaimer -->
+    <div style="font-size:10px;color:#94a3b8;text-align:center;padding:2px 0 6px;line-height:1.4">${escH(disclaimer)}</div>
+
+    <!-- 5 module sections -->
     <div style="background:#fff;border-radius:16px;padding:12px 16px;margin-bottom:10px">
-      <div style="font-size:11px;font-weight:700;color:#0f172a;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #f1f5f9">8 ${zh ? '项检测结果（点击展开详情）' : 'Diagnostic Results (click to expand)'}</div>
-      ${collapsibleSection('reachability', checks.reachability)}
-      ${collapsibleSection('auth', checks.auth)}
-      ${collapsibleSection('modelList', checks.modelList)}
-      ${collapsibleSection('autoModel', checks.autoModel)}
-      ${collapsibleSection('targetCall', checks.targetCall)}
-      ${collapsibleSection('stability', checks.stability)}
-      ${collapsibleSection('usageAudit', checks.usageAudit)}
-      ${collapsibleSection('clientConfig', checks.clientConfig)}
+      <div style="font-size:11px;font-weight:700;color:#0f172a;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #f1f5f9">${zh ? '5 项检测结果（点击展开详情）' : '5 Diagnostic Modules (click to expand)'}</div>
+      ${moduleSection('costTransparency', checks.costTransparency, costRisk)}
+      ${moduleSection('modelIntegrity', checks.modelIntegrity, modelRisk)}
+      ${moduleSection('stability', checks.stability, stabilityRisk)}
+      ${moduleSection('basicCompatibility', checks.basicCompatibility)}
+      ${moduleSection('clientConfig', checks.clientConfig)}
     </div>
 
+    ${toolCallingHtml}
     ${deductionsHtml}
     ${suggestionHtml}
 
@@ -2481,16 +2281,12 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo, modelRisk) {
         <div><span style="font-weight:600;color:#374151">Base URL:</span> ${escH(safeBaseUrl)}</div>
         <div><span style="font-weight:600;color:#374151">Model:</span> ${escH(finalModel)}</div>
       </div>
-      ${modelDisplay.join('')}
+      <div style="margin-top:4px;font-size:10px;color:#94a3b8">${zh ? '检测模式：' : 'Check mode: '}${deepMode ? (zh ? '深度验货' : 'Deep Check') : (zh ? '快速验货' : 'Quick Check')}</div>
     </div>
 
     <!-- Footer -->
-    <div style="text-align:center;font-size:11px;color:#94a3b8;padding:2px 0">
-      ${zh ? '报告 ID' : 'Report ID'}: ${reportId} &nbsp;|&nbsp; aiapidoctor.com
-    </div>
-    <div style="font-size:10px;color:#94a3b8;text-align:center;padding:4px 0 2px;line-height:1.4">
-      ${zh ? '本报告仅展示可复现信号，不构成法律结论。' : 'Report shows reproducible signals only, not a legal conclusion.'}
-    </div>
+    <div style="text-align:center;font-size:11px;color:#94a3b8;padding:2px 0">${zh ? '报告 ID' : 'Report ID'}: ${reportId} &nbsp;|&nbsp; aiapidoctor.com</div>
+    <div style="font-size:10px;color:#94a3b8;text-align:center;padding:4px 0 2px;line-height:1.4">${escH(disclaimer)}</div>
 
     <!-- Actions -->
     <div style="display:flex;gap:8px;margin-top:10px">
@@ -2498,112 +2294,6 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo, modelRisk) {
       <button onclick="Doctor.copyScore()" style="flex:1;padding:10px;background:#f1f5f9;color:#0f172a;border:1px solid #e2e8f0;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">${zh ? '复制验货分' : 'Copy Score'}</button>
     </div>
   </div>`;
-}
-
-/* ═══════════════════════════════════════════════════════
-   Sub-items for each check (used by report builder)
-   ═══════════════════════════════════════════════════════ */
-function getSubItems(checkKey, checkData) {
-  const ev = checkData.evidence || {};
-  const zh = getDocLang() !== 'en';
-
-  if (checkKey === 'reachability') {
-    return {
-      [zh ? '网络可连接' : 'Network']:       { score: ev.score >= 9 ? 3 : ev.score >= 6 ? 2 : 1.5, maxScore: 3, label: zh ? '网络可连接' : 'Network', summary: ev.netError ? '失败' : '可达' },
-      [zh ? 'TLS/HTTPS' : 'TLS/HTTPS']:      { score: ev.score >= 10 ? 2 : 1, maxScore: 2, label: zh ? 'TLS/HTTPS' : 'TLS/HTTPS', summary: baseUrl => '' },
-      [zh ? '响应时间' : 'Response Time']:   { score: ev.latency < 1000 ? 2 : ev.latency < 3000 ? 1.5 : ev.latency < 8000 ? 1 : ev.latency < 30000 ? 0.5 : 0, maxScore: 2, label: zh ? '响应时间' : 'Response Time', summary: ev.latency ? ev.latency + 'ms' : '-' },
-      [zh ? '返回内容类型' : 'Content Type']: { score: ev.modelEndpointOk ? 2 : 1, maxScore: 2, label: zh ? '返回内容类型' : 'Content Type', summary: ev.contentType || '-' },
-      [zh ? '兼容路径' : 'Compat Path']:      { score: ev.modelEndpointOk ? 2 : 1, maxScore: 2, label: zh ? '兼容路径' : 'Compat Path', summary: ev.modelEndpointOk ? 'OK' : '部分' },
-      [zh ? '错误可解释' : 'Error Explain']:  { score: ev.httpStatus >= 400 ? (ev.httpStatus === 401 || ev.httpStatus === 403 || ev.httpStatus === 404 || ev.httpStatus === 429 ? 1 : 0) : 1, maxScore: 1, label: zh ? '错误可解释' : 'Error Explain', summary: ev.httpStatus >= 400 ? ev.httpStatus : '正常' },
-    };
-  }
-
-  if (checkKey === 'auth') {
-    const st = ev.modelsStatus || 0;
-    const ct = ev.chatStatus || 0;
-    return {
-      [zh ? 'Authorization Header' : 'Auth Header']: { score: st === 401 || ct === 401 ? 0 : 3, maxScore: 3, label: zh ? 'Authorization Header' : 'Auth Header', summary: st === 401 || ct === 401 ? '未识别' : '已识别' },
-      [zh ? 'Key 格式' : 'Key Format']: { score: 2, maxScore: 2, label: zh ? 'Key 格式' : 'Key Format', summary: ev.keyMasked || 'sk-****' },
-      [zh ? '非 401' : 'Not 401']: { score: st === 401 || ct === 401 ? 0 : st > 0 || ct > 0 ? 3 : 0, maxScore: 3, label: zh ? '非 401' : 'Not 401', summary: st === 401 || ct === 401 ? '401' : 'OK' },
-      [zh ? '非 403' : 'Not 403']: { score: st === 403 || ct === 403 ? 0 : st === 429 || ct === 429 ? 1.5 : 3, maxScore: 3, label: zh ? '非 403' : 'Not 403', summary: st === 403 || ct === 403 ? '403' : st === 429 || ct === 429 ? '429' : 'OK' },
-      [zh ? '错误可读' : 'Error Readable']: { score: ev.errorMessage ? 1 : 0, maxScore: 1, label: zh ? '错误可读' : 'Error Readable', summary: ev.errorMessage ? 'OK' : '-' },
-      [zh ? '鉴权一致性' : 'Auth Consistency']: { score: (st >= 200 && st < 400) === (ct >= 200 && ct < 400) ? 2 : 1, maxScore: 2, label: zh ? '鉴权一致性' : 'Auth Consistency', summary: `${st || '-'}/${ct || '-'}` },
-    };
-  }
-
-  if (checkKey === 'modelList') {
-    return {
-      [zh ? '/models 请求' : '/models Request']: { score: checkData.score >= 9 ? 3 : checkData.score >= 6 ? 2 : checkData.score >= 3 ? 1 : 0, maxScore: 3, label: zh ? '/models 请求' : '/models Request', summary: `${ev.httpStatus || '-'} ${ev.modelCount || 0} ${zh ? '个' : 'models'}` },
-      [zh ? '响应格式' : 'Response Format']: { score: ev.parseError ? 0 : ev.data?.data ? 2 : 1, maxScore: 2, label: zh ? '响应格式' : 'Response Format', summary: ev.parseError ? '非JSON' : 'JSON OK' },
-      [zh ? '模型数量' : 'Model Count']: { score: ev.modelCount === 0 ? 0 : ev.modelCount <= 2 ? 1 : 2, maxScore: 2, label: zh ? '模型数量' : 'Model Count', summary: String(ev.modelCount || 0) },
-      [zh ? 'ID 可读性' : 'ID Readability']: { score: ev.modelCount > 0 ? 1 : 0, maxScore: 1, label: zh ? 'ID 可读性' : 'ID Readability', summary: ev.firstModel || '-' },
-      [zh ? '包含填写模型' : 'Has User Model']: { score: 0, maxScore: 2, label: zh ? '包含填写模型' : 'Has User Model', summary: ev.userModel || (zh ? '未填写' : 'not filled') },
-      [zh ? '列表稳定性' : 'List Stability']: { score: checkData.score >= 3 ? 1 : 0, maxScore: 1, label: zh ? '列表稳定性' : 'List Stability', summary: checkData.score >= 3 ? 'OK' : '-' },
-      [zh ? '错误可解释' : 'Error Explain']: { score: checkData.score >= 3 ? 1 : 0, maxScore: 1, label: zh ? '错误可解释' : 'Error Explain', summary: checkData.score >= 3 ? 'OK' : '-' },
-    };
-  }
-
-  if (checkKey === 'targetCall') {
-    return {
-      [zh ? '请求发出' : 'Request Sent']: { score: ev.error ? 0 : 2, maxScore: 2, label: zh ? '请求发出' : 'Request Sent', summary: ev.error ? ev.error : 'OK' },
-      [zh ? 'HTTP 状态' : 'HTTP Status']: { score: ev.httpStatus >= 200 && ev.httpStatus < 300 ? 3 : ev.httpStatus === 401 || ev.httpStatus === 403 ? 0 : ev.httpStatus === 429 ? 1 : ev.httpStatus >= 400 ? 1.5 : 0, maxScore: 3, label: zh ? 'HTTP 状态' : 'HTTP Status', summary: String(ev.httpStatus || '-') },
-      [zh ? '合法 JSON' : 'Valid JSON']: { score: ev.responseParsed ? 3 : 0, maxScore: 3, label: zh ? '合法 JSON' : 'Valid JSON', summary: ev.responseParsed ? 'OK' : '失败' },
-      [zh ? '兼容格式' : 'Compat Format']: { score: ev.formatChoices && ev.formatMessage ? 4 : ev.formatChoices ? 2 : 0, maxScore: 4, label: zh ? '兼容格式' : 'Compat Format', summary: ev.formatChoices ? 'OK' : '失败' },
-      [zh ? '内容非空' : 'Content Non-empty']: { score: ev.output?.status === 'present' ? 3 : ev.output?.status === 'unknown' ? 1.5 : 0, maxScore: 3, label: zh ? '内容非空' : 'Content Non-empty', summary: ev.output?.text?.slice(0, 20) || '-' },
-      [zh ? 'finish_reason' : 'finish_reason']: { score: ev.finishReason ? 2 : 0.5, maxScore: 2, label: zh ? 'finish_reason' : 'finish_reason', summary: ev.finishReason || '缺失' },
-      [zh ? 'usage 字段' : 'usage Field']: { score: ev.usage ? (ev.usage.total_tokens ? 2 : 1) : 0, maxScore: 2, label: zh ? 'usage 字段' : 'usage Field', summary: ev.usage?.total_tokens ? `total=${ev.usage.total_tokens}` : '无' },
-      [zh ? '延迟质量' : 'Latency Quality']: { score: ev.latencyMs < 2000 ? 2 : ev.latencyMs < 5000 ? 1.5 : ev.latencyMs < 10000 ? 1 : 0.5, maxScore: 2, label: zh ? '延迟质量' : 'Latency Quality', summary: ev.latencyMs ? ev.latencyMs + 'ms' : '-' },
-      [zh ? '错误可读' : 'Error Readable']: { score: ev.httpStatus < 400 ? 1 : ev.errorMsg ? 1 : 0, maxScore: 1, label: zh ? '错误可读' : 'Error Readable', summary: ev.httpStatus < 400 ? 'OK' : ev.errorMsg || '失败' },
-    };
-  }
-
-  if (checkKey === 'stability') {
-    const samples = ev.samples || [];
-    const okCount = samples.filter(s => s.ok && s.hasContent).length;
-    const avgLat = ev.avgLatency || 0;
-    const jitter = ev.latencyJitter || 0;
-    return {
-      [zh ? '成功率' : 'Success Rate']: { score: okCount === 3 ? 6 : okCount === 2 ? 4 : okCount === 1 ? 2 : 0, maxScore: 6, label: zh ? '成功率' : 'Success Rate', summary: `${okCount}/3` },
-      [zh ? '状态一致性' : 'Status Consistency']: { score: okCount === 3 ? 2 : okCount >= 1 ? 1 : 0, maxScore: 2, label: zh ? '状态一致性' : 'Status Consistency', summary: okCount === 3 ? '一致' : '不一致' },
-      [zh ? '平均延迟' : 'Avg Latency']: { score: avgLat < 2000 ? 3 : avgLat < 5000 ? 2 : avgLat < 10000 ? 1 : 0, maxScore: 3, label: zh ? '平均延迟' : 'Avg Latency', summary: avgLat > 0 ? Math.round(avgLat) + 'ms' : '-' },
-      [zh ? '延迟波动' : 'Latency Jitter']: { score: jitter < 1000 ? 3 : jitter < 3000 ? 2 : jitter < 8000 ? 1 : 0, maxScore: 3, label: zh ? '延迟波动' : 'Latency Jitter', summary: jitter > 0 ? jitter + 'ms' : '-' },
-      [zh ? '返回一致性' : 'Return Consistency']: { score: okCount === 3 ? 2 : okCount >= 1 ? 1 : 0, maxScore: 2, label: zh ? '返回一致性' : 'Return Consistency', summary: okCount === 3 ? 'OK' : '不一致' },
-      [zh ? '错误可读' : 'Error Explainable']: { score: checkData.score >= 16 ? 1 : checkData.score >= 8 ? 1 : 0, maxScore: 1, label: zh ? '错误可读' : 'Error Explainable', summary: '—' },
-      [zh ? '限流/风控' : 'Rate Limit']: { score: ev.rateLimitDetected ? 0 : 1, maxScore: 1, label: zh ? '限流/风控' : 'Rate Limit', summary: ev.rateLimitDetected ? zh ? '触发' : 'Triggered' : '无' },
-    };
-  }
-
-  if (checkKey === 'usageAudit') {
-    const u = ev.usage || {};
-    return {
-      [zh ? 'usage 存在' : 'usage Exists']: { score: u.total_tokens || u.prompt_tokens ? 1.5 : 0, maxScore: 1.5, label: zh ? 'usage 存在' : 'usage Exists', summary: u.total_tokens ? 'OK' : '无' },
-      [zh ? 'prompt_tokens' : 'prompt_tokens']: { score: u.prompt_tokens != null || u.input_tokens != null ? 1 : 0, maxScore: 1, label: zh ? 'prompt_tokens' : 'prompt_tokens', summary: u.prompt_tokens != null ? String(u.prompt_tokens) : '-' },
-      [zh ? 'completion_tokens' : 'completion_tokens']: { score: u.completion_tokens != null || u.output_tokens != null ? 1 : 0, maxScore: 1, label: zh ? 'completion_tokens' : 'completion_tokens', summary: u.completion_tokens != null ? String(u.completion_tokens) : '-' },
-      [zh ? 'total_tokens' : 'total_tokens']: { score: u.total_tokens != null ? 1 : 0, maxScore: 1, label: zh ? 'total_tokens' : 'total_tokens', summary: u.total_tokens != null ? String(u.total_tokens) : '-' },
-      [zh ? '与结果对应' : 'Matches Result']: { score: u.total_tokens && u.prompt_tokens ? 0.75 : 0, maxScore: 0.75, label: zh ? '与结果对应' : 'Matches Result', summary: u.total_tokens ? 'OK' : '-' },
-      [zh ? '消耗说明' : 'Consumption Info']: { score: u.prompt_tokens && u.completion_tokens ? 0.75 : u.total_tokens ? 0.375 : 0, maxScore: 0.75, label: zh ? '消耗说明' : 'Consumption Info', summary: '—' },
-    };
-  }
-
-  if (checkKey === 'clientConfig') {
-    return {
-      [zh ? 'Base URL 格式' : 'Base URL Format']: { score: ev.baseUrlOrigin ? 1 : 0, maxScore: 1, label: zh ? 'Base URL 格式' : 'Base URL Format', summary: ev.baseUrlOrigin || '-' },
-      [zh ? 'Key 脱敏' : 'Key Masked']: { score: ev.keyMasked ? 1 : 0, maxScore: 1, label: zh ? 'Key 脱敏' : 'Key Masked', summary: ev.keyMasked || '-' },
-      [zh ? 'Model ID' : 'Model ID']: { score: ev.modelId ? 1 : 0, maxScore: 1, label: zh ? 'Model ID' : 'Model ID', summary: ev.modelId || '-' },
-      [zh ? 'Cline 配置' : 'Cline Config']: { score: ev.clineReady ? 1 : 0, maxScore: 1, label: zh ? 'Cline 配置' : 'Cline Config', summary: ev.clineReady ? 'OK' : '-' },
-      [zh ? 'Continue 配置' : 'Continue Config']: { score: ev.continueReady ? 1 : 0, maxScore: 1, label: zh ? 'Continue 配置' : 'Continue Config', summary: ev.continueReady ? 'OK' : '-' },
-      [zh ? '已验证' : 'Verified']: { score: c6_score(ev), maxScore: 1, label: zh ? '已验证' : 'Verified', summary: c6_score(ev) > 0 ? 'OK' : '未验证' },
-    };
-  }
-
-  return {};
-}
-
-function c6_score(ev) {
-  const status = ev.httpStatus || 0;
-  if (status >= 200 && status < 300) return 1;
-  if (status >= 400) return 0;
-  return 0.5;
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -2617,19 +2307,14 @@ async function saveDiagnosticImage() {
     await new Promise(requestAnimationFrame);
     await document.fonts.ready.catch(function(){});
     if (typeof htmlToImage === 'undefined') { showToast('请使用浏览器截图'); return; }
-    const lang = getDocLang();
-    const zh = lang !== 'en';
-
+    const zh = getDocLang() !== 'en';
     const sourceEl = document.getElementById('result-card');
     if (!sourceEl) { showToast('报告未生成'); return; }
-
     const clone = sourceEl.cloneNode(true);
     clone.style.cssText = 'position:fixed;top:0;left:0;display:block;width:560px;background:#f8fafc;padding:0;box-sizing:border-box;pointer-events:none';
     document.body.appendChild(clone);
-
     const dataUrl = await htmlToImage.toPng(clone, { pixelRatio: 2, cacheBust: true, backgroundColor: '#f8fafc', width: 560 });
     document.body.removeChild(clone);
-
     const link = document.createElement('a');
     link.download = 'aiapidoctor-' + Date.now() + '.png';
     link.href = dataUrl;
@@ -2641,368 +2326,261 @@ async function saveDiagnosticImage() {
 }
 
 /* ═══════════════════════════════════════════════════════
-   Doctor Controller
+   Doctor Controller — v4 (Quick + Deep modes)
    ═══════════════════════════════════════════════════════ */
 window.Doctor = {
-  _result: null,
-  _formData: null,
-  _controller: null,
-  _interfaceType: 'OpenAI Chat',
+  _result: null, _formData: null, _controller: null, _interfaceType: 'OpenAI Chat', _deepMode: false,
+  _userInputModelId: '', _autoDetectedModelId: '', _autoDetectedOrigin: '', _isProgrammaticModelUpdate: false,
 
   init() {
     this._interfaceType = 'OpenAI Chat';
     const btn = document.getElementById('find-models-btn');
     if (btn) btn.addEventListener('click', () => this.findModels());
+    const modelInput = document.getElementById('doctor-model');
+    if (modelInput) modelInput.addEventListener('input', () => { if (!this._isProgrammaticModelUpdate) this._userInputModelId = modelInput.value; });
+    this.setMode('quick');
   },
 
-  normalizeBaseUrl(input) {
-    let val = (typeof input === 'string' ? input : input?.value || '').trim().replace(/\/$/, '');
-    val = val.replace(/\/v1\/v1$/, '/v1');
-    if (!val.endsWith('/v1') && val.match(/^https?:\/\//)) val = val + '/v1';
-    if (typeof input === 'object' && input.value !== undefined) input.value = val;
-    return val;
+  setMode(mode) {
+    const zh = getDocLang() !== 'en';
+    const deep = mode === 'deep';
+    this._deepMode = deep;
+    document.querySelectorAll('[data-mode-btn]').forEach(btn => { btn.style.fontWeight = ''; btn.style.background = ''; btn.style.color = ''; });
+    const activeBtn = document.querySelector(`[data-mode-btn="${mode}"]`);
+    if (activeBtn) { activeBtn.style.fontWeight = '700'; activeBtn.style.background = deep ? '#7c3aed' : '#2563eb'; activeBtn.style.color = '#fff'; }
+    const runBtn = document.getElementById('doctor-run-btn');
+    if (runBtn) runBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> ${deep ? (zh ? '深度验货' : 'Deep Check') : (zh ? '快速验货' : 'Quick Check')}`;
   },
-
-  setInterface(type) { this._interfaceType = type; },
 
   async findModels() {
+    const zh = getDocLang() !== 'en';
     const baseUrl = (document.getElementById('doctor-base-url')?.value || '').trim();
     const apiKey = (document.getElementById('doctor-api-key')?.value || '').trim();
-    const lang = getDocLang();
-    const zh = lang !== 'en';
-
-    if (!baseUrl) { showToast(zh ? '请先填写 Base URL' : 'Please fill in Base URL'); return; }
-    if (!apiKey) { showToast(zh ? '请先填写 API Key' : 'Please fill in API Key'); return; }
-
     const btn = document.getElementById('find-models-btn');
-    if (btn) { btn.disabled = true; btn.textContent = zh ? '识别中...' : 'Detecting...'; }
-
+    if (btn) { btn.disabled = true; btn.textContent = zh ? '搜索中...' : 'Searching...'; }
     try {
       const root = baseUrl.replace(/\/$/, '').replace(/\/v1\/[^/]+(\/.*)?$/, '');
       const endpoints = [root + '/v1/models', root + '/models'];
-
       let models = [];
       for (const endpoint of endpoints) {
         try {
-          const resp = await fetch(endpoint, {
-            method: 'GET',
-            headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' }
-          });
+          const resp = await fetch(endpoint, { method: 'GET', headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' } });
           if (resp.status === 401 || resp.status === 403) { showToast(zh ? 'API Key无效' : 'Invalid API Key'); break; }
-          if (resp.status === 404) continue;
-          if (!resp.ok) continue;
+          if (resp.status === 404 || !resp.ok) continue;
           const data = await resp.json();
           models = extractModels(data);
           if (models.length > 0) break;
         } catch (_) {}
       }
-
       if (models.length > 0) {
         const modelEl = document.getElementById('doctor-model');
-        if (modelEl && !modelEl.value) modelEl.value = models[0];
+        this._isProgrammaticModelUpdate = true;
+        if (modelEl) modelEl.value = models[0];
+        this._autoDetectedModelId = models[0];
+        this._autoDetectedOrigin = 'models_list';
         showToast(zh ? `已填入：${models[0]}` : `Filled: ${models[0]}`);
-      } else {
-        showToast(zh ? '无法自动识别，请手动填写模型 ID' : 'Cannot auto-detect; fill in Model ID manually');
-      }
-    } catch (_) {
-      showToast(zh ? '无法自动识别，请手动填写模型 ID' : 'Cannot auto-detect; fill in Model ID manually');
-    } finally {
-      if (btn) { btn.disabled = false; btn.textContent = zh ? '自动识别模型' : 'Auto-detect model'; }
-    }
+        setTimeout(() => { this._isProgrammaticModelUpdate = false; }, 50);
+      } else showToast(zh ? '无法自动识别，请手动填写模型 ID' : 'Cannot auto-detect; fill in Model ID manually');
+    } catch (_) { showToast(zh ? '无法自动识别，请手动填写模型 ID' : 'Cannot auto-detect; fill in Model ID manually'); }
+    finally { if (btn) { btn.disabled = false; btn.textContent = zh ? '自动识别模型' : 'Auto-detect model'; } }
   },
 
   onConnectionInfoInput(textarea) {
     const parsed = parseConnectionInfo(textarea.value);
-    if (parsed.baseUrl) {
-      const urlEl = document.getElementById('doctor-base-url');
-      if (urlEl) urlEl.value = this.normalizeBaseUrl(parsed.baseUrl);
-    }
-    if (parsed.apiKey) {
-      const keyEl = document.getElementById('doctor-api-key');
-      if (keyEl) keyEl.value = parsed.apiKey;
-    }
-    if (parsed.model) {
-      const modelEl = document.getElementById('doctor-model');
-      if (modelEl) modelEl.value = parsed.model;
-    }
+    if (parsed.baseUrl) { const urlEl = document.getElementById('doctor-base-url'); if (urlEl) urlEl.value = this.normalizeBaseUrl(parsed.baseUrl); }
+    if (parsed.apiKey) { const keyEl = document.getElementById('doctor-api-key'); if (keyEl) keyEl.value = parsed.apiKey; }
+    if (parsed.model) { const modelEl = document.getElementById('doctor-model'); if (modelEl) modelEl.value = parsed.model; }
+  },
+
+  normalizeBaseUrl(url) {
+    url = url.replace(/\/$/, '');
+    if (!/^https?:\/\//.test(url)) url = 'https://' + url;
+    if (!url.match(/\/v1$/) && !url.endsWith('/chat/completions') && !url.endsWith('/models')) url = url + '/v1';
+    return url;
   },
 
   async run() {
     const baseUrl = (document.getElementById('doctor-base-url')?.value || '').trim();
     const apiKey = (document.getElementById('doctor-api-key')?.value || '').trim();
     const model = (document.getElementById('doctor-model')?.value || '').trim();
-    const lang = getDocLang();
-    const zh = lang !== 'en';
-
+    const zh = getDocLang() !== 'en';
+    const deepMode = this._deepMode;
     if (!baseUrl) { showToast(zh ? '请填写 Base URL' : 'Please fill in Base URL'); return; }
     if (!apiKey) { showToast(zh ? '请填写 API Key' : 'Please fill in API Key'); return; }
     if (!model) { showToast(zh ? '请填写 Model ID' : 'Please fill in Model ID'); return; }
-
     const normalizedUrl = this.normalizeBaseUrl(baseUrl);
-
     if (this._controller) this._controller.abort();
     this._controller = new AbortController();
-
     const btn = document.getElementById('doctor-run-btn');
-    if (btn) {
-      btn.disabled = true;
-      btn.innerHTML = `<span style="display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin 0.8s linear infinite"></span> ${zh ? '检测中...' : 'Checking...'}`;
-    }
-
+    if (btn) { btn.disabled = true; btn.innerHTML = `<span style="display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin 0.8s linear infinite"></span> ${zh ? '检测中...' : 'Checking...'}`; }
     this._formData = { baseUrl: normalizedUrl, model, interfaceType: this._interfaceType };
-    this.showProgress('running');
-    this._refreshProgress(0, 'pending');
-
+    this.showProgress('running', deepMode);
     try {
       const signal = this._controller.signal;
-
-      // ── Phase 1: Pre-flight checks (parallel) ──
       this._refreshProgress(0, 'running');
       this._refreshProgress(1, 'running');
-      this._refreshProgress(2, 'running');
-      this._refreshProgress(3, 'running');
-
-      // ── Phase 1: Reachability + Auth (parallel) ──
-      const [reachResult, authResult] = await Promise.all([
-        checkA_Reachability(normalizedUrl, apiKey, signal),
-        checkB_Auth(normalizedUrl, apiKey, signal),
-      ]);
-
+      const [reachResult, authResult] = await Promise.all([checkA_Reachability(normalizedUrl, apiKey, signal), checkB_Auth(normalizedUrl, apiKey, signal)]);
       this._refreshProgress(0, reachResult.state, reachResult.summary);
       this._refreshProgress(1, authResult.state, authResult.summary);
-
-      // ── Phase 2: Model list (needed for modelIdInfo) ──
+      this._refreshProgress(2, 'running');
       const modelListResult = await checkC_ModelList(normalizedUrl, apiKey, signal, model);
       this._refreshProgress(2, modelListResult.state, modelListResult.summary);
-
-      // ── Determine finalTestModelId + modelSource ──
-      const modelIdInfo = determineFinalTestModelId(model, modelListResult);
+      let probedModelId = '';
+      if (!this._userInputModelId && !this._autoDetectedModelId) {
+        const allModels = extractModels(modelListResult?.data || {});
+        if (allModels.length > 0) {
+          const chatModels = allModels.filter(m => !/(embedding|embed|vision|audio|tts|speech|whisper|dalle|image)/i.test(m));
+          const probeModel = chatModels[0] || allModels[0];
+          try {
+            const req = buildRequest(normalizedUrl, apiKey, probeModel, this._interfaceType, PROMPT_SHORT, { maxTokens: 10 });
+            const resp = await fetch(req.endpoint, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body), signal });
+            if (resp.ok) probedModelId = probeModel;
+          } catch (_) {}
+        }
+      }
+      const modelIdInfo = determineFinalTestModelId(this._userInputModelId, this._autoDetectedModelId || probedModelId, modelListResult);
       this._modelIdInfo = modelIdInfo;
-
-      // ── Phase 3: Auto-model detection (needs modelIdInfo for modelSource) ──
-      const autoModelResult = await checkD_AutoModel(
-        normalizedUrl, apiKey, modelIdInfo, authResult, signal, this._interfaceType
-      );
-      this._refreshProgress(3, autoModelResult.state, autoModelResult.summary);
-
-      // ── Phase 4: Target model call (uses finalTestModelId) ──
+      const autoModelResult = await checkD_AutoModel(normalizedUrl, apiKey, modelIdInfo, authResult, signal, this._interfaceType);
+      this._refreshProgress(3, 'running');
+      const targetCallResult = await checkE_TargetCall(normalizedUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal);
+      // Model list + auto model + target call done → now show model ID detection
+      this._refreshProgress(3, targetCallResult.state, autoModelResult.summary || targetCallResult.summary);
       this._refreshProgress(4, 'running');
-      const targetCallResult = await checkE_TargetCall(
-        normalizedUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal
-      );
-      this._refreshProgress(4, targetCallResult.state, targetCallResult.summary);
-
-      // ── Phase 5: Stability sampling (uses finalTestModelId) ──
+      const costResult = await checkJ_CostTransparency(normalizedUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult);
+      this._refreshProgress(4, costResult.state, costResult.summary);
       this._refreshProgress(5, 'running');
-      const stabilityResult = await checkG_Stability(
-        normalizedUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult
-      );
-      this._refreshProgress(5, stabilityResult.state, stabilityResult.summary);
-
-      // ── Phase 6: Usage audit ──
+      const modelIntegrityResult = await checkK_ModelIntegrity(normalizedUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult, modelIdInfo, deepMode);
+      this._refreshProgress(5, modelIntegrityResult.state, modelIntegrityResult.summary);
       this._refreshProgress(6, 'running');
-      const usageResult = await checkH_UsageAudit(
-        normalizedUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult
-      );
-      this._refreshProgress(6, usageResult.state, usageResult.summary);
-
-      // ── Phase 7: Client config ──
-      const clientResult = checkI_ClientConfig(
-        normalizedUrl, apiKey, modelIdInfo.finalTestModelId, modelListResult, targetCallResult
-      );
-
-      // ── Assemble result ──
-      const checks = {
-        reachability: reachResult,
-        auth: authResult,
-        modelList: modelListResult,
-        autoModel: autoModelResult,
-        targetCall: targetCallResult,
-        stability: stabilityResult,
-        usageAudit: usageResult,
-        clientConfig: clientResult,
-      };
-
-      // Classify model visibility risk (soft penalty, NOT hard cap)
-      const modelRisk = classifyModelRisk(modelIdInfo, checks);
-
-      // Raw score
-      let rawScore = calcRawScore(checks);
-
-      // Apply soft penalty for model visibility risk (gentle deduction)
-      if (modelRisk.softDeduction > 0) {
-        rawScore = Math.max(0, rawScore - modelRisk.softDeduction);
-      }
-
-      // Apply hard caps
-      const finalScore = applyCaps(rawScore, checks, modelIdInfo);
-      const grade = getScoreGrade(finalScore);
-      const judgment = getJudgment(finalScore, checks);
-      const finding = getOneLineFinding(finalScore, checks);
-
-      this._result = {
-        score: finalScore,
-        rawScore,
-        grade,
-        judgment,
-        finding,
-        checks,
-        modelRisk,           // { riskType, softDeduction, reasonZh, reasonEn }
-        modelIdInfo,         // pass through for suggestions
-        reportId: generateReportId(),
-        timestamp: new Date().toLocaleString('zh-CN', {
-          year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
-        })
-      };
-
-      this.showResult(this._result);
-
-    } catch (err) {
-      if (err.name === 'AbortError') {
-        showToast(zh ? '检测超时，请重试' : 'Check timed out, please retry');
+      const stabilityResult = await checkG_Stability(normalizedUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult);
+      this._refreshProgress(6, stabilityResult.state, stabilityResult.summary);
+      // Internal: usage audit (no visible progress)
+      const usageResult = await checkH_UsageAudit(normalizedUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult);
+      this._refreshProgress(7, 'running');
+      const basicCompatResult = checkL_BasicCompatibility(reachResult, authResult, modelListResult, targetCallResult);
+      const clientResult = checkI_ClientConfig(normalizedUrl, apiKey, modelIdInfo.finalTestModelId, modelListResult, targetCallResult);
+      const combinedState = basicCompatResult.status === 'excellent' && clientResult.status === 'excellent' ? 'excellent' : basicCompatResult.status === 'failed' || clientResult.status === 'failed' ? 'warning' : 'good';
+      this._refreshProgress(7, combinedState, `${basicCompatResult.summary} / ${clientResult.summary}`);
+      let toolCallingResult = null;
+      if (deepMode) {
+        this._refreshProgress(8, 'running');
+        toolCallingResult = await checkM_ToolCalling(normalizedUrl, apiKey, modelIdInfo.finalTestModelId, signal);
+        this._refreshProgress(8, toolCallingResult?.passed ? 'excellent' : 'warning', toolCallingResult?.summary || '');
       } else {
-        showToast(zh ? '检测失败：' + err.message : 'Check failed: ' + err.message);
+        this._refreshProgress(8, 'running');
       }
+      const checks = { reachability: reachResult, auth: authResult, modelList: modelListResult, autoModel: autoModelResult, targetCall: targetCallResult, stability: stabilityResult, usageAudit: usageResult, costTransparency: costResult, modelIntegrity: modelIntegrityResult, basicCompatibility: basicCompatResult, clientConfig: clientResult };
+      const { final: finalScore } = calcFinalScore(checks);
+      const cappedScore = applyCaps(finalScore, checks, modelIdInfo);
+      const grade = getScoreGrade(cappedScore);
+      const judgment = getJudgment(cappedScore, checks);
+      this._result = { score: cappedScore, finalScore, grade, judgment, checks, deepMode, toolCallingResult, modelIdInfo, reportId: generateReportId(), timestamp: new Date().toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) };
+      this._refreshProgress(8, 'excellent', zh ? '生成报告' : 'Report ready');
+      this.showResult(this._result);
+    } catch (err) {
+      if (err.name === 'AbortError') showToast(zh ? '检测超时，请重试' : 'Check timed out, please retry');
+      else showToast(zh ? '检测失败：' + err.message : 'Check failed: ' + err.message);
     } finally {
       if (btn) {
         btn.disabled = false;
-        btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> ${zh ? '一键验货' : 'Run Check'}`;
+        btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> ${deepMode ? (zh ? '深度验货' : 'Deep Check') : (zh ? '快速验货' : 'Quick Check')}`;
       }
       this.showProgress('done');
     }
   },
 
   clear() {
-    ['doctor-base-url', 'doctor-api-key', 'doctor-model'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.value = '';
-    });
-    this._result = null;
-    this._formData = null;
-    this._modelIdInfo = null;
+    ['doctor-base-url', 'doctor-api-key', 'doctor-model'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    this._result = null; this._formData = null; this._modelIdInfo = null; this._userInputModelId = ''; this._autoDetectedModelId = ''; this.setMode('quick');
     if (this._controller) this._controller.abort();
+    showToast(getDocLang() !== 'en' ? '已清空' : 'Cleared');
   },
 
   showResult(result) {
-    const lang = getDocLang();
     const resultNode = document.getElementById('result-card');
     if (!resultNode) return;
-    const html = buildReportCardHTML(result, this._formData, lang, this._modelIdInfo, result.modelRisk);
+    const html = buildReportCardHTML(result, this._formData, getDocLang(), this._modelIdInfo);
     resultNode.innerHTML = html;
     const rect = resultNode.getBoundingClientRect();
-    if (rect.top > window.innerHeight * 0.6) {
-      resultNode.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
+    if (rect.top > window.innerHeight * 0.6) resultNode.scrollIntoView({ behavior: 'smooth', block: 'start' });
   },
 
-  /* ── 8-step progress bar ── */
-  showProgress(state) {
+  showProgress(state, deepMode) {
     const container = document.getElementById('diag-progress');
     if (!container) return;
     if (state === 'done') { container.innerHTML = ''; return; }
-
     const zh = getDocLang() !== 'en';
     const steps = [
-      { zh: '1/8 API 服务器可达性', en: '1/8 API Server Reachability' },
-      { zh: '2/8 鉴权 / Key 有效性', en: '2/8 Auth / Key Validity' },
-      { zh: '3/8 模型列表获取', en: '3/8 Model List Retrieval' },
-      { zh: '4/8 模型识别与选择', en: '4/8 Model Identification' },
-      { zh: '5/8 目标模型调用质量', en: '5/8 Target Model Call' },
+      { zh: '1/8 API 基础连通', en: '1/8 API Connectivity' },
+      { zh: '2/8 Key 鉴权', en: '2/8 Key Authentication' },
+      { zh: '3/8 模型识别', en: '3/8 Model Identification' },
+      { zh: '4/8 扣费透明度检测', en: '4/8 Cost Transparency' },
+      { zh: '5/8 模型能力验货', en: '5/8 Model Capability' },
       { zh: '6/8 稳定性采样', en: '6/8 Stability Sampling' },
-      { zh: '7/8 用量审计', en: '7/8 Usage Audit' },
-      { zh: '8/8 客户端配置可用性', en: '8/8 Client Config' },
+      { zh: '7/8 客户端配置检查', en: '7/8 Client Config' },
+      { zh: '8/8 生成验货报告', en: '8/8 Generating Report' },
+      { zh: '9/9 Tool Calling 测试', en: '9/9 Tool Calling Test' },
     ];
-
-    const rows = steps.map((s, i) =>
-      `<div class="prog-row" id="prog-row-${i}" data-index="${i}">
-        <span class="prog-icon" id="prog-icon-${i}"><div style="width:14px;height:14px;border:2px solid #e2e8f0;border-radius:50%"></div></span>
-        <span class="prog-bar-wrap"><span class="prog-bar" id="prog-bar-${i}" style="width:0%"></span></span>
-        <span class="prog-label" id="prog-label-${i}">${s[zh ? 'zh' : 'en']}</span>
-        <span class="prog-detail" id="prog-detail-${i}"></span>
-      </div>`
-    ).join('');
-
-    container.innerHTML = `<div class="progress-wrap">
-      <div class="progress-title">${zh ? '检测进度' : 'Progress'}</div>
-      ${rows}
-    </div>`;
+    const totalSteps = deepMode ? 9 : 8;
+    const rows = steps.slice(0, totalSteps + 1).map((s, i) => `<div class="prog-row" id="prog-row-${i}">
+      <span class="prog-icon" id="prog-icon-${i}"><div style="width:14px;height:14px;border:2px solid #e2e8f0;border-radius:50%"></div></span>
+      <span class="prog-bar-wrap"><span class="prog-bar" id="prog-bar-${i}" style="width:0%"></span></span>
+      <span class="prog-label" id="prog-label-${i}">${s[zh?'zh':'en']}</span>
+      <span class="prog-detail" id="prog-detail-${i}"></span>
+    </div>`).join('');
+    container.innerHTML = `<div class="progress-wrap"><div class="progress-title">${zh?'检测进度':'Progress'}</div>${rows}</div>`;
   },
 
   _refreshProgress(index, state, detail) {
     const zh = getDocLang() !== 'en';
-    const steps = [
-      { zh: '1/8 API 服务器可达性', en: '1/8 API Server Reachability' },
-      { zh: '2/8 鉴权 / Key 有效性', en: '2/8 Auth / Key Validity' },
-      { zh: '3/8 模型列表获取', en: '3/8 Model List Retrieval' },
-      { zh: '4/8 模型识别与选择', en: '4/8 Model Identification' },
-      { zh: '5/8 目标模型调用质量', en: '5/8 Target Model Call' },
-      { zh: '6/8 稳定性采样', en: '6/8 Stability Sampling' },
-      { zh: '7/8 用量审计', en: '7/8 Usage Audit' },
-      { zh: '8/8 客户端配置可用性', en: '8/8 Client Config' },
-    ];
-
-    const statusColorMap = {
-      excellent: { icon: '#16a34a', bar: '#16a34a', cls: '' },
-      good:      { icon: '#3b82f6', bar: '#3b82f6', cls: '' },
-      warning:   { icon: '#f59e0b', bar: '#f59e0b', cls: 'prog-row--warn' },
-      failed:    { icon: '#dc2626', bar: '#dc2626', cls: 'prog-row--fail' },
-      skipped:   { icon: '#94a3b8', bar: '#94a3b8', cls: 'prog-row--warn' },
-      inconsistent: { icon: '#7c3aed', bar: '#7c3aed', cls: 'prog-row--warn' },
-      pending:   { icon: '#e2e8f0', bar: '#e2e8f0', cls: '' },
-      running:   { icon: '#2563eb', bar: '#2563eb', cls: 'prog-row--running' },
-    };
-
-    const defaultBarWidth = { excellent: '100%', good: '100%', warning: '65%', failed: '25%', skipped: '40%', inconsistent: '50%', pending: '0%', running: '30%' };
-    const defaultDetail = { excellent: zh ? '优秀' : 'Excellent', good: zh ? '良好' : 'Good', warning: zh ? '注意' : 'Warning', failed: zh ? '失败' : 'Failed', skipped: zh ? '未验证' : 'Not verified', inconsistent: zh ? '矛盾' : 'Inconsistent', pending: '', running: zh ? '检测中...' : 'Checking...' };
-
+    const statusColorMap = { excellent: { icon: '#16a34a', bar: '#16a34a', cls: 'prog-row--done' }, good: { icon: '#16a34a', bar: '#16a34a', cls: 'prog-row--done' }, warning: { icon: '#f59e0b', bar: '#f59e0b', cls: 'prog-row--done prog-row--warn' }, failed: { icon: '#dc2626', bar: '#dc2626', cls: 'prog-row--done prog-row--fail' }, skipped: { icon: '#94a3b8', bar: '#94a3b8', cls: 'prog-row--done' }, pending: { icon: '#e2e8f0', bar: '#e2e8f0', cls: '' }, running: { icon: '#2563eb', bar: '#2563eb', cls: 'prog-row--running' } };
+    const defaultBarWidth = { excellent: '100%', good: '100%', warning: '65%', failed: '25%', skipped: '40%', pending: '0%', running: '30%' };
+    const defaultDetail = { excellent: zh?'优秀':'Excellent', good: zh?'良好':'Good', warning: zh?'注意':'Warning', failed: zh?'失败':'Failed', skipped: zh?'未验证':'Not verified', pending: '', running: zh?'检测中...':'Checking...' };
     const cfg = statusColorMap[state] || statusColorMap.pending;
     const barW = defaultBarWidth[state] || '0%';
     const dtl = detail || defaultDetail[state] || '';
-
-    for (let i = 0; i < 8; i++) {
-      const row = document.getElementById('prog-row-' + i);
-      const icon = document.getElementById('prog-icon-' + i);
-      const bar = document.getElementById('prog-bar-' + i);
-      const label = document.getElementById('prog-label-' + i);
-      const detailEl = document.getElementById('prog-detail-' + i);
+    const totalSteps = this._deepMode ? 9 : 8;
+    for (let i = 0; i <= totalSteps; i++) {
+      const row = document.getElementById('prog-row-' + i); const icon = document.getElementById('prog-icon-' + i);
+      const bar = document.getElementById('prog-bar-' + i); const label = document.getElementById('prog-label-' + i); const detailEl = document.getElementById('prog-detail-' + i);
       if (!row) continue;
-
+      const steps = [
+        { zh: '1/8 API 基础连通', en: '1/8 API Connectivity' },
+        { zh: '2/8 Key 鉴权', en: '2/8 Key Authentication' },
+        { zh: '3/8 模型识别', en: '3/8 Model Identification' },
+        { zh: '4/8 扣费透明度检测', en: '4/8 Cost Transparency' },
+        { zh: '5/8 模型能力验货', en: '5/8 Model Capability' },
+        { zh: '6/8 稳定性采样', en: '6/8 Stability Sampling' },
+        { zh: '7/8 客户端配置检查', en: '7/8 Client Config' },
+        { zh: '8/8 生成验货报告', en: '8/8 Generating Report' },
+        { zh: '9/9 Tool Calling 测试', en: '9/9 Tool Calling Test' },
+      ];
       if (i < index) {
-        label.textContent = steps[i][zh ? 'zh' : 'en'];
+        label.textContent = steps[i]?.[zh?'zh':'en'] || '';
         detailEl.textContent = '';
         icon.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>`;
-        bar.style.width = '100%';
-        bar.style.background = '#16a34a';
+        bar.style.width = '100%'; bar.style.background = '#16a34a';
         row.className = 'prog-row prog-row--done';
       } else if (i === index) {
         if (state === 'running') {
-          label.textContent = steps[i][zh ? 'zh' : 'en'];
-          detailEl.textContent = zh ? '检测中...' : 'Checking...';
+          label.textContent = steps[i]?.[zh?'zh':'en'] || '';
+          detailEl.textContent = zh?'检测中...':'Checking...';
           icon.innerHTML = `<div style="width:14px;height:14px;border:2px solid #2563eb;border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite"></div>`;
-          bar.style.width = '30%';
-          bar.style.background = '#2563eb';
+          bar.style.width = '30%'; bar.style.background = '#2563eb';
           row.className = 'prog-row prog-row--running';
         } else {
-          label.textContent = steps[i][zh ? 'zh' : 'en'];
+          label.textContent = steps[i]?.[zh?'zh':'en'] || '';
           detailEl.textContent = dtl;
-          const checkmark = ['excellent', 'good'].includes(state)
-            ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${cfg.icon}" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>`
-            : state === 'warning'
-            ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${cfg.icon}" stroke-width="3"><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`
-            : state === 'inconsistent'
-            ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${cfg.icon}" stroke-width="3"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`
-            : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${cfg.icon}" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
-          icon.innerHTML = checkmark;
-          bar.style.width = barW;
-          bar.style.background = cfg.bar;
+          const okIcon = ['excellent','good'].includes(state) ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${cfg.icon}" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>` : state === 'warning' ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${cfg.icon}" stroke-width="3"><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>` : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${cfg.icon}" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+          icon.innerHTML = okIcon;
+          bar.style.width = barW; bar.style.background = cfg.bar;
           row.className = 'prog-row prog-row--done ' + (cfg.cls || '');
         }
       } else {
-        label.textContent = steps[i][zh ? 'zh' : 'en'];
+        label.textContent = steps[i]?.[zh?'zh':'en'] || '';
         detailEl.textContent = '';
         icon.innerHTML = `<div style="width:14px;height:14px;border:2px solid #e2e8f0;border-radius:50%"></div>`;
-        bar.style.width = '0%';
-        bar.style.background = '#e2e8f0';
+        bar.style.width = '0%'; bar.style.background = '#e2e8f0';
         row.className = 'prog-row';
       }
     }
@@ -3012,12 +2590,14 @@ window.Doctor = {
 
   copyScore() {
     if (!this._result) { showToast(getDocLang() !== 'en' ? '请先检测' : 'Please run check first'); return; }
-    const lang = getDocLang();
-    const zh = lang !== 'en';
-    const { score, grade, judgment, reportId } = this._result;
+    const zh = getDocLang() !== 'en';
+    const { score, grade, judgment, reportId, deepMode } = this._result;
+    const modeLabel = deepMode ? (zh ? '深度验货' : 'Deep Check') : (zh ? '快速验货' : 'Quick Check');
+    const costRisk = getCostRiskLevel(this._result.checks?.costTransparency?.score || 0);
+    const modelRisk = getModelRiskLevel(this._result.checks?.modelIntegrity?.score || 0);
     const text = zh
-      ? `我的 API Doctor 验货：${grade.grade}档 ${score}分 | ${judgment} | 报告 ID：${reportId}\nhttps://aiapidoctor.com/`
-      : `My API Doctor score: ${grade.grade} ${score}/100 | ${judgment} | Report ID: ${reportId}\nhttps://aiapidoctor.com/`;
+      ? `${modeLabel} | ${grade.gradeZh} ${score}分 | ${judgment} | 扣费:${zh?riskLevelLabelZH(costRisk):riskLevelLabelEN(costRisk)} | 模型:${zh?riskLevelLabelZH(modelRisk):riskLevelLabelEN(modelRisk)} | ID:${reportId}\nhttps://aiapidoctor.com/`
+      : `${modeLabel} | ${grade.grade} ${score}/100 | ${judgment} | Cost:${riskLevelLabelEN(costRisk)} | Model:${riskLevelLabelEN(modelRisk)} | ID:${reportId}\nhttps://aiapidoctor.com/`;
     copyToClipboard(text, zh ? '验货分已复制' : 'Score copied');
   }
 };
@@ -3044,8 +2624,6 @@ window.Doctor = {
     .prog-row--done .prog-label { color: #374151; }
     .prog-row--done.prog-row--warn .prog-label { color: #f59e0b; }
     .prog-row--done.prog-row--fail .prog-label { color: #dc2626; }
-
-    /* Report card */
     .rc-section { background: #fff; border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
     .rc-section-title { font-size: 12px; font-weight: 700; color: #0f172a; margin-bottom: 8px; }
     .rc-check-block { }
@@ -3060,205 +2638,947 @@ window.Doctor = {
   document.head.appendChild(style);
 })();
 
-/* ═══════════════════════════════════════════════════════
-   Init on DOM Ready
-   ═══════════════════════════════════════════════════════ */
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => Doctor.init());
-} else {
-  Doctor.init();
-}
+if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', () => Doctor.init()); }
+else { Doctor.init(); }
 
 /* ═══════════════════════════════════════════════════════
-   Mock Test Cases (for local testing)
-   Uncomment and run in browser console, or include in test page.
+   Mock Test Cases — v5 (A, B, K-Q, V-AH)
    ═══════════════════════════════════════════════════════ */
 window.MockCases = {
 
-  // Case A: Base URL completely unreachable
-  // Expected: 0-25, Failed
+  _makeBaseChecks(opts) {
+    const { reachability, auth, modelList, autoModel, targetCall } = opts;
+    return {
+      reachability: mkCheck({ id: 'reachability', label: {zh:'API服务器可达性',en:'API Server Reachability'}, maxScore: 12, score: reachability, status: reachability > 0 ? 'good' : 'failed', evidence: { latency: 200, modelEndpointOk: reachability > 0 } }),
+      auth: mkCheck({ id: 'auth', label: {zh:'鉴权',en:'Auth'}, maxScore: 14, score: auth, status: auth >= 12 ? 'excellent' : auth >= 8 ? 'good' : auth > 0 ? 'warning' : 'failed', evidence: { modelsStatus: 200, chatStatus: 200 } }),
+      modelList: mkCheck({ id: 'modelList', label: {zh:'模型列表',en:'Model List'}, maxScore: 12, score: modelList, status: 'failed', evidence: {} }),
+      autoModel: mkCheck({ id: 'autoModel', label: {zh:'模型识别',en:'Auto Model'}, maxScore: 10, score: autoModel, status: 'skipped', evidence: {} }),
+      targetCall: mkCheck({ id: 'targetCall', label: {zh:'目标调用',en:'Target Call'}, maxScore: 22, score: targetCall, status: 'skipped', evidence: {} }),
+    };
+  },
+
+  // Normal checks for v6: stability maxScore=15, clientConfig maxScore=3
+  _makeNormalChecks(overrides) {
+    overrides = overrides || {};
+    const tce = { httpStatus: 200, responseParsed: true, formatChoices: true, formatMessage: true, output: {status:'present',text:'好的'}, finishReason: 'stop', usage: {prompt_tokens:5,completion_tokens:3,total_tokens:8}, latencyMs: 500 };
+    const se = { avgLatency: 200, latencyJitter: 50, maxLatency: 250, rateLimitDetected: false,
+      samples: [{ok:true,status:200,latency:180,hasContent:true,responseText:'OK'},{ok:true,status:200,latency:200,hasContent:true,responseText:'OK'},{ok:true,status:200,latency:220,hasContent:true,responseText:'OK'},{ok:true,status:200,latency:190,hasContent:true,responseText:'OK'},{ok:true,status:200,latency:210,hasContent:true,responseText:'OK'}],
+      subScores: { s1:4,s2:3,s3:2,s4:2,s5:1.5,s6:1.5,s7:1 }
+    };
+    const miEvidence = { modelIdentityScore: 6, modelIdentityLevel: 'exact_match', coreAbilityFailures: 0,
+      subScores: { modelIdentity:6, modelVisibility:3, targetCallQuality:5, jsonTest:5, instructionTest:5, codeRepair:5, reasoning:5, needle:4, consistency:2 },
+    };
+    const ctEvidence = {
+      usageTest:{hasUsage:true,usageComplete:true,prompt_tokens:5,completion_tokens:3,total_tokens:8},
+      shortReplyTest:{ok:true,completionTokens:3,reasoningTokens:0,totalTokens:8},
+      maxTokensTest:{completionTokens:3},
+      usageStability:[{total_tokens:15},{total_tokens:15}],
+      promptTokenEstTest:{shortPrompt:'Say hello.', estimatedTokens:4, apiPromptTokens:4},
+    };
+    const checks = {
+      reachability: mkCheck({ id: 'reachability', label: {zh:'API服务器可达性',en:'API Server Reachability'}, maxScore: 12, score: 11, status: 'good', evidence: { latency: 200, modelEndpointOk: true } }),
+      auth: mkCheck({ id: 'auth', label: {zh:'鉴权',en:'Auth'}, maxScore: 14, score: 13, status: 'good', evidence: { modelsStatus: 200, chatStatus: 200 } }),
+      modelList: mkCheck({ id: 'modelList', label: {zh:'模型列表',en:'Model List'}, maxScore: 12, score: 9, status: 'good', evidence: { models: ['gpt-4','gpt-3.5'], modelCount: 2 } }),
+      autoModel: mkCheck({ id: 'autoModel', label: {zh:'模型识别',en:'Auto Model'}, maxScore: 10, score: 8, status: 'good', evidence: {} }),
+      targetCall: mkCheck({ id: 'targetCall', label: {zh:'目标模型调用',en:'Target Model Call'}, maxScore: 22, score: 20, status: 'good', evidence: tce }),
+      stability: mkCheck({ id: 'stability', label: {zh:'稳定性',en:'Stability'}, maxScore: 15, score: 15, status: 'excellent', evidence: se }),
+      usageAudit: mkCheck({ id: 'usageAudit', label: {zh:'用量审计',en:'Usage Audit'}, maxScore: 6, score: 5.5, status: 'excellent', evidence: { usage: {prompt_tokens:5,completion_tokens:3,total_tokens:8} } }),
+      costTransparency: mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 35, status: 'excellent', evidence: ctEvidence }),
+      modelIntegrity: mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 40, status: 'excellent', evidence: miEvidence }),
+      basicCompatibility: mkCheck({ id: 'basicCompatibility', label: {zh:'基础兼容性',en:'Basic Compatibility'}, maxScore: 7, score: 6.5, status: 'excellent', evidence: {} }),
+      clientConfig: mkCheck({ id: 'clientConfig', label: {zh:'客户端配置',en:'Client Config'}, maxScore: 3, score: 3, status: 'excellent', evidence: { baseUrlOrigin: 'https://api.example.com', keyMasked: 'sk-****', modelId: 'gpt-4', clineReady: true, continueReady: true, httpStatus: 200 } }),
+    };
+    if (overrides.costTransparency) Object.assign(checks.costTransparency, overrides.costTransparency);
+    if (overrides.modelIntegrity) Object.assign(checks.modelIntegrity, overrides.modelIntegrity);
+    if (overrides.stability) Object.assign(checks.stability, overrides.stability);
+    return checks;
+  },
+
   caseA() {
-    const checks = {
-      reachability: mkCheck({ id: 'reachability', label: {zh:'API服务器可达性',en:'API Server Reachability'}, maxScore: 12, score: 0, status: 'failed', summary: '网络无法连接', deductions: ['网络无法连接（DNS失败/超时）'], evidence: { netError: 'Failed to fetch' } }),
-      auth: mkCheck({ id: 'auth', label: {zh:'鉴权',en:'Auth'}, maxScore: 14, score: 0, status: 'skipped', summary: '前置失败', evidence: {} }),
-      modelList: mkCheck({ id: 'modelList', label: {zh:'模型列表',en:'Model List'}, maxScore: 12, score: 0, status: 'skipped', summary: '前置失败', evidence: {} }),
-      autoModel: mkCheck({ id: 'autoModel', label: {zh:'模型识别',en:'Auto Model'}, maxScore: 10, score: 0, status: 'skipped', summary: '前置失败', evidence: {} }),
-      targetCall: mkCheck({ id: 'targetCall', label: {zh:'目标调用',en:'Target Call'}, maxScore: 22, score: 0, status: 'skipped', summary: '前置失败', evidence: {} }),
-      stability: mkCheck({ id: 'stability', label: {zh:'稳定性',en:'Stability'}, maxScore: 18, score: 0, status: 'skipped', summary: '前置失败', evidence: { samples: [] } }),
-      usageAudit: mkCheck({ id: 'usageAudit', label: {zh:'用量审计',en:'Usage Audit'}, maxScore: 6, score: 0, status: 'skipped', summary: '前置失败', evidence: {} }),
-      clientConfig: mkCheck({ id: 'clientConfig', label: {zh:'客户端配置',en:'Client Config'}, maxScore: 6, score: 0, status: 'skipped', summary: '前置失败', evidence: {} }),
-    };
-    const raw = 0;
-    const capped = applyCaps(raw, checks, { userModel: 'gpt-4', autoModel: '', allModels: [] });
-    return { raw, capped, grade: getGrade(capped), desc: 'Case A: Base URL unreachable → 预期 0-25, Failed，实际 capped=' + capped };
+    const checks = this._makeBaseChecks({ reachability: 0, auth: 0, modelList: 0, autoModel: 0, targetCall: 0 });
+    checks.stability = mkCheck({ id: 'stability', label: {zh:'稳定性',en:'Stability'}, maxScore: 15, score: 0, status: 'skipped', evidence: { samples: [] } });
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 0, status: 'skipped', evidence: {} });
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 0, status: 'skipped', evidence: {} });
+    checks.basicCompatibility = mkCheck({ id: 'basicCompatibility', label: {zh:'基础兼容性',en:'Basic Compatibility'}, maxScore: 7, score: 0, status: 'failed', evidence: {} });
+    checks.clientConfig = mkCheck({ id: 'clientConfig', label: {zh:'客户端配置',en:'Client Config'}, maxScore: 3, score: 0, status: 'failed', evidence: {} });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case A: Base URL unreachable → capped=${capped} (expected ≤25)` };
   },
 
-  // Case B: Base URL reachable, Key returns 401
-  // Expected: 25-40, Failed or Poor
-  // Real auth scoring: A2=2 (format), A4=3 (not 403), A5=1 (error readable)
-  // A1=0 (header not recognized), A3=0 (got 401), A6=0.5 (inconsistent) = 6.5/14
   caseB() {
-    const checks = {
-      reachability: mkCheck({ id: 'reachability', label: {zh:'API服务器可达性',en:'API Server Reachability'}, maxScore: 12, score: 11, status: 'good', summary: '可达', evidence: { latency: 200, modelEndpointOk: true } }),
-      auth: mkCheck({ id: 'auth', label: {zh:'鉴权',en:'Auth'}, maxScore: 14, score: 6, status: 'failed', summary: '401 Unauthorized', deductions: ['收到 401 Unauthorized'], evidence: { modelsStatus: 401, chatStatus: 401 } }),
-      modelList: mkCheck({ id: 'modelList', label: {zh:'模型列表',en:'Model List'}, maxScore: 12, score: 0, status: 'skipped', summary: '前置失败', evidence: {} }),
-      autoModel: mkCheck({ id: 'autoModel', label: {zh:'模型识别',en:'Auto Model'}, maxScore: 10, score: 0, status: 'skipped', summary: '前置失败', evidence: {} }),
-      targetCall: mkCheck({ id: 'targetCall', label: {zh:'目标调用',en:'Target Call'}, maxScore: 22, score: 0, status: 'skipped', summary: '前置失败', evidence: {} }),
-      stability: mkCheck({ id: 'stability', label: {zh:'稳定性',en:'Stability'}, maxScore: 18, score: 0, status: 'skipped', summary: '前置失败', evidence: { samples: [] } }),
-      usageAudit: mkCheck({ id: 'usageAudit', label: {zh:'用量审计',en:'Usage Audit'}, maxScore: 6, score: 0, status: 'skipped', summary: '前置失败', evidence: {} }),
-      clientConfig: mkCheck({ id: 'clientConfig', label: {zh:'客户端配置',en:'Client Config'}, maxScore: 6, score: 5, status: 'good', summary: '配置基本完整', evidence: { baseUrlOrigin: 'https://api.example.com', keyMasked: 'sk-****', modelId: 'gpt-4', clineReady: true, continueReady: true } }),
-    };
-    // Max possible: reachability(12) + auth(6) + clientConfig(6) = 24 → capped at 40
-    const raw = 22;
-    const capped = applyCaps(raw, checks, { userModel: 'gpt-4', autoModel: '', allModels: [] });
-    return { raw, capped, grade: getGrade(capped), desc: 'Case B: 401 → 预期 25-40，实际 capped=' + capped };
+    const checks = this._makeBaseChecks({ reachability: 11, auth: 6, modelList: 0, autoModel: 0, targetCall: 0 });
+    checks.stability = mkCheck({ id: 'stability', label: {zh:'稳定性',en:'Stability'}, maxScore: 15, score: 0, status: 'skipped', evidence: { samples: [] } });
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 0, status: 'skipped', evidence: {} });
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 0, status: 'skipped', evidence: {} });
+    checks.basicCompatibility = mkCheck({ id: 'basicCompatibility', label: {zh:'基础兼容性',en:'Basic Compatibility'}, maxScore: 7, score: 2, status: 'warning', evidence: {} });
+    checks.clientConfig = mkCheck({ id: 'clientConfig', label: {zh:'客户端配置',en:'Client Config'}, maxScore: 3, score: 3, status: 'excellent', evidence: { baseUrlOrigin: 'https://api.example.com', modelId: 'gpt-4', clineReady: true, continueReady: true, httpStatus: 200 } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case B: 401 → capped=${capped} (expected ≤40)` };
   },
 
-  // Case C: Key normal, /models success, user model not in list, target call fails
-  // Expected: 45-60, Poor
-  caseC() {
-    const checks = {
-      reachability: mkCheck({ id: 'reachability', label: {zh:'API服务器可达性',en:'API Server Reachability'}, maxScore: 12, score: 11, status: 'good', summary: '可达', evidence: { latency: 300, modelEndpointOk: true } }),
-      auth: mkCheck({ id: 'auth', label: {zh:'鉴权',en:'Auth'}, maxScore: 14, score: 13, status: 'good', summary: '鉴权通过', evidence: { modelsStatus: 200, chatStatus: 200 } }),
-      modelList: mkCheck({ id: 'modelList', label: {zh:'模型列表',en:'Model List'}, maxScore: 12, score: 9, status: 'good', summary: '3 models', evidence: { httpStatus: 200, models: ['gpt-3.5', 'gpt-4', 'claude'], modelCount: 3, userModel: 'gpt-4o' } }),
-      autoModel: mkCheck({ id: 'autoModel', label: {zh:'模型识别',en:'Auto Model'}, maxScore: 10, score: 6, status: 'warning', summary: '使用gpt-3.5', evidence: { candidateModel: 'gpt-3.5', callableStatus: 200 } }),
-      targetCall: mkCheck({ id: 'targetCall', label: {zh:'目标调用',en:'Target Call'}, maxScore: 22, score: 8, status: 'failed', summary: '调用质量差', deductions: ['得分过低（< 11/22）'], evidence: { httpStatus: 400, responseParsed: true, output: { status: 'absent' }, latencyMs: 500, networkError: false } }),
-      stability: mkCheck({ id: 'stability', label: {zh:'稳定性',en:'Stability'}, maxScore: 18, score: 3, status: 'skipped', summary: '目标调用失败', evidence: { samples: [], avgLatency: 0 }, deductions: ['目标模型调用失败，稳定性采样受限'] }),
-      usageAudit: mkCheck({ id: 'usageAudit', label: {zh:'用量审计',en:'Usage Audit'}, maxScore: 6, score: 0, status: 'skipped', summary: '前置失败', evidence: {} }),
-      clientConfig: mkCheck({ id: 'clientConfig', label: {zh:'客户端配置',en:'Client Config'}, maxScore: 6, score: 5, status: 'good', summary: '配置基本完整', evidence: { baseUrlOrigin: 'https://api.example.com', keyMasked: 'sk-****', modelId: 'gpt-3.5', clineReady: true, continueReady: true } }),
-    };
-    const raw = 55;
-    const capped = applyCaps(raw, checks, { userModel: 'gpt-4o', autoModel: 'gpt-3.5', allModels: ['gpt-3.5', 'gpt-4', 'claude'] });
-    return { raw, capped, grade: getGrade(capped), desc: 'Case C: 模型不存在，调用失败 → 预期 45-60，实际 capped=' + capped };
+  // Case K: No usage (tightened cap)
+  caseK() {
+    const checks = this._makeNormalChecks();
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 6, status: 'failed',
+      deductions: ['usage 字段完全缺失，无法审计消耗'],
+      evidence: { usageTest: {hasUsage: false}, shortReplyTest: {ok: true, completionTokens: 3, reasoningTokens: 0}, subScores: {} } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case K: No usage → capped=${capped} (expected ≤78, no A/B)` };
   },
 
-  // Case D: Key normal, /models success, user model not in list but target call succeeds
-  // Expected: 78-88, Fair
-  caseD() {
-    const checks = {
-      reachability: mkCheck({ id: 'reachability', label: {zh:'API服务器可达性',en:'API Server Reachability'}, maxScore: 12, score: 11, status: 'good', summary: '可达', evidence: { latency: 300, modelEndpointOk: true } }),
-      auth: mkCheck({ id: 'auth', label: {zh:'鉴权',en:'Auth'}, maxScore: 14, score: 13, status: 'good', summary: '鉴权通过', evidence: { modelsStatus: 200, chatStatus: 200 } }),
-      modelList: mkCheck({ id: 'modelList', label: {zh:'模型列表',en:'Model List'}, maxScore: 12, score: 8, status: 'warning', summary: '2 models', evidence: { httpStatus: 200, models: ['gpt-3.5', 'gpt-4'], modelCount: 2, userModel: 'gpt-4o' } }),
-      autoModel: mkCheck({ id: 'autoModel', label: {zh:'模型识别',en:'Auto Model'}, maxScore: 10, score: 7, status: 'good', summary: '使用gpt-3.5', evidence: { candidateModel: 'gpt-3.5', callableStatus: 200, hasOutput: true } }),
-      targetCall: mkCheck({ id: 'targetCall', label: {zh:'目标调用',en:'Target Call'}, maxScore: 22, score: 18, status: 'good', summary: '调用质量良好', evidence: { httpStatus: 200, responseParsed: true, formatChoices: true, formatMessage: true, output: { status: 'present', text: '好的' }, finishReason: 'stop', usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 }, latencyMs: 800 } }),
-      stability: mkCheck({ id: 'stability', label: {zh:'稳定性',en:'Stability'}, maxScore: 18, score: 14, status: 'warning', summary: '2/3 success', evidence: { avgLatency: 1200, samples: [{ok:true,status:200,latency:800,hasContent:true,responseText:'OK'},{ok:true,status:200,latency:1200,hasContent:true,responseText:'OK'},{ok:false,status:429,latency:200,hasContent:false,errMsg:'rate limit',responseText:''}] }, deductions: ['稳定性采样 2/3 成功'] }),
-      usageAudit: mkCheck({ id: 'usageAudit', label: {zh:'用量审计',en:'Usage Audit'}, maxScore: 6, score: 5.5, status: 'excellent', summary: '明细完整', evidence: { usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 } } }),
-      clientConfig: mkCheck({ id: 'clientConfig', label: {zh:'客户端配置',en:'Client Config'}, maxScore: 6, score: 6, status: 'excellent', summary: '配置完整可导出', evidence: { baseUrlOrigin: 'https://api.example.com', keyMasked: 'sk-****', modelId: 'gpt-3.5', clineReady: true, continueReady: true, httpStatus: 200 } }),
-    };
-    const raw = 82.5;
-    const capped = applyCaps(raw, checks, { userModel: 'gpt-4o', autoModel: 'gpt-3.5', allModels: ['gpt-3.5', 'gpt-4'] });
-    return { raw, capped, grade: getGrade(capped), desc: 'Case D: 用户模型不在列表但调用成功 → 预期 78-88，实际 capped=' + capped };
+  // Case L: Short reply OK but completion_tokens=80, no reasoning_tokens
+  caseL() {
+    const checks = this._makeNormalChecks();
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 13.5, status: 'failed',
+      deductions: ['极短回复 OK 但 completion_tokens(80) 严重偏高，无 reasoning_tokens 解释'],
+      evidence: { usageTest: {hasUsage:true,usageComplete:true,prompt_tokens:5,completion_tokens:3,total_tokens:8}, shortReplyTest: {ok:true,completionTokens:80,reasoningTokens:0,totalTokens:85}, maxTokensTest:{completionTokens:3}, usageStability:[{total_tokens:15},{total_tokens:15}], promptTokenEstTest:{shortPrompt:'Say hello.',estimatedTokens:4,apiPromptTokens:4}, subScores:{} } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case L: OK+comp=80, no reason → capped=${capped} (expected ≤72, cost high risk, R6 cap)` };
   },
 
-  // Case E: Target model call succeeds, but no usage
-  // Expected: 86-94, Fair or Good, cannot be Excellent
-  caseE() {
-    const checks = {
-      reachability: mkCheck({ id: 'reachability', label: {zh:'API服务器可达性',en:'API Server Reachability'}, maxScore: 12, score: 12, status: 'excellent', summary: '完全达标', evidence: { latency: 150, modelEndpointOk: true } }),
-      auth: mkCheck({ id: 'auth', label: {zh:'鉴权',en:'Auth'}, maxScore: 14, score: 14, status: 'excellent', summary: '完全达标', evidence: { modelsStatus: 200, chatStatus: 200 } }),
-      modelList: mkCheck({ id: 'modelList', label: {zh:'模型列表',en:'Model List'}, maxScore: 12, score: 11, status: 'excellent', summary: '5 models', evidence: { httpStatus: 200, models: ['gpt-4', 'gpt-3.5', 'claude-3', 'gemini', 'llama'], modelCount: 5 } }),
-      autoModel: mkCheck({ id: 'autoModel', label: {zh:'模型识别',en:'Auto Model'}, maxScore: 10, score: 10, status: 'excellent', summary: '使用gpt-4', evidence: { candidateModel: 'gpt-4', callableStatus: 200, hasOutput: true } }),
-      targetCall: mkCheck({ id: 'targetCall', label: {zh:'目标调用',en:'Target Call'}, maxScore: 22, score: 21, status: 'excellent', summary: '调用质量优秀', evidence: { httpStatus: 200, responseParsed: true, formatChoices: true, formatMessage: true, output: { status: 'present', text: '好的' }, finishReason: 'stop', usage: {}, latencyMs: 500 } }),
-      stability: mkCheck({ id: 'stability', label: {zh:'稳定性',en:'Stability'}, maxScore: 18, score: 18, status: 'excellent', summary: '3/3 success', evidence: { avgLatency: 600, latencyJitter: 300, samples: [{ok:true,status:200,latency:500,hasContent:true,responseText:'OK'},{ok:true,status:200,latency:600,hasContent:true,responseText:'OK'},{ok:true,status:200,latency:700,hasContent:true,responseText:'OK'}] } }),
-      usageAudit: mkCheck({ id: 'usageAudit', label: {zh:'用量审计',en:'Usage Audit'}, maxScore: 6, score: 1.5, status: 'warning', summary: '明细不完整', evidence: { usage: {} }, deductions: ['usage 字段不存在'] }),
-      clientConfig: mkCheck({ id: 'clientConfig', label: {zh:'客户端配置',en:'Client Config'}, maxScore: 6, score: 6, status: 'excellent', summary: '配置完整可导出', evidence: { baseUrlOrigin: 'https://api.example.com', keyMasked: 'sk-****', modelId: 'gpt-4', clineReady: true, continueReady: true, httpStatus: 200 } }),
-    };
-    const raw = 92.5;
-    const capped = applyCaps(raw, checks, { userModel: 'gpt-4', autoModel: 'gpt-4', allModels: ['gpt-4', 'gpt-3.5', 'claude-3', 'gemini', 'llama'] });
-    return { raw, capped, grade: getGrade(capped), desc: 'Case E: 调用成功但无usage → 预期 86-94，实际 capped=' + capped };
+  // Case M: total_tokens inconsistent (30% diff)
+  caseM() {
+    const checks = this._makeNormalChecks();
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 24, status: 'warning',
+      details: ['total_tokens(30) 与 prompt+completion=8 差异 275%'],
+      evidence: { usageTest: {hasUsage:true,usageComplete:true,prompt_tokens:5,completion_tokens:3,total_tokens:30}, shortReplyTest: {ok:true,completionTokens:3,reasoningTokens:0,totalTokens:30}, subScores: {} } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case M: total_tokens 差异 30% → capped=${capped} (expected ≤86, cost medium risk)` };
   },
 
-  // Case F: Target model call succeeds, but avg latency 9000ms
-  // Expected: 82-90, Fair or Good, cannot be Excellent
-  caseF() {
-    const checks = {
-      reachability: mkCheck({ id: 'reachability', label: {zh:'API服务器可达性',en:'API Server Reachability'}, maxScore: 12, score: 12, status: 'excellent', summary: '完全达标', evidence: { latency: 300, modelEndpointOk: true } }),
-      auth: mkCheck({ id: 'auth', label: {zh:'鉴权',en:'Auth'}, maxScore: 14, score: 14, status: 'excellent', summary: '完全达标', evidence: { modelsStatus: 200, chatStatus: 200 } }),
-      modelList: mkCheck({ id: 'modelList', label: {zh:'模型列表',en:'Model List'}, maxScore: 12, score: 12, status: 'excellent', summary: '5 models', evidence: { httpStatus: 200, models: ['gpt-4'], modelCount: 5 } }),
-      autoModel: mkCheck({ id: 'autoModel', label: {zh:'模型识别',en:'Auto Model'}, maxScore: 10, score: 10, status: 'excellent', summary: '使用gpt-4', evidence: { candidateModel: 'gpt-4', callableStatus: 200, hasOutput: true } }),
-      targetCall: mkCheck({ id: 'targetCall', label: {zh:'目标调用',en:'Target Call'}, maxScore: 22, score: 20, status: 'good', summary: '调用质量良好', evidence: { httpStatus: 200, responseParsed: true, formatChoices: true, formatMessage: true, output: { status: 'present', text: 'Paris' }, finishReason: 'stop', usage: { prompt_tokens: 5, completion_tokens: 1, total_tokens: 6 }, latencyMs: 9000 } }),
-      stability: mkCheck({ id: 'stability', label: {zh:'稳定性',en:'Stability'}, maxScore: 18, score: 12, status: 'warning', summary: '3/3 success, high latency', evidence: { avgLatency: 9200, latencyJitter: 2000, samples: [{ok:true,status:200,latency:8000,hasContent:true,responseText:'OK'},{ok:true,status:200,latency:9000,hasContent:true,responseText:'OK'},{ok:true,status:200,latency:10000,hasContent:true,responseText:'OK'}] }, deductions: ['平均延迟较高：9200ms'] }),
-      usageAudit: mkCheck({ id: 'usageAudit', label: {zh:'用量审计',en:'Usage Audit'}, maxScore: 6, score: 6, status: 'excellent', summary: '明细完整', evidence: { usage: { prompt_tokens: 5, completion_tokens: 1, total_tokens: 6 } } }),
-      clientConfig: mkCheck({ id: 'clientConfig', label: {zh:'客户端配置',en:'Client Config'}, maxScore: 6, score: 6, status: 'excellent', summary: '配置完整可导出', evidence: { baseUrlOrigin: 'https://api.example.com', keyMasked: 'sk-****', modelId: 'gpt-4', clineReady: true, continueReady: true, httpStatus: 200 } }),
-    };
-    const raw = 92;
-    const capped = applyCaps(raw, checks, { userModel: 'gpt-4', autoModel: 'gpt-4', allModels: ['gpt-4', 'gpt-3.5'] });
-    return { raw, capped, grade: getGrade(capped), desc: 'Case F: 延迟9000ms → 预期 82-90，实际 capped=' + capped };
+  // Case N: JSON+instruction+code failed
+  caseN() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 8, status: 'failed',
+      deductions: ['JSON 严格输出测试失败：输出不是合法 JSON','严格指令遵循测试未通过','轻量代码修复测试未通过'],
+      evidence: { modelIdentityScore:6, coreAbilityFailures:3, jsonTest:{output:'NOT JSON'}, instructionTest:{output:'wrong'}, codeRepair:{output:'wrong'} } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case N: JSON+instruction+code failed → capped=${capped} (expected ≤75, model high risk)` };
   },
 
-  // Case G: Target model call succeeds, stability 2/3
-  // Expected: 78-88, Fair
-  caseG() {
-    const checks = {
-      reachability: mkCheck({ id: 'reachability', label: {zh:'API服务器可达性',en:'API Server Reachability'}, maxScore: 12, score: 12, status: 'excellent', summary: '完全达标', evidence: { latency: 200, modelEndpointOk: true } }),
-      auth: mkCheck({ id: 'auth', label: {zh:'鉴权',en:'Auth'}, maxScore: 14, score: 14, status: 'excellent', summary: '完全达标', evidence: { modelsStatus: 200, chatStatus: 200 } }),
-      modelList: mkCheck({ id: 'modelList', label: {zh:'模型列表',en:'Model List'}, maxScore: 12, score: 12, status: 'excellent', summary: '5 models', evidence: { httpStatus: 200, models: ['gpt-4'], modelCount: 5 } }),
-      autoModel: mkCheck({ id: 'autoModel', label: {zh:'模型识别',en:'Auto Model'}, maxScore: 10, score: 10, status: 'excellent', summary: '使用gpt-4', evidence: { candidateModel: 'gpt-4', callableStatus: 200, hasOutput: true } }),
-      targetCall: mkCheck({ id: 'targetCall', label: {zh:'目标调用',en:'Target Call'}, maxScore: 22, score: 22, status: 'excellent', summary: '调用质量优秀', evidence: { httpStatus: 200, responseParsed: true, formatChoices: true, formatMessage: true, output: { status: 'present', text: 'Paris' }, finishReason: 'stop', usage: { prompt_tokens: 5, completion_tokens: 1, total_tokens: 6 }, latencyMs: 500 } }),
-      stability: mkCheck({ id: 'stability', label: {zh:'稳定性',en:'Stability'}, maxScore: 18, score: 12, status: 'warning', summary: '2/3 success', evidence: { avgLatency: 800, latencyJitter: 400, samples: [{ok:true,status:200,latency:600,hasContent:true,responseText:'OK'},{ok:true,status:200,latency:800,hasContent:true,responseText:'OK'},{ok:false,status:0,latency:3000,hasContent:false,errMsg:'timeout',responseText:''}] }, deductions: ['稳定性采样 2/3 成功'] }),
-      usageAudit: mkCheck({ id: 'usageAudit', label: {zh:'用量审计',en:'Usage Audit'}, maxScore: 6, score: 6, status: 'excellent', summary: '明细完整', evidence: { usage: { prompt_tokens: 5, completion_tokens: 1, total_tokens: 6 } } }),
-      clientConfig: mkCheck({ id: 'clientConfig', label: {zh:'客户端配置',en:'Client Config'}, maxScore: 6, score: 6, status: 'excellent', summary: '配置完整可导出', evidence: { baseUrlOrigin: 'https://api.example.com', keyMasked: 'sk-****', modelId: 'gpt-4', clineReady: true, continueReady: true, httpStatus: 200 } }),
-    };
-    const raw = 94;
-    const capped = applyCaps(raw, checks, { userModel: 'gpt-4', autoModel: 'gpt-4', allModels: ['gpt-4', 'gpt-3.5'] });
-    return { raw, capped, grade: getGrade(capped), desc: 'Case G: 稳定性2/3 → 预期 78-88，实际 capped=' + capped };
+  // Case O: Hidden model, all tests pass
+  caseO() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'good',
+      details: ['当前模型未出现在 /models 列表中，但实际调用已通过'],
+      evidence: { modelIdentityScore:6, modelIdentityLevel:'exact_match', coreAbilityFailures:0, modelVisibility:'hidden_but_works', subScores: {modelIdentity:6,modelVisibility:2,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2} } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case O: Hidden model, all pass → capped=${capped} (expected 90+, B grade)` };
   },
 
-  // Case H: /models unavailable, but manual model call succeeds, stability 3/3
-  // Expected: 75-82, Fair
-  caseH() {
-    const checks = {
-      reachability: mkCheck({ id: 'reachability', label: {zh:'API服务器可达性',en:'API Server Reachability'}, maxScore: 12, score: 11, status: 'good', summary: '可达', evidence: { latency: 400, modelEndpointOk: false } }),
-      auth: mkCheck({ id: 'auth', label: {zh:'鉴权',en:'Auth'}, maxScore: 14, score: 14, status: 'excellent', summary: '鉴权通过', evidence: { modelsStatus: 200, chatStatus: 200 } }),
-      modelList: mkCheck({ id: 'modelList', label: {zh:'模型列表',en:'Model List'}, maxScore: 12, score: 2, status: 'failed', summary: '模型列表不可用', evidence: { httpError: 404 }, deductions: ['/models 请求失败：HTTP 404'] }),
-      autoModel: mkCheck({ id: 'autoModel', label: {zh:'模型识别',en:'Auto Model'}, maxScore: 10, score: 8, status: 'good', summary: '使用用户填写模型', evidence: { candidateModel: 'gpt-4', callableStatus: 200, hasOutput: true } }),
-      targetCall: mkCheck({ id: 'targetCall', label: {zh:'目标调用',en:'Target Call'}, maxScore: 22, score: 21, status: 'excellent', summary: '调用质量优秀', evidence: { httpStatus: 200, responseParsed: true, formatChoices: true, formatMessage: true, output: { status: 'present', text: '好的' }, finishReason: 'stop', usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 }, latencyMs: 700 } }),
-      stability: mkCheck({ id: 'stability', label: {zh:'稳定性',en:'Stability'}, maxScore: 18, score: 18, status: 'excellent', summary: '3/3 success', evidence: { avgLatency: 750, latencyJitter: 200, samples: [{ok:true,status:200,latency:600,hasContent:true,responseText:'OK'},{ok:true,status:200,latency:800,hasContent:true,responseText:'OK'},{ok:true,status:200,latency:850,hasContent:true,responseText:'OK'}] } }),
-      usageAudit: mkCheck({ id: 'usageAudit', label: {zh:'用量审计',en:'Usage Audit'}, maxScore: 6, score: 6, status: 'excellent', summary: '明细完整', evidence: { usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 } } }),
-      clientConfig: mkCheck({ id: 'clientConfig', label: {zh:'客户端配置',en:'Client Config'}, maxScore: 6, score: 6, status: 'excellent', summary: '配置完整可导出', evidence: { baseUrlOrigin: 'https://api.example.com', keyMasked: 'sk-****', modelId: 'gpt-4', clineReady: true, continueReady: true, httpStatus: 200 } }),
-    };
-    const raw = 88;
-    const capped = applyCaps(raw, checks, { userModel: 'gpt-4', autoModel: 'gpt-4', allModels: [] });
-    return { raw, capped, grade: getGrade(capped), desc: 'Case H: /models不可用但手动模型可用 → 预期 75-82，实际 capped=' + capped };
+  // Case P: Stability 3/5 but avgLat=900ms
+  caseP() {
+    const checks = this._makeNormalChecks();
+    checks.stability = mkCheck({ id: 'stability', label: {zh:'稳定性',en:'Stability'}, maxScore: 15, score: 10, status: 'warning',
+      details: ['平均延迟过高：900ms'],
+      evidence: { avgLatency:900, latencyJitter:80, maxLatency:980, rateLimitDetected:false,
+        samples: [{ok:true,status:200,latency:850,hasContent:true,responseText:'OK'},{ok:true,status:200,latency:900,hasContent:true,responseText:'OK'},{ok:true,status:200,latency:920,hasContent:true,responseText:'OK'},{ok:true,status:200,latency:880,hasContent:true,responseText:'OK'},{ok:true,status:200,latency:950,hasContent:true,responseText:'OK'}],
+        subScores:{s1:4,s2:0,s3:0,s4:2,s5:1.5,s6:1.5,s7:1} } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case P: 5/5 success but avgLat=900ms → capped=${capped} (expected ≤B, no A)` };
   },
 
-  // Case I: Returns HTML login page / Cloudflare challenge
-  // Expected: 40-60, Poor
-  caseI() {
-    const checks = {
-      reachability: mkCheck({ id: 'reachability', label: {zh:'API服务器可达性',en:'API Server Reachability'}, maxScore: 12, score: 4, status: 'warning', summary: '12项中得4分，部分项目未达标', evidence: { latency: 500, modelEndpointOk: false }, deductions: ['返回 HTML 登录页 / Cloudflare / WAF'] }),
-      auth: mkCheck({ id: 'auth', label: {zh:'鉴权',en:'Auth'}, maxScore: 14, score: 14, status: 'excellent', summary: '鉴权通过', evidence: { modelsStatus: 200, chatStatus: 200 } }),
-      modelList: mkCheck({ id: 'modelList', label: {zh:'模型列表',en:'Model List'}, maxScore: 12, score: 0, status: 'failed', summary: '模型列表不可用', evidence: {}, deductions: ['/models 请求失败'] }),
-      autoModel: mkCheck({ id: 'autoModel', label: {zh:'模型识别',en:'Auto Model'}, maxScore: 10, score: 8, status: 'good', summary: '使用用户填写模型', evidence: { candidateModel: 'gpt-4', callableStatus: 200, hasOutput: true } }),
-      targetCall: mkCheck({ id: 'targetCall', label: {zh:'目标调用',en:'Target Call'}, maxScore: 22, score: 20, status: 'good', summary: '调用质量良好', evidence: { httpStatus: 200, responseParsed: true, formatChoices: true, formatMessage: true, output: { status: 'present', text: '好的' }, finishReason: 'stop', usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 }, latencyMs: 600 } }),
-      stability: mkCheck({ id: 'stability', label: {zh:'稳定性',en:'Stability'}, maxScore: 18, score: 18, status: 'excellent', summary: '3/3 success', evidence: { avgLatency: 650, latencyJitter: 200, samples: [{ok:true,status:200,latency:550,hasContent:true,responseText:'OK'},{ok:true,status:200,latency:700,hasContent:true,responseText:'OK'},{ok:true,status:200,latency:700,hasContent:true,responseText:'OK'}] } }),
-      usageAudit: mkCheck({ id: 'usageAudit', label: {zh:'用量审计',en:'Usage Audit'}, maxScore: 6, score: 6, status: 'excellent', summary: '明细完整', evidence: { usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 } } }),
-      clientConfig: mkCheck({ id: 'clientConfig', label: {zh:'客户端配置',en:'Client Config'}, maxScore: 6, score: 6, status: 'excellent', summary: '配置完整可导出', evidence: { baseUrlOrigin: 'https://api.example.com', keyMasked: 'sk-****', modelId: 'gpt-4', clineReady: true, continueReady: true, httpStatus: 200 } }),
-    };
-    const raw = 76;
-    const capped = applyCaps(raw, checks, { userModel: 'gpt-4', autoModel: 'gpt-4', allModels: [] });
-    return { raw, capped, grade: getGrade(capped), desc: 'Case I: HTML登录页/WAF → 预期 40-60，实际 capped=' + capped };
+  // Case Q: All normal
+  caseQ() {
+    const { final } = calcFinalScore(this._makeNormalChecks());
+    const capped = applyCaps(final, this._makeNormalChecks(), {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case Q: All normal → capped=${capped} (expected 95-98, A grade)` };
   },
 
-  // Case J: All normal, stability 3/3, usage complete, low latency
-  // Expected: 94-98, Excellent
-  caseJ() {
-    const checks = {
-      reachability: mkCheck({ id: 'reachability', label: {zh:'API服务器可达性',en:'API Server Reachability'}, maxScore: 12, score: 12, status: 'excellent', summary: '完全达标', evidence: { latency: 80, modelEndpointOk: true } }),
-      auth: mkCheck({ id: 'auth', label: {zh:'鉴权',en:'Auth'}, maxScore: 14, score: 14, status: 'excellent', summary: '完全达标', evidence: { modelsStatus: 200, chatStatus: 200 } }),
-      modelList: mkCheck({ id: 'modelList', label: {zh:'模型列表',en:'Model List'}, maxScore: 12, score: 12, status: 'excellent', summary: '8 models', evidence: { httpStatus: 200, models: ['gpt-4', 'gpt-3.5', 'claude-3', 'gemini-pro', 'gemini-flash', 'llama-3', 'mistral', 'command'], modelCount: 8 } }),
-      autoModel: mkCheck({ id: 'autoModel', label: {zh:'模型识别',en:'Auto Model'}, maxScore: 10, score: 10, status: 'excellent', summary: '使用gpt-4', evidence: { candidateModel: 'gpt-4', callableStatus: 200, hasOutput: true } }),
-      targetCall: mkCheck({ id: 'targetCall', label: {zh:'目标调用',en:'Target Call'}, maxScore: 22, score: 22, status: 'excellent', summary: '调用质量优秀', evidence: { httpStatus: 200, responseParsed: true, formatChoices: true, formatMessage: true, output: { status: 'present', text: '好的' }, finishReason: 'stop', usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 }, latencyMs: 350 } }),
-      stability: mkCheck({ id: 'stability', label: {zh:'稳定性',en:'Stability'}, maxScore: 18, score: 18, status: 'excellent', summary: '3/3 success', evidence: { avgLatency: 400, latencyJitter: 150, samples: [{ok:true,status:200,latency:350,hasContent:true,responseText:'OK'},{ok:true,status:200,latency:400,hasContent:true,responseText:'OK'},{ok:true,status:200,latency:450,hasContent:true,responseText:'OK'}] } }),
-      usageAudit: mkCheck({ id: 'usageAudit', label: {zh:'用量审计',en:'Usage Audit'}, maxScore: 6, score: 6, status: 'excellent', summary: '明细完整', evidence: { usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 } } }),
-      clientConfig: mkCheck({ id: 'clientConfig', label: {zh:'客户端配置',en:'Client Config'}, maxScore: 6, score: 6, status: 'excellent', summary: '配置完整可导出', evidence: { baseUrlOrigin: 'https://api.example.com', keyMasked: 'sk-****', modelId: 'gpt-4', clineReady: true, continueReady: true, httpStatus: 200 } }),
-    };
-    const raw = 100;
-    const capped = applyCaps(raw, checks, { userModel: 'gpt-4', autoModel: 'gpt-4', allModels: ['gpt-4', 'gpt-3.5', 'claude-3', 'gemini-pro', 'gemini-flash', 'llama-3', 'mistral', 'command'] });
-    return { raw, capped, grade: getGrade(capped), desc: 'Case J: 全部正常 → 预期 94-98，实际 capped=' + capped };
+  // ── New Cases V-AH ──────────────────────────────────
+
+  // Case V: avgLat=900ms, 5/5 success → stability not low risk, no A
+  caseV() {
+    const checks = this._makeNormalChecks();
+    checks.stability = mkCheck({ id: 'stability', label: {zh:'稳定性',en:'Stability'}, maxScore: 15, score: 7, status: 'warning',
+      deductions: ['平均延迟过高：900ms','最大延迟过高：980ms'],
+      evidence: { avgLatency:900, latencyJitter:80, maxLatency:980, rateLimitDetected:false,
+        samples: [{ok:true,status:200,latency:850},{ok:true,status:200,latency:900},{ok:true,status:200,latency:920},{ok:true,status:200,latency:880},{ok:true,status:200,latency:950}],
+        subScores:{s1:4,s2:0,s3:0,s4:2,s5:0,s6:1,s7:1} } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case V: avgLat=900ms, 5/5 → capped=${capped} (expected stability warning, no A)` };
   },
+
+  // Case W: Latency jitter 1200ms → jitter item 0, stability medium
+  caseW() {
+    const checks = this._makeNormalChecks();
+    checks.stability = mkCheck({ id: 'stability', label: {zh:'稳定性',en:'Stability'}, maxScore: 15, score: 9, status: 'warning',
+      details: ['延迟波动严重：1200ms'],
+      evidence: { avgLatency:300, latencyJitter:1200, maxLatency:900, rateLimitDetected:false,
+        samples: [{ok:true,status:200,latency:100},{ok:true,status:200,latency:300},{ok:true,status:200,latency:500},{ok:true,status:200,latency:800},{ok:true,status:200,latency:1300}],
+        subScores:{s1:4,s2:2,s3:1,s4:0,s5:0.5,s6:1.5,s7:1} } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case W: jitter=1200ms → capped=${capped} (expected stability medium, jitter 0)` };
+  },
+
+  // Case X: Test claude-opus-4.6-thinking, model says GPT-3.5 → identity 0
+  caseX() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 12, status: 'failed',
+      deductions: ['模型自报身份与目标 Model ID 不一致，存在明显模型降配疑似风险'],
+      evidence: { modelIdentityScore:0, modelIdentityLevel:'wrong_family', coreAbilityFailures:3,
+        modelVisibility:'in_list', subScores:{modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:0,instructionTest:0,codeRepair:0,reasoning:2,needle:2,consistency:0} } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case X: claude says GPT-3.5 → capped=${capped} (expected ≤72, model high risk)` };
+  },
+
+  // Case Y: Test gpt-5.5, model says unknown → identity 1
+  caseY() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 30, status: 'warning',
+      details: ['模型未能明确自报当前模型身份'],
+      evidence: { modelIdentityScore:1, modelIdentityLevel:'ambiguous', coreAbilityFailures:0,
+        modelVisibility:'in_list', subScores:{modelIdentity:1,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2} } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case Y: gpt-5.5 says unknown → capped=${capped} (expected ≤89, no A)` };
+  },
+
+  // Case Z: usage complete but total_tokens diff 30%
+  caseZ() {
+    const checks = this._makeNormalChecks();
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 24, status: 'warning',
+      details: ['total_tokens(50) 与 prompt+completion=20 差异 150%'],
+      evidence: { usageTest: {hasUsage:true,usageComplete:true,prompt_tokens:10,completion_tokens:10,total_tokens:50}, shortReplyTest: {ok:true,completionTokens:3,reasoningTokens:0}, subScores:{} } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case Z: total_tokens diff 30% → capped=${capped} (expected ≤86, cost medium risk)` };
+  },
+
+  // Case AA: max_tokens=5 but returns very long
+  caseAA() {
+    const checks = this._makeNormalChecks();
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 26, status: 'warning',
+      details: ['max_tokens 限制未完全生效'],
+      evidence: { usageTest: {hasUsage:true,usageComplete:true,prompt_tokens:5,completion_tokens:3,total_tokens:8}, shortReplyTest: {ok:true,completionTokens:3,reasoningTokens:0}, maxTokensTest: {completionTokens:50}, subScores:{} } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case AA: max_tokens=5 but returns very long → capped=${capped} (expected ≤84, cost medium risk)` };
+  },
+
+  // Case AB: Short reply OK, completion_tokens=60, no reasoning_tokens
+  caseAB() {
+    const checks = this._makeNormalChecks();
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 15.5, status: 'failed',
+      deductions: ['极短回复 OK 但 completion_tokens(60) 严重偏高，无 reasoning_tokens 解释'],
+      evidence: { usageTest: {hasUsage:true,usageComplete:true,prompt_tokens:5,completion_tokens:3,total_tokens:8}, shortReplyTest: {ok:true,completionTokens:60,reasoningTokens:0,totalTokens:65}, subScores:{} } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case AB: OK+comp=60, no reason → capped=${capped} (expected ≤72, cost high risk)` };
+  },
+
+  // Case AC: Short reply OK, completion_tokens=60, reasoning_tokens=55
+  caseAC() {
+    const checks = this._makeNormalChecks();
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 25, status: 'warning',
+      details: ['短回复 token 偏高(60)，reasoning_tokens(55) 部分解释'],
+      evidence: { usageTest: {hasUsage:true,usageComplete:true,prompt_tokens:5,completion_tokens:3,total_tokens:8}, shortReplyTest: {ok:true,completionTokens:60,reasoningTokens:55,totalTokens:65}, subScores:{} } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case AC: OK+comp=60+reason=55 → capped=${capped} (expected ≤86, cost medium risk, short item max 4/7)` };
+  },
+
+  // Case AD: JSON + instruction + code three failures
+  caseAD() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 8, status: 'failed',
+      deductions: ['JSON 严格输出测试失败：输出不是合法 JSON','严格指令遵循测试未通过','轻量代码修复测试未通过'],
+      evidence: { modelIdentityScore:6, coreAbilityFailures:3, jsonTest:{output:'xxx'}, instructionTest:{output:'xxx'}, codeRepair:{output:'xxx'} } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case AD: JSON+instr+code failed → capped=${capped} (expected ≤75, model high risk)` };
+  },
+
+  // Case AE: Identity=0 but all ability tests pass
+  caseAE() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 31, status: 'warning',
+      details: ['模型能力测试表现尚可，但自报身份与目标模型不一致'],
+      evidence: { modelIdentityScore:0, modelIdentityLevel:'wrong_family', coreAbilityFailures:0,
+        subScores:{modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2} } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case AE: identity=0, all pass → capped=${capped} (expected ≤89, ModelIntegrity max 31, no A)` };
+  },
+
+  // Case AF: Two sites, one avgLat=180ms, one avgLat=900ms → scores must differ significantly
+  caseAF_1() { // fast site
+    const { final } = calcFinalScore(this._makeNormalChecks());
+    const capped = applyCaps(final, this._makeNormalChecks(), {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case AF-1 (fast 180ms): → capped=${capped} (expected A/B grade)` };
+  },
+  caseAF_2() { // slow site
+    const checks = this._makeNormalChecks();
+    checks.stability = mkCheck({ id: 'stability', label: {zh:'稳定性',en:'Stability'}, maxScore: 15, score: 7, status: 'warning',
+      evidence: { avgLatency:900, latencyJitter:80, maxLatency:980, rateLimitDetected:false,
+        samples: [{ok:true,status:200,latency:850},{ok:true,status:200,latency:900},{ok:true,status:200,latency:920},{ok:true,status:200,latency:880},{ok:true,status:200,latency:950}],
+        subScores:{s1:4,s2:0,s3:0,s4:2,s5:0.5,s6:1,s7:1} } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case AF-2 (slow 900ms): → capped=${capped} (expected C/D, stability warning)` };
+  },
+
+  // Case AG: Two sites, one usage complete, one usage missing → scores differ by ≥12
+  caseAG_1() { // usage complete
+    const { final } = calcFinalScore(this._makeNormalChecks());
+    const capped = applyCaps(final, this._makeNormalChecks(), {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case AG-1 (usage complete): → capped=${capped}` };
+  },
+  caseAG_2() { // usage missing
+    const checks = this._makeNormalChecks();
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 6, status: 'failed',
+      evidence: { usageTest: {hasUsage:false}, shortReplyTest:{ok:true,completionTokens:3}, subScores:{} } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case AG-2 (usage missing): → capped=${capped} (gap from AG-1 expected ≥12 pts)` };
+  },
+
+  // Case AH: Two sites, one identity match, one identity mismatch → scores differ by ≥8
+  caseAH_1() { // identity match
+    const { final } = calcFinalScore(this._makeNormalChecks());
+    const capped = applyCaps(final, this._makeNormalChecks(), {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case AH-1 (identity match): → capped=${capped}` };
+  },
+  caseAH_2() { // identity mismatch
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 30, status: 'warning',
+      deductions: ['模型自报身份与目标 Model ID 不一致'],
+      evidence: { modelIdentityScore:0, modelIdentityLevel:'wrong_family', coreAbilityFailures:0,
+        subScores:{modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2} } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case AH-2 (identity mismatch): → capped=${capped} (gap from AH-1 expected ≥8 pts, no A)` };
+  },
+
+  // ── New Cases AI-AO ──────────────────────────────────
+
+  // Case AI: Short prompt estimate 6 tokens, API returns prompt_tokens=80 (13x inflation, >3x)
+  // J9 score: diff = (80-6)/6 = 1233% → score 0
+  // To get capped=84: need raw≈84, costScore=23 gives raw=85.2, capped=84
+  caseAI() {
+    const checks = this._makeNormalChecks();
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 23, status: 'warning',
+      details: ['prompt_tokens 比本地估算高 1233% (80 vs 估计6)'],
+      evidence: {
+        usageTest:{hasUsage:true,usageComplete:true,prompt_tokens:5,completion_tokens:3,total_tokens:8},
+        shortReplyTest:{ok:true,completionTokens:3,reasoningTokens:0,totalTokens:8},
+        maxTokensTest:{completionTokens:3},
+        usageStability:[{total_tokens:15},{total_tokens:15}],
+        promptTokenEstTest:{shortPrompt:'Say hello.', estimatedTokens:6, apiPromptTokens:80},
+        subScores:{}
+      } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case AI: prompt_tokens 80 vs est.6 (13x) → capped=${capped} (expected ≤84, cost medium risk, J9 cap 84)` };
+  },
+
+  // Case AJ: Short prompt estimate 6 tokens, API returns prompt_tokens=200 (>5x inflation)
+  // J9 score: 0, cost high risk, cap 76
+  caseAJ() {
+    const checks = this._makeNormalChecks();
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 33, status: 'warning',
+      deductions: ['prompt_tokens 明显高于本地估算(200 vs 估计6)，存在隐藏上下文或 token inflation 风险，建议结合后台余额小额核对'],
+      evidence: {
+        usageTest:{hasUsage:true,usageComplete:true,prompt_tokens:5,completion_tokens:3,total_tokens:8},
+        shortReplyTest:{ok:true,completionTokens:3,reasoningTokens:0,totalTokens:8},
+        maxTokensTest:{completionTokens:3},
+        usageStability:[{total_tokens:15},{total_tokens:15}],
+        promptTokenEstTest:{shortPrompt:'Say hello.', estimatedTokens:6, apiPromptTokens:200},
+        subScores:{}
+      } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case AJ: prompt_tokens 200 vs est.6 (>5x) → capped=${capped} (expected ≤76, cost high risk)` };
+  },
+
+  // Case AK: identityScore=0, all ability tests pass (coreAbilityFailures=0)
+  // ModelIntegrity score: modelIdentity=0, others full = 31/40
+  // New rules: cap 86, grade max C, Model Integrity at most medium risk
+  caseAK() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 31, status: 'warning',
+      details: ['模型能力测试表现尚可，但自报身份与目标模型不一致'],
+      evidence: { modelIdentityScore:0, modelIdentityLevel:'wrong_family', coreAbilityFailures:0,
+        subScores:{modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2} } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case AK: identity=0, all pass → capped=${capped} (expected ≤86, grade max C, MI max 31)` };
+  },
+
+  // Case AL: identityScore=0, 1 coreAbilityFailure
+  // New rules: model high risk, cap 75
+  caseAL() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 26, status: 'failed',
+      deductions: ['JSON 抗糊弄测试失败','模型自报身份与目标 Model ID 不一致'],
+      evidence: { modelIdentityScore:0, modelIdentityLevel:'wrong_family', coreAbilityFailures:1,
+        subScores:{modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:0,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2} } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case AL: identity=0, 1 failure → capped=${capped} (expected ≤75, model high risk)` };
+  },
+
+  // Case AM: identityScore=0, 3 coreAbilityFailures
+  // New rules: cap 68
+  caseAM() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 8, status: 'failed',
+      deductions: ['JSON 抗糊弄测试失败','严格指令遵循测试未通过','轻量代码修复测试未通过'],
+      evidence: { modelIdentityScore:0, modelIdentityLevel:'wrong_family', coreAbilityFailures:3,
+        subScores:{modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:0,instructionTest:0,codeRepair:0,reasoning:5,needle:4,consistency:2} } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case AM: identity=0, 3 failures → capped=${capped} (expected ≤68)` };
+  },
+
+  // Case AN: JSON anti-gaming test returns markdown code block wrapping JSON
+  // New K3 scoring: markdown → 1.5/5. 1.5 < 2.5 → 1 coreAbilityFailure
+  // identityScore=0 + 1 failure → cap 75 (model high risk)
+  caseAN() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 30.5, status: 'warning',
+      details: ['JSON 输出被 markdown 代码块包裹'],
+      evidence: { modelIdentityScore:0, modelIdentityLevel:'wrong_family', coreAbilityFailures:1,
+        subScores:{modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:1.5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2} } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case AN: JSON in markdown+identity=0 → jsonTest=1.5, 1 failure → capped=${capped} (expected ≤75)` };
+  },
+
+  // Case AO: JSON anti-gaming test returns explanation text (not valid JSON)
+  // New K3 scoring: explanation → 0/5. 0 < 2.5 → 1 coreAbilityFailure
+  // identityScore=0 + 1 failure → cap 75 (model high risk)
+  caseAO() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 29, status: 'warning',
+      deductions: ['JSON 抗糊弄测试失败：输出不是合法 JSON'],
+      evidence: { modelIdentityScore:0, modelIdentityLevel:'wrong_family', coreAbilityFailures:1,
+        subScores:{modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:0,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2} } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case AO: JSON returns explanation+identity=0 → jsonTest=0, 1 failure → capped=${capped} (expected ≤75)` };
+  },
+
+  // ── New Cases AP-BA ──────────────────────────────────
+
+  // Case AP: Short prompt local est=2, API prompt=20, deltaRatio normal
+  // J8: overhead=18 (≤40), deltaRatio normal → J8 at least 3/5
+  caseAP() {
+    const checks = this._makeNormalChecks();
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 30, status: 'warning',
+      details: ['prompt_tokens 存在轻微包装(+18 overhead, deltaRatio normal)，不影响审计'],
+      evidence: {
+        usageTest:{hasUsage:true,usageComplete:true,prompt_tokens:5,completion_tokens:3,total_tokens:8},
+        shortReplyTest:{ok:true,completionTokens:3,reasoningTokens:0,totalTokens:8},
+        maxTokensTest:{completionTokens:3},
+        usageStability:[{total_tokens:15},{total_tokens:15}],
+        j8Test:{promptA:'Say hello.',apiPromptA:20,estimatedA:2,baseOverhead:18,deltaRatio:1.2},
+        baseOverhead:18, deltaRatio:1.2,
+        subScores:{}
+      } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case AP: prompt est=2, API=20, overhead=18 → capped=${capped} (expected 90-95, B grade, J8 >= 3)` };
+  },
+
+  // Case AQ: promptTokens=5061, overhead > 1000
+  caseAQ() {
+    const checks = this._makeNormalChecks();
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 17, status: 'failed',
+      deductions: ['prompt_tokens 明显高于本地估算(5061 vs 估计2，overhead > 1000)，存在严重隐藏上下文或包装'],
+      evidence: {
+        usageTest:{hasUsage:true,usageComplete:true,prompt_tokens:5061,completion_tokens:3,total_tokens:5064},
+        shortReplyTest:{ok:true,completionTokens:3,reasoningTokens:0,totalTokens:8},
+        maxTokensTest:{completionTokens:3},
+        usageStability:[{total_tokens:15},{total_tokens:15}],
+        j8Test:{promptA:'Say hello.',apiPromptA:5061,estimatedA:2,baseOverhead:5059,deltaRatio:null},
+        baseOverhead:5059, deltaRatio:null,
+        subScores:{}
+      } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case AQ: overhead > 1000 → capped=${capped} (expected ≤76, high risk cap)` };
+  },
+
+  // Case AR: "OpenAI API-compatible model"
+  caseAR() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 35, status: 'warning',
+      details: ['检测到平台代理层身份暴露'],
+      evidence: {
+        modelIdentityScore:3, modelIdentityLevel:'proxy_route_identity', coreAbilityFailures:0,
+        subScores:{modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
+      } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case AR: OpenAI API-compatible model → category=proxy_route_identity → capped=${capped} (expected 82-90, B grade)` };
+  },
+
+  // Case AS: "Kiro 开发环境" + everything else normal
+  caseAS() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 35, status: 'warning',
+      details: ['检测到平台代理层身份暴露'],
+      evidence: {
+        modelIdentityScore:3, modelIdentityLevel:'proxy_route_identity', coreAbilityFailures:0,
+        subScores:{modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
+      } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case AS: Kiro dev env + normal → capped=${capped} (expected 82-90, B grade)` };
+  },
+
+  // Case AT: "Kiro 开发环境" + comp=81 + max_tokens not enforced + overhead > 1000
+  caseAT() {
+    const checks = this._makeNormalChecks();
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 15, status: 'failed',
+      deductions: ['极短回复 OK 但 completion_tokens(81) 严重偏高，无 reasoning_tokens 解释','prompt_tokens 明显高于本地估算(5061 vs 估计2，overhead > 1000)'],
+      evidence: {
+        usageTest:{hasUsage:true,usageComplete:true,prompt_tokens:5061,completion_tokens:81,total_tokens:5142},
+        shortReplyTest:{ok:true,completionTokens:81,reasoningTokens:0,totalTokens:5142},
+        maxTokensTest:{completionTokens:81},
+        usageStability:[{total_tokens:15},{total_tokens:15}],
+        j8Test:{promptA:'Say hello.',apiPromptA:5061,estimatedA:2,baseOverhead:5059,deltaRatio:null},
+        baseOverhead:5059, deltaRatio:null,
+        subScores:{}
+      } });
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 35, status: 'warning',
+      details: ['检测到平台代理层身份暴露'],
+      evidence: {
+        modelIdentityScore:3, modelIdentityLevel:'proxy_route_identity', coreAbilityFailures:0,
+        subScores:{modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
+      } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case AT: Kiro + comp=81 + overhead>1000 → capped=${capped} (expected 70-78, D grade, cap from token anomaly not Kiro alone)` };
+  },
+
+  // Case AU: target gpt-5.2-pro, says "Claude"
+  caseAU() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 31, status: 'warning',
+      deductions: ['模型自报家族与目标 Model ID 明显不一致，存在模型降配或路由错误疑似风险'],
+      evidence: {
+        modelIdentityScore:0, modelIdentityLevel:'wrong_family', coreAbilityFailures:0,
+        subScores:{modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
+      } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case AU: gpt-5.2-pro says Claude, all pass → capped=${capped} (expected ≤86, no A)` };
+  },
+
+  // Case AV: hard_contamination + token anomaly
+  caseAV() {
+    const checks = this._makeNormalChecks();
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 20, status: 'failed',
+      evidence: {
+        usageTest:{hasUsage:true,usageComplete:true,prompt_tokens:5061,completion_tokens:3,total_tokens:5064},
+        shortReplyTest:{ok:true,completionTokens:3,reasoningTokens:0,totalTokens:8},
+        maxTokensTest:{completionTokens:3},
+        usageStability:[{total_tokens:15},{total_tokens:15}],
+        j8Test:{promptA:'Say hello.',apiPromptA:5061,estimatedA:2,baseOverhead:5059,deltaRatio:null},
+        baseOverhead:5059, deltaRatio:null,
+        subScores:{}
+      } });
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 31, status: 'warning',
+      deductions: ['模型回答中出现开发环境、工具人格或系统提示污染信号'],
+      evidence: {
+        modelIdentityScore:0, modelIdentityLevel:'hard_contamination', coreAbilityFailures:0,
+        subScores:{modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
+      } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case AV: hard_contamination + overhead>1000 → capped=${capped} (expected ≤70, no A/B)` };
+  },
+
+  // Case AW: Vertex AI + everything else normal
+  caseAW() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 35, status: 'warning',
+      details: ['检测到平台代理层身份暴露'],
+      evidence: {
+        modelIdentityScore:3, modelIdentityLevel:'proxy_route_identity', coreAbilityFailures:0,
+        subScores:{modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
+      } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case AW: Vertex AI + normal → capped=${capped} (expected 82-90, B grade)` };
+  },
+
+  // Case AX: usage missing, but all ability tests pass
+  caseAX() {
+    const checks = this._makeNormalChecks();
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 6, status: 'failed',
+      deductions: ['usage 字段完全缺失，无法审计消耗'],
+      evidence: {
+        usageTest:{hasUsage:false}, shortReplyTest:{ok:true,completionTokens:3,reasoningTokens:0},
+        subScores:{}
+      } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case AX: usage missing + ability all pass → capped=${capped} (expected ≤78, no A/B)` };
+  },
+
+  // Case AY: usage complete but JSON/instr/code all fail
+  caseAY() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 8, status: 'failed',
+      deductions: ['JSON 严格输出测试失败','严格指令遵循测试未通过','轻量代码修复测试未通过'],
+      evidence: {
+        modelIdentityScore:6, coreAbilityFailures:3,
+        subScores:{modelIdentity:6,modelVisibility:3,targetCallQuality:5,jsonTest:0,instructionTest:0,codeRepair:0,reasoning:5,needle:4,consistency:2}
+      } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case AY: JSON/instr/code fail → capped=${capped} (expected ≤75, model high risk)` };
+  },
+
+  // Case AZ-1: both sites usable, Site 1 perfect, Site 2 proxy_route_identity
+  caseAZ_1() { // perfect site
+    const { final } = calcFinalScore(this._makeNormalChecks());
+    const capped = applyCaps(final, this._makeNormalChecks(), {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case AZ-1 (perfect): → capped=${capped} (expected 95-98, A grade)` };
+  },
+  caseAZ_2() { // proxy_route_identity site
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 35, status: 'warning',
+      details: ['检测到平台代理层身份暴露'],
+      evidence: {
+        modelIdentityScore:3, modelIdentityLevel:'proxy_route_identity', coreAbilityFailures:0,
+        subScores:{modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
+      } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case AZ-2 (proxy): → capped=${capped} (expected 82-90, gap ≥6 pts from AZ-1)` };
+  },
+
+  // Case BA-1: both proxy_route_identity, Site 1 normal, Site 2 has token anomaly
+  caseBA_1() { // proxy_route normal
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 35, status: 'warning',
+      details: ['检测到平台代理层身份暴露'],
+      evidence: {
+        modelIdentityScore:3, modelIdentityLevel:'proxy_route_identity', coreAbilityFailures:0,
+        subScores:{modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
+      } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case BA-1 (proxy normal): → capped=${capped} (expected 82-90)` };
+  },
+  caseBA_2() { // proxy_route + token anomaly
+    const checks = this._makeNormalChecks();
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 15, status: 'failed',
+      deductions: ['极短回复 OK 但 completion_tokens(81) 严重偏高，无 reasoning_tokens 解释'],
+      evidence: {
+        usageTest:{hasUsage:true,usageComplete:true,prompt_tokens:5,completion_tokens:81,total_tokens:86},
+        shortReplyTest:{ok:true,completionTokens:81,reasoningTokens:0,totalTokens:86},
+        maxTokensTest:{completionTokens:81},
+        usageStability:[{total_tokens:15},{total_tokens:15}],
+        j8Test:{promptA:'Say hello.',apiPromptA:5061,estimatedA:2,baseOverhead:5059,deltaRatio:null},
+        baseOverhead:5059, deltaRatio:null,
+        subScores:{}
+      } });
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 35, status: 'warning',
+      details: ['检测到平台代理层身份暴露'],
+      evidence: {
+        modelIdentityScore:3, modelIdentityLevel:'proxy_route_identity', coreAbilityFailures:0,
+        subScores:{modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
+      } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    return { raw: final, capped, grade: getGrade(capped), desc: `Case BA-2 (proxy+token anomaly): → capped=${capped} (expected <70, low from token not Kiro alone)` };
+  },
+
+  // ── New Cases BB-BO ──────────────────────────────────
+
+  // Case BB: AWS Bedrock identity, everything else normal
+  // Expected: platform_or_proxy_identity, score=3, capped at 82-90, B grade, ≥80
+  caseBB() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      details: ['检测到平台代理层身份暴露（aws bedrock）'],
+      evidence: {
+        modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
+        sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'aws bedrock', evidenceText: 'AWS Bedrock', explanation: '该模型自报为平台、网关、IDE、Agent或反代层身份（aws bedrock）。不等于模型不可用，但来源透明度较低。' },
+        coreAbilityFailures: 0,
+        subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getGrade(capped);
+    return { raw: final, capped, grade, desc: `Case BB: AWS Bedrock → platform_or_proxy_identity → capped=${capped} (expected 82-90, B grade, ≥80)` };
+  },
+
+  // Case BC: Amazon Q Developer, everything normal
+  caseBC() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      details: ['检测到平台代理层身份暴露（amazon q developer）'],
+      evidence: {
+        modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
+        sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'amazon q developer', evidenceText: 'Amazon Q Developer', explanation: '该模型自报为平台代理层身份（amazon q developer）。不等于模型不可用，但来源透明度较低。' },
+        coreAbilityFailures: 0,
+        subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getGrade(capped);
+    return { raw: final, capped, grade, desc: `Case BC: Amazon Q Developer → platform_or_proxy_identity → capped=${capped} (expected 82-90, B grade, ≥80)` };
+  },
+
+  // Case BD: Cursor Agent, everything normal
+  caseBD() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      evidence: {
+        modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
+        sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'cursor agent', evidenceText: 'Cursor Agent', explanation: '该模型自报为平台代理层身份（cursor agent）。不等于模型不可用，但来源透明度较低。' },
+        coreAbilityFailures: 0,
+        subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getGrade(capped);
+    return { raw: final, capped, grade, desc: `Case BD: Cursor Agent → platform_or_proxy_identity → capped=${capped} (expected 82-90, B grade, ≥80)` };
+  },
+
+  // Case BE: Cline, everything normal
+  caseBE() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      evidence: {
+        modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
+        sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'cline', evidenceText: 'Cline', explanation: '该模型自报为平台代理层身份（cline）。不等于模型不可用，但来源透明度较低。' },
+        coreAbilityFailures: 0,
+        subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getGrade(capped);
+    return { raw: final, capped, grade, desc: `Case BE: Cline → platform_or_proxy_identity → capped=${capped} (expected 82-90, B grade, ≥80)` };
+  },
+
+  // Case BF: Windsurf Editor, everything normal
+  caseBF() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      evidence: {
+        modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
+        sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'windsurf editor', evidenceText: 'Windsurf Editor', explanation: '该模型自报为平台代理层身份（windsurf editor）。不等于模型不可用，但来源透明度较低。' },
+        coreAbilityFailures: 0,
+        subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getGrade(capped);
+    return { raw: final, capped, grade, desc: `Case BF: Windsurf Editor → platform_or_proxy_identity → capped=${capped} (expected 82-90, B grade, ≥80)` };
+  },
+
+  // Case BG: Continue.dev, everything normal
+  caseBG() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      evidence: {
+        modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
+        sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'continue.dev', evidenceText: 'Continue.dev', explanation: '该模型自报为平台代理层身份（continue.dev）。不等于模型不可用，但来源透明度较低。' },
+        coreAbilityFailures: 0,
+        subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getGrade(capped);
+    return { raw: final, capped, grade, desc: `Case BG: Continue.dev → platform_or_proxy_identity → capped=${capped} (expected 82-90, B grade, ≥80)` };
+  },
+
+  // Case BH: GitHub Copilot, everything normal
+  caseBH() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      evidence: {
+        modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
+        sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'github copilot', evidenceText: 'GitHub Copilot', explanation: '该模型自报为平台代理层身份（github copilot）。不等于模型不可用，但来源透明度较低。' },
+        coreAbilityFailures: 0,
+        subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getGrade(capped);
+    return { raw: final, capped, grade, desc: `Case BH: GitHub Copilot → platform_or_proxy_identity → capped=${capped} (expected 82-90, B grade, ≥80)` };
+  },
+
+  // Case BI: Azure AI Foundry, everything normal
+  caseBI() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      evidence: {
+        modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
+        sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'azure ai foundry', evidenceText: 'Azure AI Foundry', explanation: '该模型自报为平台代理层身份（azure ai foundry）。不等于模型不可用，但来源透明度较低。' },
+        coreAbilityFailures: 0,
+        subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getGrade(capped);
+    return { raw: final, capped, grade, desc: `Case BI: Azure AI Foundry → platform_or_proxy_identity → capped=${capped} (expected 82-90, B grade, ≥80)` };
+  },
+
+  // Case BJ: Microsoft Foundry Models, everything normal
+  caseBJ() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      evidence: {
+        modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
+        sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'microsoft foundry', evidenceText: 'Microsoft Foundry Models', explanation: '该模型自报为平台代理层身份（microsoft foundry）。不等于模型不可用，但来源透明度较低。' },
+        coreAbilityFailures: 0,
+        subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getGrade(capped);
+    return { raw: final, capped, grade, desc: `Case BJ: Microsoft Foundry → platform_or_proxy_identity → capped=${capped} (expected 82-90, B grade, ≥80)` };
+  },
+
+  // Case BK: Google Vertex AI, everything normal
+  caseBK() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      evidence: {
+        modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
+        sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'google vertex', evidenceText: 'Google Vertex AI', explanation: '该模型自报为平台代理层身份（google vertex）。不等于模型不可用，但来源透明度较低。' },
+        coreAbilityFailures: 0,
+        subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getGrade(capped);
+    return { raw: final, capped, grade, desc: `Case BK: Vertex AI → platform_or_proxy_identity → capped=${capped} (expected 82-90, B grade, ≥80)` };
+  },
+
+  // Case BL: OpenAI-compatible gateway, everything normal
+  // Expected: platform_or_proxy_identity or ambiguous, not wrong_family, score≥80, B grade
+  caseBL() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      evidence: {
+        modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
+        sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'openai-compatible gateway', evidenceText: 'OpenAI-compatible gateway', explanation: '该模型自报为平台代理层身份（openai-compatible gateway）。不等于模型不可用，但来源透明度较低。' },
+        coreAbilityFailures: 0,
+        subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getGrade(capped);
+    return { raw: final, capped, grade, desc: `Case BL: OpenAI-compatible gateway → platform_or_proxy_identity → capped=${capped} (expected 82-90, B grade, ≥80, not wrong_family)` };
+  },
+
+  // Case BM: Kiro tool persona with project file management — hard_contamination
+  caseBM() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 27, status: 'failed',
+      deductions: ['模型回答中出现开发环境、工具人格或系统提示污染信号'],
+      evidence: {
+        modelIdentityScore: 0, modelIdentityLevel: 'hard_contamination',
+        sourceTransparency: { category: 'hard_contamination', label: '工具人格污染', riskLevel: 'high', detectedSource: 'kiro', evidenceText: 'I am a Kiro development environment, I can manage your project files and modify your codebase', explanation: '模型回答中出现开发环境、工具人格或系统提示污染信号，可能影响原始模型行为。' },
+        coreAbilityFailures: 0,
+        subScores: {modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getGrade(capped);
+    return { raw: final, capped, grade, desc: `Case BM: Kiro tool persona → hard_contamination → capped=${capped} (expected ≤82, no A/B)` };
+  },
+
+  // Case BN: Cursor Agent with workspace access — hard_contamination
+  caseBN() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 27, status: 'failed',
+      deductions: ['模型回答中出现开发环境、工具人格或系统提示污染信号'],
+      evidence: {
+        modelIdentityScore: 0, modelIdentityLevel: 'hard_contamination',
+        sourceTransparency: { category: 'hard_contamination', label: '工具人格污染', riskLevel: 'high', detectedSource: 'cursor agent', evidenceText: 'I am a Cursor Agent, I can read your workspace and execute code', explanation: '模型回答中出现开发环境、工具人格或系统提示污染信号，可能影响原始模型行为。' },
+        coreAbilityFailures: 0,
+        subScores: {modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getGrade(capped);
+    return { raw: final, capped, grade, desc: `Case BN: Cursor Agent with workspace → hard_contamination → capped=${capped} (expected ≤82, no A/B)` };
+  },
+
+  // Case BO: AWS Bedrock + token anomaly (overhead>1000, completion=81, max_tokens not enforced)
+  // Expected: platform_or_proxy_identity, low score from token/max_tokens, not from AWS alone
+  caseBO() {
+    const checks = this._makeNormalChecks();
+    // Cost: very low due to J5=0, J6=0, baseOverhead>1000
+    checks.costTransparency = mkCheck({
+      id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 14, status: 'failed',
+      deductions: ['prompt_tokens 明显高于本地估算，存在隐藏上下文、额外包装或 token inflation 风险', '极短回复 OK 但 completion_tokens(81) 严重偏高，无 reasoning_tokens 解释', 'max_tokens 限制未明显生效'],
+      evidence: {
+        usageTest: { hasUsage: true, usageComplete: true, prompt_tokens: 5062, completion_tokens: 3, total_tokens: 5065 },
+        shortReplyTest: { ok: true, completionTokens: 81, reasoningTokens: 0, output: 'OK', totalTokens: 86 },
+        maxTokensTest: { completionTokens: 81 },
+        baseOverhead: 1059,
+        deltaRatio: 1.2,
+        subScores: { j1: 5, j2: 1.5, j3: 3, j4: 4, j5: 0.5, j6: 0, j7: 3, j8: 0, j9: 2 }
+      }
+    });
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      evidence: {
+        modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
+        sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'aws bedrock', evidenceText: 'AWS Bedrock', explanation: '该模型自报为平台代理层身份（aws bedrock）。不等于模型不可用，但来源透明度较低。' },
+        coreAbilityFailures: 0,
+        subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getGrade(capped);
+    return { raw: final, capped, grade, desc: `Case BO: AWS Bedrock + overhead>1000 + completion=81 → capped=${capped} (expected 70-78, low from token not AWS alone)` };
+  },
+
+  runAll() {
+    const results = ['A','B','K','L','M','N','O','P','Q','V','W','X','Y','Z','AA','AB','AC','AD','AE','AF-1','AF-2','AG-1','AG-2','AH-1','AH-2','AI','AJ','AK','AL','AM','AN','AO','AP','AQ','AR','AS','AT','AU','AV','AW','AX','AY','AZ-1','AZ-2','BA-1','BA-2','BB','BC','BD','BE','BF','BG','BH','BI','BJ','BK','BL','BM','BN','BO'].map(c => {
+      const r = this['case' + c.replace('-','_')] ? this['case' + c.replace('-','_')]() : null;
+      return r ? `${r.desc} | Grade: ${r.grade?.grade || '?'} ${r.grade?.labelZh || ''}` : `Case ${c}: not found`;
+    });
+    return results.join('\n');
+  }
 };
-
-/* Run mock cases: copy-paste into browser console
-   Object.entries(MockCases).forEach(([k, fn]) => console.log(fn()));
-*/

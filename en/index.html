@@ -90,7 +90,7 @@ OPENAI_API_KEY=sk-..."
       <div class="form-group">
         <label for="doctor-base-url">Base URL</label>
         <input id="doctor-base-url" type="url" placeholder="https://api.example.com/v1" autocomplete="off"
-          oninput="Doctor.normalizeBaseUrl(this)" />
+          oninput="this.value = Doctor.normalizeBaseUrl(this.value)" />
       </div>
 
       <!-- API Key -->
