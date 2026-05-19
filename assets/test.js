@@ -145,6 +145,54 @@ function maskKey(key) {
   return key.slice(0, 3) + '****' + key.slice(-4);
 }
 
+/**
+ * Mask Base URL for shareable content (images, copy, social).
+ * Rules:
+ * 1. Keep protocol: https:// or http://
+ * 2. Mask domain: keep first 3 + last 3 chars of host, middle = ***
+ *    e.g. https://aizhongzhuan.com/v1 → https://aiz***uan.com/v1
+ *    e.g. https://api.example.com/v1 → https://api***com/v1
+ * 3. IP: keep first 2 and last 2 octets, middle = *.*
+ *    e.g. https://1.2.3.4/v1 → https://1.2.*.*/v1
+ * 4. localhost: no masking
+ * 5. Keep path (e.g. /v1)
+ * 6. Strip query params and hash
+ */
+function maskBaseUrlForShare(url) {
+  if (!url) return '';
+  try {
+    // Strip query and hash first
+    const urlClean = url.split('?')[0].split('#')[0];
+    const u = new URL(urlClean);
+    const protocol = u.protocol; // includes ://
+    const hostname = u.hostname;
+    const port = u.port ? ':' + u.port : '';
+    const pathname = u.pathname.replace(/\/$/, '');
+
+    // localhost: no masking
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
+      return protocol + '//' + hostname + port + pathname;
+    }
+
+    // IP address: mask middle octets
+    const ipMatch = hostname.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+    if (ipMatch) {
+      return protocol + '//' + ipMatch[1] + '.' + ipMatch[2] + '.*.*' + port + pathname;
+    }
+
+    // Domain: keep first 3 + last 3 of hostname
+    if (hostname.length <= 6) {
+      return protocol + '//' + hostname[0] + '***' + hostname[hostname.length - 1] + port + pathname;
+    }
+    const first3 = hostname.slice(0, 3);
+    const last3 = hostname.slice(-3);
+    return protocol + '//' + first3 + '***' + last3 + port + pathname;
+  } catch (_) {
+    // Fallback: strip query/hash and return
+    return url.split('?')[0].split('#')[0];
+  }
+}
+
 function showToast(msg) {
   const toast = document.getElementById('toast');
   if (!toast) return;
@@ -1209,9 +1257,12 @@ async function checkN_CacheHitCheck(baseUrl, apiKey, model, interfaceType, signa
     });
   }
 
-  // Build a long prompt (~1200-1500 tokens)
-  const filler = 'The following passage describes the principles of distributed systems, stateless communication, and the client-server model in modern web architecture. Each HTTP request from a client contains all necessary information for the server to process that request without relying on stored context. This stateless nature allows servers to scale horizontally and simplifies error recovery. RESTful APIs use standard HTTP methods and status codes to provide a uniform interface. Authentication can be handled via bearer tokens or API keys. Rate limiting protects resources from abuse. Caching strategies like CDN and edge caching improve performance. ';
-  const longPrompt = (filler + filler + filler + filler).slice(0, 1100) + '\nRepeat this marker exactly: CACHE_PROBE_7391\nAt the end, reply exactly: CACHE_OK';
+  // Build a long prompt (~1800-2200 estimated tokens, >= 1200 actual API tokens)
+  // Use a repeated English paragraph — no timestamps, no random IDs, no dynamic content
+  const PART_A = 'The principles of distributed systems and client-server architecture form the foundation of modern web services. Each HTTP request must contain all necessary context since servers maintain no session state between requests. RESTful APIs leverage standard HTTP methods and status codes to provide predictable interfaces. Authentication typically involves bearer tokens or API keys passed in request headers. Caching strategies at the CDN and edge layers significantly improve response times. Rate limiting protects backend services from abuse and ensures fair resource allocation. Load balancing distributes incoming traffic across multiple server instances. Database replication ensures high availability and fault tolerance. Horizontal scaling allows systems to handle increased load by adding more machines to the pool. Container orchestration platforms like Kubernetes automate deployment and management of containerized applications. Microservices architecture decomposes monolithic applications into independently deployable services. Message queues enable asynchronous communication between services and help decouple system components. Monitoring and observability tools provide insights into system health and performance metrics. Incident response procedures ensure rapid recovery from failures. Disaster recovery planning includes regular backups and tested restoration procedures. Security best practices include encryption in transit using TLS, least-privilege access control, and regular security audits. API rate limiting prevents single clients from monopolizing resources. Content delivery networks cache static assets close to end users. Service mesh architectures provide a dedicated infrastructure layer for service-to-service communication. Infrastructure as code enables reproducible and version-controlled infrastructure provisioning. Continuous integration and continuous deployment pipelines automate the software release process. ';
+  const PART_B = 'In the context of cloud-native application development, containers provide consistent execution environments across development, testing, and production stages. Docker and containerd are popular container runtime environments. Kubernetes has become the de facto standard for container orchestration in production environments. Helm charts simplify the packaging and deployment of complex Kubernetes applications. Service mesh implementations like Istio and Linkerd provide traffic management, security, and observability features at the infrastructure layer. Observability encompasses metrics, logs, and distributed traces — the three pillars of understanding system behavior. OpenTelemetry provides vendor-neutral instrumentation for collecting telemetry data. Prometheus and Grafana are widely used for metrics collection and visualization. Jaeger and Zipkin support distributed tracing across service boundaries. Cloud-native applications are designed to be resilient, scalable, and manageable. Twelve-factor app methodology guides the development of cloud-ready applications. Configuration management tools like Ansible, Terraform, and Puppet automate infrastructure provisioning. GitOps workflows use Git repositories as the single source of truth for declarative infrastructure. ';
+  const PART_C = 'Software testing encompasses unit tests, integration tests, end-to-end tests, and performance tests. Unit tests verify individual components in isolation. Integration tests verify that components work correctly together. End-to-end tests simulate real user interactions with the complete system. Performance testing measures system behavior under load. Load testing determines how the system behaves at expected traffic levels. Stress testing identifies the breaking point of the system. Chaos engineering deliberately introduces failures to test system resilience. Feature flags enable gradual rollouts and quick rollbacks of new features. A/B testing compares different versions of features to determine which performs better. Canary deployments release changes to a small subset of users before full rollout. Blue-green deployments maintain two identical production environments for zero-downtime releases. Database indexing strategies significantly impact query performance. Connection pooling reduces the overhead of establishing database connections. Database sharding distributes data across multiple database instances. Read replicas provide scalable read capacity and improve query performance. Write-ahead logging ensures transaction durability in database systems. ACID properties guarantee that database transactions are processed reliably. ';
+  const longPrompt = (PART_A + PART_B + PART_C + ' Repeat this marker exactly: CACHE_PROBE_7391\nAt the end, reply exactly: CACHE_OK').trim();
 
   // First request (may create cache)
   const r1 = await makeApiCall(baseUrl, apiKey, model, interfaceType, longPrompt, 10, 0, signal);
@@ -1256,6 +1307,12 @@ async function checkN_CacheHitCheck(baseUrl, apiKey, model, interfaceType, signa
 
   evidence.cacheHitRate = cache2.cacheHitRate;
   evidence.promptTokenConsistencyRate = null;
+
+  // Determine if probe tokens are sufficient for cache detection
+  const actualPromptTokens = Math.max(cache1.promptTokens ?? 0, cache2.promptTokens ?? 0);
+  evidence.probeTokenSufficient = actualPromptTokens >= 1024;
+  evidence.minPromptTokensRequired = 1024;
+  evidence.actualPromptTokens = actualPromptTokens;
 
   // ── A: Cache field found (1 pt) ───────────────────────
   let scoreA = cache2.fieldFound ? 1 : 0;
@@ -1302,12 +1359,18 @@ async function checkN_CacheHitCheck(baseUrl, apiKey, model, interfaceType, signa
     else if (evidence.latencyImprovementRate >= 0) scoreE = 0.1;
   }
 
-  // ── Determine status and summary ──────────────────────
+  // ── Determine status ────────────────────────────────
   let totalScore = Math.round((scoreA + scoreB + scoreC + scoreD + scoreE) * 10) / 10;
   let status = 'unknown';
   let summary = '';
 
-  if (!r1.success || !r2.success) {
+  // Probe token insufficient check (before success check)
+  if (actualPromptTokens < 1024) {
+    status = 'unknown';
+    totalScore = 2.5;
+    summary = zh ? '探测长度不足，无法验证缓存宣传' : 'Probe length insufficient — cannot verify cache claims';
+    details.push(zh ? '本次缓存探测的 prompt_tokens 低于 1024，无法有效验证缓存命中。未验证不等于没有缓存。' : 'Probe prompt_tokens below 1024 — cannot effectively verify cache hit. Unverified does not mean unavailable.');
+  } else if (!r1.success || !r2.success) {
     status = 'error';
     summary = zh ? '缓存检测请求失败，无法验证缓存信号' : 'Cache check request failed — cannot verify cache signal';
     totalScore = 2;
@@ -2410,15 +2473,16 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
   const hasUsage = !!(checks.targetCall?.evidence?.usage && Object.keys(checks.targetCall.evidence.usage).length > 0);
 
   // Priority: cost>model>stability>proxy (user requirement order)
+  // Priority: cost>model>stability>identity>proxy (identityCategory checked before proxy)
   let verdictDesc = '';
   if (costRisk === 'high') verdictDesc = zh ? 'usage/token信号异常，扣费不易核对' : 'usage/token abnormal — billing hard to audit.';
   else if (modelRisk === 'high') verdictDesc = zh ? '模型能力或身份异常，建议谨慎使用' : 'Model capability/identity anomalies — use with caution.';
   else if (stabilityRisk === 'high') verdictDesc = zh ? '稳定性波动较大，建议谨慎用于客户端' : 'Stability fluctuates significantly — use caution.';
-    else if (isProxyOrPlatform) verdictDesc = zh ? '检测到平台代理层，来源透明度降低' : 'Platform proxy layer detected — reduced source transparency.';
-    else if (identityCategory === 'ambiguous') verdictDesc = zh ? '模型身份未确认，建议结合 usage 和能力测试判断' : 'Model identity unconfirmed — evaluate with usage and capability tests.';
-    else if (!hasUsage) verdictDesc = zh ? 'usage缺失，扣费不可审计' : 'usage missing — billing unauditable.';
+  else if (identityCategory === 'ambiguous') verdictDesc = zh ? '模型身份未确认，建议结合 usage 和能力测试判断' : 'Model identity unconfirmed — evaluate with usage and capability tests.';
   else if (identityCategory === 'wrong_family') verdictDesc = zh ? '模型家族不一致，存在降配风险' : 'Model family inconsistent — possible downgrade.';
   else if (identityCategory === 'hard_contamination') verdictDesc = zh ? '模型回答存在工具人格污染' : 'Model shows tool-persona contamination.';
+  else if (isProxyOrPlatform) verdictDesc = zh ? '检测到平台代理层，来源透明度降低' : 'Platform proxy layer detected — reduced source transparency.';
+  else if (!hasUsage) verdictDesc = zh ? 'usage缺失，扣费不可审计' : 'usage missing — billing unauditable.';
   else if (costRisk === 'low' && modelRisk === 'low' && stabilityRisk === 'low' && identityCategory === 'exact_match') verdictDesc = zh ? '主要信号正常，建议继续小额观察' : 'All signals normal — continue monitoring.';
   else verdictDesc = zh ? '部分信号异常，建议小额继续验证' : 'Some signals abnormal — verify with small amounts.';
   const disclaimer = zh ? '本报告仅基于可复现 API 信号，不构成法律结论。' : 'This report is based on reproducible API signals only and does not constitute a legal conclusion.';
@@ -2661,7 +2725,7 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
   </div>`;
 
   const finalModel = modelIdInfo?.finalTestModelId || '';
-  const safeBaseUrl = (() => { try { const u = new URL(formData?.baseUrl); return u.origin + u.pathname.replace(/\/$/, ''); } catch (_) { return formData?.baseUrl || ''; } })();
+  const safeBaseUrl = maskBaseUrlForShare(formData?.baseUrl || '');
 
   return `<div id="result-card-inner" style="max-width:560px;margin:0 auto;padding:0 4px">
     <!-- Dark header: grade + score + 3 risk pills -->
@@ -3102,9 +3166,10 @@ window.Doctor = {
       F: zh ? '不建议继续使用该配置。' : 'Not recommended for continued use with this configuration.',
     };
     const decisionText = decisionMap[g] || '';
+    const maskedUrl = (typeof Doctor !== 'undefined' && Doctor._formData) ? maskBaseUrlForShare(Doctor._formData.baseUrl || '') : '';
     const text = zh
-      ? `AI API Doctor 验货报告\n验货分：${score}/100，${gradeLabel}\n扣费透明度：${costLabel}\n缓存命中检测：${cacheLabel}${cacheRateText}\n模型可信度：${modelLabel}\n稳定性：${stabilityLabel}\n来源透明度：${srcLabelCopy}\n主要建议：${suggestions[0] || '-'}\n建议：${decisionText}\n本报告仅基于可复现 API 信号，不构成最终证明。\nID：${reportId} · aiapidoctor.com`
-      : `AI API Doctor Report\nScore: ${score}/100, ${grade?.label || ''}\nCost: ${costLabel}\nCache Hit: ${cacheLabel}${cacheRateText}\nModel: ${modelLabel}\nStability: ${stabilityLabel}\nSource: ${srcLabelCopy}\nMain advice: ${suggestions[0] || '-'}\nAdvice: ${decisionText}\nBased on reproducible API signals only.\nID: ${reportId} · aiapidoctor.com`;
+      ? `AI API Doctor 验货报告\nURL: ${maskedUrl}\n验货分：${score}/100，${gradeLabel}\n扣费透明度：${costLabel}\n缓存命中检测：${cacheLabel}${cacheRateText}\n模型可信度：${modelLabel}\n稳定性：${stabilityLabel}\n来源透明度：${srcLabelCopy}\n主要建议：${suggestions[0] || '-'}\n建议：${decisionText}\n本报告仅基于可复现 API 信号，不构成最终证明。\nID：${reportId} · aiapidoctor.com`
+      : `AI API Doctor Report\nURL: ${maskedUrl}\nScore: ${score}/100, ${grade?.label || ''}\nCost: ${costLabel}\nCache Hit: ${cacheLabel}${cacheRateText}\nModel: ${modelLabel}\nStability: ${stabilityLabel}\nSource: ${srcLabelCopy}\nMain advice: ${suggestions[0] || '-'}\nAdvice: ${decisionText}\nBased on reproducible API signals only.\nID: ${reportId} · aiapidoctor.com`;
     copyToClipboard(text, zh ? '验货分已复制' : 'Score copied');
   }
 };
