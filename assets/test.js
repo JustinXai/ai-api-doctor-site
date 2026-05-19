@@ -2510,12 +2510,22 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
       </div>`;
     }
 
+    // Stability high risk re-test hint — shown in expand detail, not in suggestion area
+    let stabilityRetryHint = '';
+    if (checkKey === 'stability' && checkData.status === 'failed') {
+      stabilityRetryHint = `<div style="margin-top:8px;padding:6px 8px;background:#fef9c3;border-radius:6px;font-size:10px;color:#92400e;line-height:1.5">
+        ${zh ? '本次稳定性波动较大，建议在同一网络环境下重复测试 2–3 次确认。' : 'This run shows significant stability fluctuation. Re-test 2–3 times under the same network conditions to confirm.'}
+      </div>`;
+    }
+
     // sourceTransparency detail — only in expand detail
     // cacheHitCheck detail — only in expand detail
     let cacheHitHtml = '';
     if (checkKey === 'cacheHitCheck' && checkData.evidence) {
       const ev = checkData.evidence;
       const fmtRate = (r) => r != null ? (Math.round(r * 10000) / 100) + '%' : '—';
+      const cacheStatus = checkData.status || 'unknown';
+      const isUnknown = cacheStatus === 'unknown';
       cacheHitHtml = `<div style="margin-top:8px;padding:8px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;font-size:11px">
         <div style="font-weight:600;color:#0f172a;margin-bottom:6px">${zh ? '缓存命中检测明细' : 'Cache Hit Details'}</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:10px;color:#374151;margin-bottom:6px">
@@ -2528,7 +2538,8 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
           <div><span style="color:#94a3b8">${zh ? '一致性：' : 'Consistency: '}</span>${fmtRate(ev.promptTokenConsistencyRate != null ? 1 - ev.promptTokenConsistencyRate : null)}</div>
           <div><span style="color:#94a3b8">${zh ? '延迟改善：' : 'Latency Impr.: '}</span>${fmtRate(ev.latencyImprovementRate)}</div>
         </div>
-        <div style="font-size:10px;color:#64748b;line-height:1.5">${escH(checkData.summary || '')}</div>
+        ${isUnknown ? `<div style="font-size:10px;color:#64748b;line-height:1.5;margin-bottom:4px">${escH(checkData.summary || '')}</div>
+        <div style="font-size:10px;color:#64748b;line-height:1.5;border-top:1px solid #e2e8f0;padding-top:4px">${zh ? '未暴露字段不等于没有缓存。' : 'Missing fields do not necessarily mean caching is unavailable.'}</div>` : `<div style="font-size:10px;color:#64748b;line-height:1.5">${escH(checkData.summary || '')}</div>`}
       </div>`;
     }
 
@@ -2609,6 +2620,7 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
         ${detailDeductions}
         ${subItemsHtml ? `<div style="margin-bottom:8px">${subItemsHtml}</div>` : ''}
         ${stabilitySamplesHtml}
+        ${stabilityRetryHint}
         ${cacheHitHtml}
         ${sourceTransparencyHtml}
       </div>` : ''}
@@ -2686,6 +2698,23 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
 
     <!-- Verdict description (short, one line) -->
     <div style="background:#fff;border-radius:12px;padding:8px 14px;margin-bottom:8px;font-size:11px;color:#374151;line-height:1.5">${escH(verdictDesc)}</div>
+
+    <!-- Grade-based decision recommendation (one line, compact) -->
+    ${(() => {
+      const g = grade.grade;
+      const decisionMap = {
+        A: zh ? '可继续小额使用，并观察后台余额变化。' : 'Suitable for small-scale use while monitoring provider balance.',
+        B: zh ? '可继续小额使用，并观察后台余额变化。' : 'Suitable for small-scale use while monitoring provider balance.',
+        C: zh ? '可小额试用，不建议直接大额充值。' : 'Test with a small budget first; avoid large top-ups.',
+        D: zh ? '建议仅低成本测试，暂不建议用于高成本任务。' : 'Use only for low-cost testing; not recommended for high-cost tasks.',
+        E: zh ? '不建议继续使用该配置。' : 'Not recommended for continued use with this configuration.',
+        F: zh ? '不建议继续使用该配置。' : 'Not recommended for continued use with this configuration.',
+      };
+      const decisionText = decisionMap[g] || '';
+      const decisionColors = { A: { bg: '#dcfce7', color: '#166534' }, B: { bg: '#dcfce7', color: '#166534' }, C: { bg: '#fef9c3', color: '#92400e' }, D: { bg: '#fef3c7', color: '#b45309' }, E: { bg: '#fee2e2', color: '#991b1b' }, F: { bg: '#fee2e2', color: '#991b1b' } };
+      const dc = decisionColors[g] || decisionColors.C;
+      return decisionText ? `<div style="background:${dc.bg};border-radius:8px;padding:6px 12px;margin-bottom:8px;font-size:11px;color:${dc.color};line-height:1.4"><b>${zh ? '建议：' : 'Advice: '}</b>${escH(decisionText)}</div>` : '';
+    })()}
 
     <!-- 5 module sections -->
     <div style="background:#fff;border-radius:16px;padding:12px 16px;margin-bottom:10px">
@@ -3063,9 +3092,19 @@ window.Doctor = {
     };
     const cacheLabel = cacheLabelMap[cacheStatus]?.[zh?'zh':'en'] || cacheStatus;
     const cacheRateText = cacheRate != null ? ` (${(Math.round(cacheRate * 10000) / 100)}%)` : '';
+    const g = grade?.grade || 'C';
+    const decisionMap = {
+      A: zh ? '可继续小额使用，并观察后台余额变化。' : 'Suitable for small-scale use while monitoring provider balance.',
+      B: zh ? '可继续小额使用，并观察后台余额变化。' : 'Suitable for small-scale use while monitoring provider balance.',
+      C: zh ? '可小额试用，不建议直接大额充值。' : 'Test with a small budget first; avoid large top-ups.',
+      D: zh ? '建议仅低成本测试，暂不建议用于高成本任务。' : 'Use only for low-cost testing; not recommended for high-cost tasks.',
+      E: zh ? '不建议继续使用该配置。' : 'Not recommended for continued use with this configuration.',
+      F: zh ? '不建议继续使用该配置。' : 'Not recommended for continued use with this configuration.',
+    };
+    const decisionText = decisionMap[g] || '';
     const text = zh
-      ? `AI API Doctor 验货报告\n验货分：${score}/100，${gradeLabel}\n扣费透明度：${costLabel}\n缓存命中检测：${cacheLabel}${cacheRateText}\n模型可信度：${modelLabel}\n稳定性：${stabilityLabel}\n来源透明度：${srcLabelCopy}\n主要建议：${suggestions[0] || '-'}\n本报告仅基于可复现 API 信号，不构成最终证明。\nID：${reportId} · aiapidoctor.com`
-      : `AI API Doctor Report\nScore: ${score}/100, ${grade?.label || ''}\nCost: ${costLabel}\nCache Hit: ${cacheLabel}${cacheRateText}\nModel: ${modelLabel}\nStability: ${stabilityLabel}\nSource: ${srcLabelCopy}\nMain advice: ${suggestions[0] || '-'}\nBased on reproducible API signals only.\nID: ${reportId} · aiapidoctor.com`;
+      ? `AI API Doctor 验货报告\n验货分：${score}/100，${gradeLabel}\n扣费透明度：${costLabel}\n缓存命中检测：${cacheLabel}${cacheRateText}\n模型可信度：${modelLabel}\n稳定性：${stabilityLabel}\n来源透明度：${srcLabelCopy}\n主要建议：${suggestions[0] || '-'}\n建议：${decisionText}\n本报告仅基于可复现 API 信号，不构成最终证明。\nID：${reportId} · aiapidoctor.com`
+      : `AI API Doctor Report\nScore: ${score}/100, ${grade?.label || ''}\nCost: ${costLabel}\nCache Hit: ${cacheLabel}${cacheRateText}\nModel: ${modelLabel}\nStability: ${stabilityLabel}\nSource: ${srcLabelCopy}\nMain advice: ${suggestions[0] || '-'}\nAdvice: ${decisionText}\nBased on reproducible API signals only.\nID: ${reportId} · aiapidoctor.com`;
     copyToClipboard(text, zh ? '验货分已复制' : 'Score copied');
   }
 };
