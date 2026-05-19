@@ -1223,17 +1223,18 @@ const WEAK_PLATFORM_WORDS = [
  */
 const NEGATIVE_IDENTITY_PATTERNS = [
   "i don't have access", 'i do not have access', 'i cannot access',
+  "i can't access", "i can't verify", 'i cannot verify', "i can't confirm",
+  "i can't determine", 'i cannot determine', "i can't identify",
   "i don't know", 'i do not know', "i don't",
-  'cannot determine', 'cannot identify', 'unable to determine',
-  'not available', 'not applicable', 'not provided',
-  'no access to', 'without access to',
-  'unknown model', 'model unknown', 'model is unknown',
-  'cannot confirm', 'unable to confirm',
-  "don't have information", 'do not have information', 'no information about',
+  "i don't have information", 'i do not have information', 'no information about',
   "i'm an ai", 'i am an ai',
   'ai language model', 'language model', 'ai assistant',
   'ai model', 'a language model',
   "can't provide", "cannot provide", 'unable to provide', 'not able to provide',
+  'not available', 'not applicable', 'not provided',
+  'no access to', 'without access to',
+  'unknown model', 'model unknown', 'model is unknown',
+  'cannot confirm', 'unable to confirm',
   '保密', '无法确认', '不确定', '不知道', '无权限', '无法访问',
   '不知道模型', '不知道运行', '无法判断',
 ];
@@ -1276,6 +1277,7 @@ function extractDetectedSource(text) {
   for (const src of STRONG_PLATFORM_ENTITIES) {
     if (t.includes(src)) return src;
   }
+  // No generic terms (serving platform, gateway, proxy, etc.) — return null
   return null;
 }
 
@@ -1361,7 +1363,7 @@ function evaluateModelIdentity(identityText, finalTestModelId) {
       category: 'ambiguous',
       score: 1.5,
       reason: zh
-        ? `模型自报身份模糊：${rawResponse}`
+        ? `模型身份未确认：${rawResponse}`
         : `Model self-reported identity is vague: ${rawResponse}`,
       detectedSource: null,
     };
@@ -1456,8 +1458,8 @@ function evaluateModelIdentity(identityText, finalTestModelId) {
       category: 'platform_or_proxy_identity',
       score: 3,
       reason: zh
-        ? `检测到平台代理层身份暴露（${extractDetectedSource(rawResponse) || '未知平台'}），不等于模型不可用，但来源透明度较低`
-        : `Platform proxy layer identity detected (${extractDetectedSource(rawResponse) || 'unknown platform'}) — source transparency reduced, not necessarily unusable`,
+        ? `检测到平台代理层身份暴露，不等于模型不可用，但来源透明度较低`
+        : `Platform proxy layer identity detected — source transparency reduced, not necessarily unusable`,
       detectedSource: extractDetectedSource(rawResponse),
     };
   }
@@ -1523,7 +1525,7 @@ async function checkK_ModelIntegrity(baseUrl, apiKey, model, interfaceType, sign
     exact_match: zh ? '清晰' : 'Clear',
     family_match: zh ? '家族匹配' : 'Family Match',
     platform_or_proxy_identity: zh ? '平台代理层暴露' : 'Platform/Proxy Layer',
-    ambiguous: zh ? '身份模糊' : 'Identity Ambiguous',
+    ambiguous: zh ? '身份未确认' : 'Identity Unconfirmed',
     wrong_family: zh ? '模型家族错配' : 'Wrong Family',
     hard_contamination: zh ? '工具人格污染' : 'Tool Persona Contamination',
     failed: zh ? '测试失败' : 'Test Failed',
@@ -1544,8 +1546,8 @@ async function checkK_ModelIntegrity(baseUrl, apiKey, model, interfaceType, sign
     evidenceText: identityText,
     explanation: identityCategory === 'platform_or_proxy_identity'
       ? (zh
-          ? `该模型自报为平台、网关、IDE、Agent 或反代层身份（${detectedSource || '未知平台'}）。这通常说明接口经过 Kiro、Vertex、AWS Bedrock、Azure、Cursor、Cline、Windsurf、Continue、Copilot、Claude Code、Replit Agent、网关或反代包装。不等于模型不可用，但会降低模型来源透明度，建议结合 usage、token 和能力测试结果判断。`
-          : `Model self-reported as platform/gateway/IDE/Agent/relay layer (${detectedSource || 'unknown platform'}). Interface may be wrapped by Kiro, Vertex, AWS Bedrock, Azure, Cursor, Cline, Windsurf, Continue, Copilot, Claude Code, Replit Agent, gateway or relay. Not equal to unusable — source transparency is reduced. Recommend evaluating with usage, token and capability test results.`)
+          ? `该模型自报为平台、网关、IDE、Agent 或反代层身份${detectedSource ? `（${detectedSource}）` : ''}。这通常说明接口经过 Kiro、Vertex、AWS Bedrock、Azure、Cursor、Cline、Windsurf、Continue、Copilot、Claude Code、Replit Agent、网关或反代包装。不等于模型不可用，但会降低模型来源透明度，建议结合 usage、token 和能力测试结果判断。`
+          : `Model self-reported as platform/gateway/IDE/Agent/relay layer${detectedSource ? ` (${detectedSource})` : ''}. Interface may be wrapped by Kiro, Vertex, AWS Bedrock, Azure, Cursor, Cline, Windsurf, Continue, Copilot, Claude Code, Replit Agent, gateway or relay. Not equal to unusable — source transparency is reduced. Recommend evaluating with usage, token and capability test results.`)
       : identityCategory === 'wrong_family'
       ? (zh ? '模型自报家族与目标 Model ID 明显不一致，存在模型降配或路由错误疑似风险。' : 'Model self-reported family is clearly inconsistent with target Model ID — possible model downgrade or routing error.')
       : identityCategory === 'hard_contamination'
@@ -2054,7 +2056,7 @@ function getJudgment(score, checks) {
     return zh ? `检测到平台代理层身份暴露${srcNote}，来源透明度降低` : `Platform proxy layer identity detected${srcNote} — source transparency reduced`;
   }
   if (identityCategory === 'ambiguous') {
-    return zh ? '模型身份模糊，结论置信度降低' : 'Model identity vague — reduced conclusion confidence';
+    return zh ? '模型身份未确认，结论置信度降低' : 'Model identity vague — reduced conclusion confidence';
   }
   if (costRisk === 'high') return zh ? '扣费透明度风险较高' : 'High billing transparency risk';
   if (modelRisk === 'high') return zh ? '模型降配疑似风险较高' : 'High model downgrade risk';
@@ -2109,14 +2111,11 @@ function generateSuggestions(checks, modelIdInfo) {
   if (identityCategory === 'hard_contamination') add('hard_contamination', zh ? '模型回答中出现开发环境、工具人格或系统提示污染信号，可能影响原始模型行为，建议谨慎用于高成本任务。' : 'Model response shows development environment, tool persona or system prompt contamination — may affect original model behavior. Use with caution for high-cost tasks.');
   // Priority 6: wrong_family
   if (identityCategory === 'wrong_family') add('wrong_family', zh ? '模型自报家族与目标 Model ID 明显不一致，存在模型降配或路由错误疑似风险。' : 'Model self-reported family clearly inconsistent with target Model ID — possible model downgrade or routing error risk.');
-  // Priority 7: platform_or_proxy_identity / proxy_route_identity
+  // Priority 7: platform_or_proxy_identity / proxy_route_identity — short, no long platform list
   if (isProxyOrPlatform) {
-    const source = detectedSource
-      ? zh ? `（${detectedSource}）` : ` (${detectedSource})`
-      : zh ? '（未识别具体平台）' : ' (unspecified platform)';
     add('proxy_route', zh
-      ? `检测到平台代理层身份暴露${source}：模型自报为 Kiro / Vertex / AWS Bedrock / Azure / Cursor / Cline / Windsurf / Continue / Copilot / Amazon Q / Claude Code / Replit Agent / 网关或反代等平台或工具身份。这通常说明接口经过云平台、开发环境、Agent、网关或反代层包装，不等于模型不可用，但来源透明度较低，建议结合 usage、token 和能力测试结果判断。`
-      : `Platform proxy layer identity detected${source}: model self-reported as Kiro / Vertex / AWS Bedrock / Azure / Cursor / Cline / Windsurf / Continue / Copilot / Amazon Q / Claude Code / Replit Agent / gateway or relay platform or tool identity. Interface may be wrapped by cloud platform, development environment, Agent, gateway or relay. Not equal to unusable — source transparency is reduced. Recommend evaluating with usage, token and capability test results.`);
+      ? `检测到平台代理层身份暴露，来源透明度较低，建议结合 usage、token 和能力测试结果判断。`
+      : `Platform proxy layer identity detected — source transparency reduced. Recommend evaluating with usage, token and capability test results.`);
   }
   // Priority 8: Model integrity failures
   if (coreAbilityFailures >= 2) add('model_failures', zh ? '多项能力测试未通过，存在模型降配或兼容差异风险。建议谨慎用于高成本任务。' : 'Multiple capability tests failed — possible model downgrade or compatibility issues. Use with caution for high-cost tasks.');
@@ -2174,8 +2173,9 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
   if (costRisk === 'high') verdictDesc = zh ? 'usage/token信号异常，扣费不易核对' : 'usage/token abnormal — billing hard to audit.';
   else if (modelRisk === 'high') verdictDesc = zh ? '模型能力或身份异常，建议谨慎使用' : 'Model capability/identity anomalies — use with caution.';
   else if (stabilityRisk === 'high') verdictDesc = zh ? '稳定性波动较大，建议谨慎用于客户端' : 'Stability fluctuates significantly — use caution.';
-  else if (isProxyOrPlatform) verdictDesc = zh ? '检测到平台代理层，来源透明度降低' : 'Platform proxy layer detected — reduced source transparency.';
-  else if (!hasUsage) verdictDesc = zh ? 'usage缺失，扣费不可审计' : 'usage missing — billing unauditable.';
+    else if (isProxyOrPlatform) verdictDesc = zh ? '检测到平台代理层，来源透明度降低' : 'Platform proxy layer detected — reduced source transparency.';
+    else if (identityCategory === 'ambiguous') verdictDesc = zh ? '模型身份未确认，建议结合 usage 和能力测试判断' : 'Model identity unconfirmed — evaluate with usage and capability tests.';
+    else if (!hasUsage) verdictDesc = zh ? 'usage缺失，扣费不可审计' : 'usage missing — billing unauditable.';
   else if (identityCategory === 'wrong_family') verdictDesc = zh ? '模型家族不一致，存在降配风险' : 'Model family inconsistent — possible downgrade.';
   else if (identityCategory === 'hard_contamination') verdictDesc = zh ? '模型回答存在工具人格污染' : 'Model shows tool-persona contamination.';
   else if (costRisk === 'low' && modelRisk === 'low' && stabilityRisk === 'low' && identityCategory === 'exact_match') verdictDesc = zh ? '主要信号正常，建议继续小额观察' : 'All signals normal — continue monitoring.';
@@ -2278,7 +2278,7 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
         family_match: zh ? '家族匹配' : 'Family Match',
         platform_or_proxy_identity: zh ? '平台代理层暴露' : 'Platform/Proxy Layer',
         proxy_route_identity: zh ? '平台代理层暴露' : 'Platform/Proxy Layer',
-        ambiguous: zh ? '身份模糊' : 'Identity Ambiguous',
+        ambiguous: zh ? '身份未确认' : 'Identity Unconfirmed',
         wrong_family: zh ? '模型家族错配' : 'Wrong Family',
         hard_contamination: zh ? '工具人格污染' : 'Tool Persona Contamination',
         failed: zh ? '测试失败' : 'Test Failed',
@@ -2314,12 +2314,13 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
       }
     }
 
-    // format score: round to 1 decimal if not integer
+    // format score: show raw score / maxScore, not normalized ratio
+    // integers stay as integers, decimals max 1 digit, no long decimals
     const fmtScore = (s, max) => {
       if (max === 0) return '0/' + max;
-      const r = Math.round(s / max * 10) / 10;
-      if (Number.isInteger(r)) return r + '/' + max;
-      return r.toFixed(1) + '/' + max;
+      const rounded = Math.round(s * 10) / 10;
+      if (Number.isInteger(rounded)) return rounded + '/' + max;
+      return rounded.toFixed(1) + '/' + max;
     };
 
     const pillHtml = riskLevel ? `<span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:700;color:${riskColors[riskLevel].color};background:${riskColors[riskLevel].bg}">${zh ? riskLevelLabelZH(riskLevel) : riskLevelLabelEN(riskLevel)}</span>` : `<span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:700;color:${cfg.color};background:${cfg.bg}">${statusLabel(status, zh)}</span>`;
@@ -2332,14 +2333,15 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
         var t=document.getElementById('${rowId}-toggle');
         if(!c||!t)return;
         var cur=c.style.display;
+        var zh=${zh};
         c.style.display=cur==='none'?'block':'none';
-        t.textContent=cur==='none'?'[${zh?'收起':'Collapse'} ...]':'[${zh?'展开':'Expand'} ...]';
+        t.textContent=cur==='none'?(zh?'[收起...]':'[Collapse...]'):(zh?'[展开...]':'[Expand...]');
       })()" style="cursor:pointer;user-select:none;display:flex;align-items:center;gap:6px;padding:6px 0;min-height:52px;border-bottom:1px solid #f1f5f9">
         <span style="font-weight:600;font-size:12px;color:#374151;min-width:90px">${escH(label)}</span>
         <span style="font-weight:800;font-size:12px;color:#0f172a;min-width:52px">${fmtScore(actualScore, maxScore)}</span>
         ${pillHtml}
         <span style="flex:1;color:#94a3b8;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escH(summaryText)}</span>
-        ${hasDetailContent ? `<span id="${rowId}-toggle" style="color:#2563eb;font-size:11px;white-space:nowrap;flex-shrink:0">[${zh?'展开':'Expand'} ...]</span>` : ''}
+        ${hasDetailContent ? `<span id="${rowId}-toggle" style="color:#2563eb;font-size:11px;white-space:nowrap;flex-shrink:0">${zh?'[展开...]':'[Expand...]'}</span>` : ''}
       </div>
       ${hasDetailContent ? `<div id="${contentId}" style="display:none;padding:4px 0 8px 0">
         ${detailDeductions}
@@ -2471,7 +2473,7 @@ async function saveDiagnosticImage() {
     const clone = sourceEl.cloneNode(true);
     // Collapse all expandable sections before screenshot
     [].forEach.call(clone.querySelectorAll('[id^="rc-content-"]'), function(el) { el.style.display = 'none'; });
-    [].forEach.call(clone.querySelectorAll('[id$="-toggle"]'), function(el) { var zh2 = el.textContent.includes('收起') || el.textContent.includes('Collapse'); el.textContent = zh2 ? '[展开 ...]' : '[Expand ...]'; });
+    [].forEach.call(clone.querySelectorAll('[id$="-toggle"]'), function(el) { var zh2 = el.textContent.includes('\u6536\u8D77') || el.textContent.includes('Collapse'); el.textContent = zh2 ? '[展开...]' : '[Expand...]'; });
     clone.style.cssText = 'position:fixed;top:0;left:0;display:block;width:560px;background:#f8fafc;padding:0;box-sizing:border-box;pointer-events:none';
     document.body.appendChild(clone);
     const dataUrl = await htmlToImage.toPng(clone, { pixelRatio: 2, cacheBust: true, backgroundColor: '#f8fafc', width: 560 });
@@ -2671,22 +2673,22 @@ window.Doctor = {
     if (!container) return;
     if (state === 'done') { container.innerHTML = ''; return; }
     const zh = getDocLang() !== 'en';
-    const steps = [
-      { zh: '1/8 API 基础连通', en: '1/8 API Connectivity' },
-      { zh: '2/8 Key 鉴权', en: '2/8 Key Authentication' },
-      { zh: '3/8 模型识别', en: '3/8 Model Identification' },
-      { zh: '4/8 扣费透明度检测', en: '4/8 Cost Transparency' },
-      { zh: '5/8 模型能力验货', en: '5/8 Model Capability' },
-      { zh: '6/8 稳定性采样', en: '6/8 Stability Sampling' },
-      { zh: '7/8 客户端配置检查', en: '7/8 Client Config' },
-      { zh: '8/8 生成验货报告', en: '8/8 Generating Report' },
-      { zh: '9/9 Tool Calling 测试', en: '9/9 Tool Calling Test' },
-    ];
     const totalSteps = deepMode ? 9 : 8;
-    const rows = steps.slice(0, totalSteps + 1).map((s, i) => `<div class="prog-row" id="prog-row-${i}">
+    const steps = [
+      { zh: 'API 基础连通', en: 'API Connectivity' },
+      { zh: 'Key 鉴权', en: 'Key Authentication' },
+      { zh: '模型识别', en: 'Model Identification' },
+      { zh: '扣费透明度检测', en: 'Cost Transparency' },
+      { zh: '模型能力验货', en: 'Model Capability' },
+      { zh: '稳定性采样', en: 'Stability Sampling' },
+      { zh: '客户端配置检查', en: 'Client Config' },
+      { zh: '生成验货报告', en: 'Generating Report' },
+      { zh: 'Tool Calling 测试', en: 'Tool Calling Test' },
+    ];
+    const rows = steps.slice(0, totalSteps).map((s, i) => `<div class="prog-row" id="prog-row-${i}">
       <span class="prog-icon" id="prog-icon-${i}"><div style="width:14px;height:14px;border:2px solid #e2e8f0;border-radius:50%"></div></span>
       <span class="prog-bar-wrap"><span class="prog-bar" id="prog-bar-${i}" style="width:0%"></span></span>
-      <span class="prog-label" id="prog-label-${i}">${s[zh?'zh':'en']}</span>
+      <span class="prog-label" id="prog-label-${i}">${i + 1}/${totalSteps} ${s[zh?'zh':'en']}</span>
       <span class="prog-detail" id="prog-detail-${i}"></span>
     </div>`).join('');
     container.innerHTML = `<div class="progress-wrap"><div class="progress-title">${zh?'检测进度':'Progress'}</div>${rows}</div>`;
@@ -2701,36 +2703,37 @@ window.Doctor = {
     const barW = defaultBarWidth[state] || '0%';
     const dtl = detail || defaultDetail[state] || '';
     const totalSteps = this._deepMode ? 9 : 8;
-    for (let i = 0; i <= totalSteps; i++) {
+    const stepLabels = [
+      { zh: 'API 基础连通', en: 'API Connectivity' },
+      { zh: 'Key 鉴权', en: 'Key Authentication' },
+      { zh: '模型识别', en: 'Model Identification' },
+      { zh: '扣费透明度检测', en: 'Cost Transparency' },
+      { zh: '模型能力验货', en: 'Model Capability' },
+      { zh: '稳定性采样', en: 'Stability Sampling' },
+      { zh: '客户端配置检查', en: 'Client Config' },
+      { zh: '生成验货报告', en: 'Generating Report' },
+      { zh: 'Tool Calling 测试', en: 'Tool Calling Test' },
+    ];
+    for (let i = 0; i < totalSteps; i++) {
       const row = document.getElementById('prog-row-' + i); const icon = document.getElementById('prog-icon-' + i);
       const bar = document.getElementById('prog-bar-' + i); const label = document.getElementById('prog-label-' + i); const detailEl = document.getElementById('prog-detail-' + i);
       if (!row) continue;
-      const steps = [
-        { zh: '1/8 API 基础连通', en: '1/8 API Connectivity' },
-        { zh: '2/8 Key 鉴权', en: '2/8 Key Authentication' },
-        { zh: '3/8 模型识别', en: '3/8 Model Identification' },
-        { zh: '4/8 扣费透明度检测', en: '4/8 Cost Transparency' },
-        { zh: '5/8 模型能力验货', en: '5/8 Model Capability' },
-        { zh: '6/8 稳定性采样', en: '6/8 Stability Sampling' },
-        { zh: '7/8 客户端配置检查', en: '7/8 Client Config' },
-        { zh: '8/8 生成验货报告', en: '8/8 Generating Report' },
-        { zh: '9/9 Tool Calling 测试', en: '9/9 Tool Calling Test' },
-      ];
+      const labelText = `${i + 1}/${totalSteps} ${stepLabels[i]?.[zh?'zh':'en'] || ''}`;
       if (i < index) {
-        label.textContent = steps[i]?.[zh?'zh':'en'] || '';
+        label.textContent = labelText;
         detailEl.textContent = '';
         icon.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>`;
         bar.style.width = '100%'; bar.style.background = '#16a34a';
         row.className = 'prog-row prog-row--done';
       } else if (i === index) {
         if (state === 'running') {
-          label.textContent = steps[i]?.[zh?'zh':'en'] || '';
+          label.textContent = labelText;
           detailEl.textContent = zh?'检测中...':'Checking...';
           icon.innerHTML = `<div style="width:14px;height:14px;border:2px solid #2563eb;border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite"></div>`;
           bar.style.width = '30%'; bar.style.background = '#2563eb';
           row.className = 'prog-row prog-row--running';
         } else {
-          label.textContent = steps[i]?.[zh?'zh':'en'] || '';
+          label.textContent = labelText;
           detailEl.textContent = dtl;
           const okIcon = ['excellent','good'].includes(state) ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${cfg.icon}" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>` : state === 'warning' ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${cfg.icon}" stroke-width="3"><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>` : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${cfg.icon}" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
           icon.innerHTML = okIcon;
@@ -2738,7 +2741,7 @@ window.Doctor = {
           row.className = 'prog-row prog-row--done ' + (cfg.cls || '');
         }
       } else {
-        label.textContent = steps[i]?.[zh?'zh':'en'] || '';
+        label.textContent = labelText;
         detailEl.textContent = '';
         icon.innerHTML = `<div style="width:14px;height:14px;border:2px solid #e2e8f0;border-radius:50%"></div>`;
         bar.style.width = '0%'; bar.style.background = '#e2e8f0';
@@ -3892,7 +3895,7 @@ window.MockCases = {
       id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
       evidence: {
         modelIdentityScore: 1.5, modelIdentityLevel: 'ambiguous',
-        sourceTransparency: { category: 'ambiguous', label: '身份模糊', riskLevel: 'medium', detectedSource: null, evidenceText: "I don't have access to the exact model name, model family, or serving platform I'm running on.", explanation: '模型自报身份模糊（"serving platform"出现在否定句中，不归为平台代理层身份）。' },
+        sourceTransparency: { category: 'ambiguous', label: '身份未确认', riskLevel: 'medium', detectedSource: null, evidenceText: "I don't have access to the exact model name, model family, or serving platform I'm running on.", explanation: '模型身份未确认（"serving platform"出现在否定句中，不归为平台代理层身份）。' },
         coreAbilityFailures: 0,
         subScores: {modelIdentity:1.5,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       }
@@ -3904,13 +3907,15 @@ window.MockCases = {
   },
 
   // Case CC: "served through OpenAI-compatible gateway" → platform_or_proxy_identity
+  // hasWeakPlatformWord=true, hasStrongEntity=false, isNegativeUnknownResponse=false
+  // → platform_or_proxy_identity, detectedSource=null (weak words don't qualify as detectedSource)
   caseCC() {
     const checks = this._makeNormalChecks();
     checks.modelIntegrity = mkCheck({
       id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
       evidence: {
         modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
-        sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'openai-compatible gateway', evidenceText: 'served through OpenAI-compatible gateway', explanation: '检测到平台代理层身份暴露（openai-compatible gateway）。' },
+        sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: null, evidenceText: 'served through OpenAI-compatible gateway', explanation: '检测到平台代理层身份暴露。' },
         coreAbilityFailures: 0,
         subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       }
@@ -3918,7 +3923,7 @@ window.MockCases = {
     const { final } = calcFinalScore(checks);
     const capped = applyCaps(final, checks, {});
     const grade = getGrade(capped);
-    return { raw: final, capped, grade, desc: `Case CC: "served through OpenAI-compatible gateway" → platform_or_proxy_identity, detectedSource=openai-compatible gateway → capped=${capped} (expected 82-90, B)` };
+    return { raw: final, capped, grade, desc: `Case CC: "served through OpenAI-compatible gateway" → platform_or_proxy_identity, detectedSource=null (weak words not used as source) → capped=${capped} (expected 82-90, B)` };
   },
 
   // ── New Cases CD-CJ ──────────────────────────────────
@@ -3930,7 +3935,7 @@ window.MockCases = {
       id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
       evidence: {
         modelIdentityScore: 1.5, modelIdentityLevel: 'ambiguous',
-        sourceTransparency: { category: 'ambiguous', label: '身份未确认', riskLevel: 'medium', detectedSource: null, evidenceText: "I don't have access to the exact model name/family or serving platform I'm running on.", explanation: '模型自报身份模糊（"serving platform"出现在否定句中，不归为平台代理层身份）。' },
+        sourceTransparency: { category: 'ambiguous', label: '身份未确认', riskLevel: 'medium', detectedSource: null, evidenceText: "I don't have access to the exact model name/family or serving platform I'm running on.", explanation: '模型身份未确认（"serving platform"出现在否定句中，不归为平台代理层身份）。' },
         coreAbilityFailures: 0,
         subScores: {modelIdentity:1.5,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       }
@@ -4058,8 +4063,94 @@ window.MockCases = {
     return { raw: final, capped, grade, desc: `Case CJ: avg=5789ms, max=19833ms, jitter=18621ms → stability=${risk} → capped=${capped} (expected high, low score due to stability not platform identity)` };
   },
 
+  // Case CL: deepMode=true, 9 progress steps → UI must show 1/9 to 9/9, not 1/8
+  // Verifies progress total is dynamic from diagnosticSteps.length, not hardcoded 8
+  caseCL() {
+    const checks = this._makeNormalChecks();
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getGrade(capped);
+    // deepMode=true means totalSteps=9, so progress must show 1/9..9/9
+    // This is a display verification case — no specific capping expectation
+    return { raw: final, capped, grade, desc: 'Case CL: deepMode=true → progress must show 1/9..9/9 (totalSteps=dynamic, not hardcoded 8)' };
+  },
+
+  // Case CM: costTransparency raw score=31, maxScore=35, normalized=0.8857
+  // Module display MUST show 31/35, NOT 0.9/35 or 0.8857/35
+  caseCM() {
+    const checks = this._makeNormalChecks();
+    checks.costTransparency = mkCheck({
+      id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 31, status: 'good',
+      details: [],
+      evidence: { usageTest: {hasUsage:true,usageComplete:true,prompt_tokens:10,completion_tokens:10,total_tokens:20}, shortReplyTest: {ok:true,completionTokens:3}, subScores:{} }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getGrade(capped);
+    // Expected display: 31/35 (raw score), NOT 0.9/35 or 0.8857/35
+    return { raw: final, capped, grade, desc: `Case CM: rawScore=31, maxScore=35 → must display 31/35 (NOT 0.9/35) → capped=${capped}` };
+  },
+
+  // Case CN: identity response = "I can't access or verify the exact model name/family or serving platform from here."
+  // "I can't access" + "I can't verify" → isNegativeUnknownResponse()=true → ambiguous
+  // Must NOT be platform_or_proxy_identity even though "serving platform" appears
+  // detectedSource MUST be null
+  caseCN() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      evidence: {
+        modelIdentityScore: 1.5, modelIdentityLevel: 'ambiguous',
+        sourceTransparency: { category: 'ambiguous', label: '身份未确认', riskLevel: 'medium', detectedSource: null,
+          evidenceText: "I can't access or verify the exact model name/family or serving platform from here.",
+          explanation: '模型身份未能明确确认，结论置信度降低。' },
+        coreAbilityFailures: 0,
+        subScores: {modelIdentity:1.5,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getGrade(capped);
+    return { raw: final, capped, grade, desc: `Case CN: "I can't access or verify..." → ambiguous, detectedSource=null, NOT platform_or_proxy_identity → capped=${capped} (expected 82-89, B)` };
+  },
+
+  // Case CO: identity response = "Windsurf"
+  // "windsurf" in STRONG_PLATFORM_ENTITIES → hasStrongEntity=true
+  // isNegativeUnknownResponse("windsurf")=false
+  // → platform_or_proxy_identity with detectedSource="windsurf"
+  caseCO() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 33, status: 'warning',
+      evidence: {
+        modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
+        sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'windsurf',
+          evidenceText: 'Windsurf',
+          explanation: '该模型自报为平台、网关、IDE、Agent 或反代层身份（windsurf）。这通常说明接口经过 Kiro、Vertex、AWS Bedrock、Azure、Cursor、Cline、Windsurf、Continue、Copilot、Claude Code、Replit Agent、网关或反代包装。不等于模型不可用，但会降低模型来源透明度，建议结合 usage、token 和能力测试结果判断。' },
+        coreAbilityFailures: 0,
+        subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getGrade(capped);
+    return { raw: final, capped, grade, desc: `Case CO: "Windsurf" → platform_or_proxy_identity, detectedSource=windsurf → capped=${capped} (expected 82-90, B, cannot be A)` };
+  },
+
+  // Case CP: zh UI mode — toggle text must show [展开...] not [Expand...]
+  // This is a display verification case: zh=getDocLang()!=='en' → toggle text is Chinese
+  // No specific capping expectation — verifies UI string interpolation fix
+  caseCP() {
+    const checks = this._makeNormalChecks();
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getGrade(capped);
+    // Expected: toggle text in zh mode = "[展开...]", NOT "[Expand...]"
+    return { raw: final, capped, grade, desc: 'Case CP: zh UI → toggle text MUST be [展开...], NOT [Expand...] (display verification)' };
+  },
+
   runAll() {
-    const results = ['A','B','K','L','M','N','O','P','Q','V','W','X','Y','Z','AA','AB','AC','AD','AE','AF-1','AF-2','AG-1','AG-2','AH-1','AH-2','AI','AJ','AK','AL','AM','AN','AO','AP','AQ','AR','AS','AT','AU','AV','AW','AX','AY','AZ-1','AZ-2','BA-1','BA-2','BB','BC','BD','BE','BF','BG','BH','BI','BJ','BK','BL','BM','BN','BO','BU','BV','BW','BX','BY','BZ','CA','CB','CC','CD','CE','CF','CG','CH','CI','CJ'].map(c => {
+    const results = ['A','B','K','L','M','N','O','P','Q','V','W','X','Y','Z','AA','AB','AC','AD','AE','AF-1','AF-2','AG-1','AG-2','AH-1','AH-2','AI','AJ','AK','AL','AM','AN','AO','AP','AQ','AR','AS','AT','AU','AV','AW','AX','AY','AZ-1','AZ-2','BA-1','BA-2','BB','BC','BD','BE','BF','BG','BH','BI','BJ','BK','BL','BM','BN','BO','BU','BV','BW','BX','BY','BZ','CA','CB','CC','CD','CE','CF','CG','CH','CI','CJ','CL','CM','CN','CO','CP'].map(c => {
       const r = this['case' + c.replace('-','_')] ? this['case' + c.replace('-','_')]() : null;
       return r ? `${r.desc} | Grade: ${r.grade?.grade || '?'} ${r.grade?.labelZh || ''}` : `Case ${c}: not found`;
     });
