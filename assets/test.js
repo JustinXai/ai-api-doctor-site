@@ -1805,7 +1805,21 @@ async function checkM_ToolCalling(baseUrl, apiKey, model, signal) {
    ═══════════════════════════════════════════════════════ */
 function getCostRiskLevel(score) { return score >= 30 ? 'low' : score >= 22 ? 'medium' : 'high'; }
 function getModelRiskLevel(score) { return score >= 34 ? 'low' : score >= 26 ? 'medium' : 'high'; }
-function getStabilityRiskLevel(score) { return score >= 12 ? 'low' : score >= 8 ? 'medium' : 'high'; }
+/**
+ * Returns the stability risk level, with forced override rules.
+ * Raw score-based level can be overridden to 'high' if any latency metric
+ * indicates severe instability, regardless of the raw score.
+ */
+function getStabilityRiskLevel(score, checks) {
+  let level = score >= 12 ? 'low' : score >= 8 ? 'medium' : 'high';
+  // Forced override: avgLat > 3000ms → high
+  if (checks?.stability?.evidence?.avgLatency > 3000) level = 'high';
+  // Forced override: maxLatency > 10000ms → high
+  if (checks?.stability?.evidence?.maxLatency > 10000) level = 'high';
+  // Forced override: jitter > 5000ms → high
+  if (checks?.stability?.evidence?.latencyJitter > 5000) level = 'high';
+  return level;
+}
 function riskLevelLabelZH(level) { return level === 'low' ? '低风险' : level === 'medium' ? '中风险' : '高风险'; }
 function riskLevelLabelEN(level) { return level === 'low' ? 'Low Risk' : level === 'medium' ? 'Medium Risk' : 'High Risk'; }
 function stabilityLabelZH(score) { return score >= 13 ? '优秀' : score >= 9 ? '良好' : score >= 5 ? '可用' : '较差'; }
@@ -1822,7 +1836,7 @@ function getConfidence(checks) {
   const hasUsage = !!(checks.targetCall?.evidence?.usage && Object.keys(checks.targetCall.evidence.usage).length > 0);
   const costRisk = getCostRiskLevel(checks.costTransparency?.score || 0);
   const modelRisk = getModelRiskLevel(checks.modelIntegrity?.score || 0);
-  const stabilityRisk = getStabilityRiskLevel(checks.stability?.score || 0);
+  const stabilityRisk = getStabilityRiskLevel(checks.stability?.score || 0, checks);
   const identityCategory = checks.modelIntegrity?.evidence?.modelIdentityLevel;
   const coreAbilityFailures = checks.modelIntegrity?.evidence?.coreAbilityFailures || 0;
   const successSamples = (checks.stability?.evidence?.samples || []).filter(s => s.ok && s.hasContent).length;
@@ -1889,7 +1903,7 @@ function applyCaps(rawScore, checks, modelIdInfo) {
   const stabilityScore = checks.stability?.score || 0;
   const costRisk = getCostRiskLevel(costScore);
   const modelRisk = getModelRiskLevel(modelScore);
-  const stabilityRisk = getStabilityRiskLevel(stabilityScore);
+  const stabilityRisk = getStabilityRiskLevel(stabilityScore, checks);
   const highRiskCount = [costRisk === 'high', modelRisk === 'high', stabilityRisk === 'high'].filter(Boolean).length;
   const hasUsage = !!(checks.targetCall?.evidence?.usage && Object.keys(checks.targetCall.evidence.usage).length > 0);
   const shortComp = checks.costTransparency?.evidence?.shortReplyTest?.completionTokens || 0;
@@ -2017,7 +2031,7 @@ function getJudgment(score, checks) {
   const zh = getDocLang() !== 'en';
   const costRisk = getCostRiskLevel(checks.costTransparency?.score || 0);
   const modelRisk = getModelRiskLevel(checks.modelIntegrity?.score || 0);
-  const stabilityRisk = getStabilityRiskLevel(checks.stability?.score || 0);
+  const stabilityRisk = getStabilityRiskLevel(checks.stability?.score || 0, checks);
   const identityCategory = checks.modelIntegrity?.evidence?.modelIdentityLevel || 'exact_match';
   const detectedSource = checks.modelIntegrity?.evidence?.sourceTransparency?.detectedSource || null;
   const coreAbilityFailures = checks.modelIntegrity?.evidence?.coreAbilityFailures || 0;
@@ -2077,7 +2091,7 @@ function generateSuggestions(checks, modelIdInfo) {
   const stabilityScore = checks.stability?.score || 0;
   const costRisk = getCostRiskLevel(costScore);
   const modelRisk = getModelRiskLevel(modelScore);
-  const stabilityRisk = getStabilityRiskLevel(stabilityScore);
+  const stabilityRisk = getStabilityRiskLevel(stabilityScore, checks);
   const targetWorks = (checks.targetCall?.score || 0) >= 11;
   const identityCategory = checks.modelIntegrity?.evidence?.modelIdentityLevel || 'exact_match';
   const identityScore = checks.modelIntegrity?.evidence?.modelIdentityScore ?? 6;
@@ -2146,7 +2160,7 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
   const riskColors = { low: { color: '#16a34a', bg: '#dcfce7' }, medium: { color: '#d97706', bg: '#fef9c3' }, high: { color: '#dc2626', bg: '#fee2e2' } };
   const costRisk = getCostRiskLevel(checks.costTransparency?.score || 0);
   const modelRisk = getModelRiskLevel(checks.modelIntegrity?.score || 0);
-  const stabilityRisk = getStabilityRiskLevel(checks.stability?.score || 0);
+  const stabilityRisk = getStabilityRiskLevel(checks.stability?.score || 0, checks);
   const identityCategory = checks.modelIntegrity?.evidence?.modelIdentityLevel || 'exact_match';
   const coreAbilityFailures = checks.modelIntegrity?.evidence?.coreAbilityFailures ?? 0;
   const isProxyOrPlatform = identityCategory === 'proxy_route_identity' || identityCategory === 'platform_or_proxy_identity';
@@ -2473,7 +2487,10 @@ async function saveDiagnosticImage() {
     const clone = sourceEl.cloneNode(true);
     // Collapse all expandable sections before screenshot
     [].forEach.call(clone.querySelectorAll('[id^="rc-content-"]'), function(el) { el.style.display = 'none'; });
-    [].forEach.call(clone.querySelectorAll('[id$="-toggle"]'), function(el) { var zh2 = el.textContent.includes('\u6536\u8D77') || el.textContent.includes('Collapse'); el.textContent = zh2 ? '[展开...]' : '[Expand...]'; });
+    // Reset toggle text to collapsed state
+    [].forEach.call(clone.querySelectorAll('[id$="-toggle"]'), function(el) { el.textContent = zh ? '[展开...]' : '[Expand...]'; });
+    // Remove action buttons from the cloned report (buttons are not part of shareable content)
+    [].forEach.call(clone.querySelectorAll('button'), function(el) { el.style.display = 'none'; });
     clone.style.cssText = 'position:fixed;top:0;left:0;display:block;width:560px;background:#f8fafc;padding:0;box-sizing:border-box;pointer-events:none';
     document.body.appendChild(clone);
     const dataUrl = await htmlToImage.toPng(clone, { pixelRatio: 2, cacheBust: true, backgroundColor: '#f8fafc', width: 560 });
@@ -2576,6 +2593,9 @@ window.Doctor = {
     this._controller = new AbortController();
     const btn = document.getElementById('doctor-run-btn');
     if (btn) { btn.disabled = true; btn.innerHTML = `<span style="display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin 0.8s linear infinite"></span> ${zh ? '检测中...' : 'Checking...'}`; }
+    // Clear previous report immediately so old results don't mislead users
+    const resultNode = document.getElementById('result-card');
+    if (resultNode) resultNode.innerHTML = '';
     this._formData = { baseUrl: normalizedUrl, model, interfaceType: this._interfaceType };
     this.showProgress('running', deepMode);
     try {
@@ -2760,7 +2780,7 @@ window.Doctor = {
     const costRisk = getCostRiskLevel(checks?.costTransparency?.score || 0);
     const modelRisk = getModelRiskLevel(checks?.modelIntegrity?.score || 0);
     const stabilityScore = checks?.stability?.score || 0;
-    const stabilityRisk = getStabilityRiskLevel(stabilityScore);
+    const stabilityRisk = getStabilityRiskLevel(stabilityScore, checks);
     const identityCategory = checks?.modelIntegrity?.evidence?.modelIdentityLevel || 'exact_match';
     const isProxyOrPlatform = identityCategory === 'proxy_route_identity' || identityCategory === 'platform_or_proxy_identity';
     const srcLabelMap = {
@@ -4037,7 +4057,7 @@ window.MockCases = {
     const { final } = calcFinalScore(checks);
     const capped = applyCaps(final, checks, {});
     const grade = getGrade(capped);
-    const risk = getStabilityRiskLevel(9.7);
+    const risk = getStabilityRiskLevel(9.7, checks);
     return { raw: final, capped, grade, desc: `Case CI: avg=900ms, 5/5 success, no 429 → stability=${risk} → capped=${capped} (expected medium risk, ≤B, NOT high)` };
   },
 
@@ -4059,7 +4079,7 @@ window.MockCases = {
     const { final } = calcFinalScore(checks);
     const capped = applyCaps(final, checks, {});
     const grade = getGrade(capped);
-    const risk = getStabilityRiskLevel(5.5);
+    const risk = getStabilityRiskLevel(5.5, checks);
     return { raw: final, capped, grade, desc: `Case CJ: avg=5789ms, max=19833ms, jitter=18621ms → stability=${risk} → capped=${capped} (expected high, low score due to stability not platform identity)` };
   },
 
