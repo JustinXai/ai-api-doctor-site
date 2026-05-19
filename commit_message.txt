@@ -1,13 +1,19 @@
-feat: refine scoring logic v7 — platform_or_proxy_identity scoring guard, stability thresholds, basic compat display, suggestions priority
+fix: add missing CSS classes for progress UI and manual report card
 
-feat: stability scoring — S2 avgLat 800-1500ms=1.2(medium), >3000ms=0(high); S3 maxLat 5000+=0(high); S4 jitter >3000ms=0(high); getStabilityRiskLevel: 12-15=low, 8-11.9=medium, 0-7.9=high
+1. Progress UI (test.js Doctor._refreshProgress):
+   - Add .progress-wrap, .progress-title, .prog-row, .prog-row--warn,
+     .prog-row--fail, .prog-icon, .prog-bar-wrap, .prog-bar,
+     .prog-label, .prog-detail
+   - Add @keyframes prog-pulse for running animation
 
-feat: Model Integrity high risk — platform_or_proxy_identity alone cannot trigger high (score~36=medium), only wrong_family/hard_contamination/coreAbilityFailures>=3/targetCallFail can trigger high
+2. Manual report card (report.js):
+   - Add .billing-report-card, .report-header + variants,
+     .verdict-hero + verdict--ok/warning/danger, .delta-section,
+     .score-section (scoped .progress-bar-wrap height:8px to override
+     global height:4px), .evidence-chain, .evidence-node,
+     .evidence-arrow, .tech-grid, .tech-item, .safety-note,
+     .report-footer, .progress-bar__fill--green/orange/gray
 
-feat: basicCompatibility — round totalScore to 1 decimal place (6.6/7 not 6.5714...), summary simplified
+3. .form-label--optional (report/index.html)
 
-feat: generateSuggestions — stability high risk priority 10 BEFORE platform_or_proxy_identity(priority 11), new wording for platform identity, medium stability after
-
-fix: 快速验货 → 一键验货 in all 4 locations (report, run button, progress steps, modeLabel)
-
-feat: add mock cases CD-CJ (6 cases)
+4. .container--narrow (support/index.html)
