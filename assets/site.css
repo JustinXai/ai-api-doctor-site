@@ -306,8 +306,8 @@ img { max-width: 100%; display: block; }
   border-radius: 4px;
 }
 .collapse-toggle:hover { color: var(--info); }
-.collapse-toggle__icon { transition: transform 0.2s; width: 14px; height: 14px; flex-shrink: 0; }
-.collapse-toggle.open .collapse-toggle__icon { transform: rotate(90deg); }
+.collapse-toggle__icon, .collapse-icon { transition: transform 0.2s; width: 14px; height: 14px; flex-shrink: 0; }
+.collapse-toggle.open .collapse-toggle__icon, .collapse-toggle.open .collapse-icon { transform: rotate(90deg); }
 .collapse-panel { max-height: 0; overflow: hidden; transition: max-height 0.22s ease; }
 .collapse-panel.open { max-height: 500px; }
 
@@ -873,14 +873,6 @@ svg {
 .input-row .form-input { flex: 1; }
 
 /* Collapse toggle */
-.collapse-toggle {
-  display: flex; align-items: center; gap: 6px;
-  padding: 8px 0; cursor: pointer; border: none; background: none;
-  font-size: 13px; font-weight: 500; color: var(--muted); font-family: var(--font); width: 100%; text-align: left;
-}
-.collapse-toggle:hover { color: var(--info); }
-.collapse-icon { transition: transform 0.2s; width: 16px; height: 16px; flex-shrink: 0; }
-.collapse-toggle.open .collapse-icon { transform: rotate(90deg); }
 
 /* Advanced panel */
 #advanced-panel { padding-top: 4px; }

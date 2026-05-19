@@ -104,6 +104,7 @@ const STATUS_CONFIG = {
   failed:    { zh: '失败',   en: 'Failed',        color: '#dc2626', bg: '#fee2e2', pill: 'fail' },
   skipped:   { zh: '未验证', en: 'Not verified',  color: '#94a3b8', bg: '#f1f5f9', pill: 'warn' },
   inconsistent:{ zh: '矛盾', en: 'Inconsistent',  color: '#7c3aed', bg: '#ede9fe', pill: 'warn' },
+  error:     { zh: '未验证', en: 'Not verified',  color: '#f59e0b', bg: '#fef9c3', pill: 'warn' },
 };
 
 function getCheckStatus(earned, maxScore, forced) {
@@ -863,16 +864,33 @@ function checkI_ClientConfig(baseUrl, apiKey, model, modelListResult, targetCall
 /* ═══════════════════════════════════════════════════════
    NEW: makeApiCall helper
    ═══════════════════════════════════════════════════════ */
-async function makeApiCall(baseUrl, apiKey, model, interfaceType, prompt, maxTokens, temperature, signal) {
+async function makeApiCall(baseUrl, apiKey, model, interfaceType, prompt, maxTokens, temperature, signal, timeoutMs) {
   try {
     const req = buildRequest(baseUrl, apiKey, model, interfaceType, prompt, { maxTokens, temperature });
-    const resp = await fetch(req.endpoint, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body), signal });
+    const resp = timeoutMs ? await fetchWithTimeout(req.endpoint, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body), signal }, timeoutMs)
+                             : await fetch(req.endpoint, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body), signal });
     let data;
     try { data = await resp.json(); }
     catch (_) { data = {}; }
     return { success: resp.ok, data, status: resp.status };
   } catch (err) {
-    return { success: false, data: {}, status: 0, error: err.message };
+    const isTimeout = err.name === 'AbortError' || err.message && err.message.includes('timeout');
+    return { success: false, data: {}, status: 0, error: err.message, timeout: isTimeout };
+  }
+}
+
+/**
+ * Fetch with AbortController-based timeout.
+ * Properly aborts the fetch request when timeout fires.
+ */
+async function fetchWithTimeout(url, options, timeoutMs) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    return response;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -894,15 +912,14 @@ function estimatePromptTokens(prompt) {
   let tokens = 0;
   for (const ch of prompt) {
     if (/[\u4e00-\u9fff]/.test(ch)) {
-      tokens += 1 / 1.5;
+      tokens += 1;
     } else if (/[a-zA-Z0-9 .,!?'"():;\-]/.test(ch)) {
-      tokens += 0.25;
+      tokens += 1;
     } else {
       tokens += 0.5;
     }
   }
-  const englishEstimate = Math.ceil(tokens * 0.25);
-  return Math.max(1, englishEstimate);
+  return Math.max(1, Math.ceil(tokens));
 }
 
 async function checkJ_CostTransparency(baseUrl, apiKey, model, interfaceType, signal, targetCallResult) {
@@ -1100,15 +1117,16 @@ async function checkJ_CostTransparency(baseUrl, apiKey, model, interfaceType, si
 
   let j8Score = 0;
   let baseOverhead = null;
+  let localDelta = null;
   let deltaRatio = null;
   if (promptTokensA == null) {
     j8Score = 0;
     details.push(zh ? '无法获取 prompt_tokens，无法执行双 prompt 差分测试' : 'Cannot get prompt_tokens — dual-prompt test not available');
   } else {
-    const baseOverhead = promptTokensA - estimatedA;
+    baseOverhead = promptTokensA - estimatedA;
     const apiDelta = promptTokensB != null ? promptTokensB - promptTokensA : null;
-    const localDelta = estimatedB - estimatedA;
-    const deltaRatio = apiDelta != null && localDelta > 0 ? apiDelta / Math.max(localDelta, 1) : null;
+    localDelta = estimatedB - estimatedA;
+    deltaRatio = apiDelta != null && localDelta > 0 ? apiDelta / Math.max(localDelta, 1) : null;
     evidence.j8Test.baseOverhead = baseOverhead;
     evidence.j8Test.deltaRatio = deltaRatio;
 
@@ -1239,7 +1257,13 @@ function extractCacheUsage(usage) {
 
 /* ═══════════════════════════════════════════════════════
    Check N: Cache Hit Detection (5 pts)
+   - Max 2 requests with AbortController timeout (15s per request)
+   - Total operation timeout: 35s
+   - On any failure: degrade gracefully, never block flow
    ═══════════════════════════════════════════════════════ */
+const CACHE_PROBE_TIMEOUT_MS = 15000;
+const CACHE_PROBE_TOTAL_TIMEOUT_MS = 35000;
+
 async function checkN_CacheHitCheck(baseUrl, apiKey, model, interfaceType, signal, targetCallResult) {
   const deductions = [];
   const details = [];
@@ -1257,7 +1281,7 @@ async function checkN_CacheHitCheck(baseUrl, apiKey, model, interfaceType, signa
     });
   }
 
-  // Build a long prompt (~2500 estimated local tokens, targeting >= 1500 actual API prompt_tokens)
+  // Build a long prompt (~1800-2200 estimated tokens, targeting >= 1024 actual API prompt_tokens)
   // Both requests use the exact same string — no timestamps, no random IDs, no dynamic content
   // Only the fixed marker CACHE_PROBE_7391 is included
   const PART_A = 'The principles of distributed systems and client-server architecture form the foundation of modern web services. Each HTTP request must contain all necessary context since servers maintain no session state between requests. RESTful APIs leverage standard HTTP methods and status codes to provide predictable interfaces. Authentication typically involves bearer tokens or API keys passed in request headers. Caching strategies at the CDN and edge layers significantly improve response times. Rate limiting protects backend services from abuse and ensures fair resource allocation. Load balancing distributes incoming traffic across multiple server instances. Database replication ensures high availability and fault tolerance. Horizontal scaling allows systems to handle increased load by adding more machines to the pool. Container orchestration platforms like Kubernetes automate deployment and management of containerized applications. Microservices architecture decomposes monolithic applications into independently deployable services. Message queues enable asynchronous communication between services and help decouple system components. Monitoring and observability tools provide insights into system health and performance metrics. Incident response procedures ensure rapid recovery from failures. Disaster recovery planning includes regular backups and tested restoration procedures. Security best practices include encryption in transit using TLS, least-privilege access control, and regular security audits. API rate limiting prevents single clients from monopolizing resources. Content delivery networks cache static assets close to end users. Service mesh architectures provide a dedicated infrastructure layer for service-to-service communication. Infrastructure as code enables reproducible and version-controlled infrastructure provisioning. Continuous integration and continuous deployment pipelines automate the software release process. API versioning strategies like URL path versioning and header-based versioning help maintain backward compatibility as services evolve. WebSocket connections provide full-duplex communication channels over a single TCP connection, enabling real-time bidirectional data transfer. GraphQL offers a flexible query language that allows clients to request exactly the data they need, reducing over-fetching and under-fetching problems. OAuth 2.0 and OpenID Connect provide standardized protocols for authorization and authentication across distributed systems. JSON Web Tokens enable stateless authentication by encoding user identity information directly in the token. SAML and LDAP support enterprise identity management and single sign-on across multiple applications. Distributed caching with Redis or Memcached reduces database load by storing frequently accessed data in memory. Consistent hashing algorithms help distribute cache entries evenly across cluster nodes while minimizing remapping when nodes join or leave. Cache invalidation strategies like time-to-live expiration and event-driven invalidation ensure that stale data does not persist indefinitely. Write-through and write-back caching policies trade off between consistency and performance depending on application requirements. CDN edge networks cache content at geographic points of presence to reduce latency for globally distributed users. HTTP cache-control headers guide browser and proxy caching behavior to reduce redundant server requests. ETags and last-modified timestamps enable conditional requests that save bandwidth when content has not changed. Content-addressable storage systems retrieve data based on cryptographic hashes rather than file paths, ensuring data integrity. Gossip protocols enable distributed systems to reach consensus on cluster membership without a central coordinator. Consensus algorithms like Raft and Paxos ensure that distributed databases maintain consistency across replica nodes. Two-phase commit protocols coordinate atomic transactions across multiple database systems but introduce latency and coordination overhead. CAP theorem states that distributed systems can only guarantee two of three properties: consistency, availability, and partition tolerance. Eventual consistency models allow temporary divergence between replicas in exchange for improved availability during network partitions. Vector clocks track the causal ordering of events across distributed nodes to detect conflicts. Conflict-free replicated data types enable concurrent updates without requiring central coordination. Saga pattern decomposes long-running distributed transactions into a sequence of local transactions with compensating rollback actions. CQRS separates read and write models to optimize query performance independently from update throughput. Event sourcing persists state changes as an immutable sequence of events rather than current state snapshots. Change data capture streams database modifications to downstream consumers in near real-time. Dead letter queues capture failed messages for later inspection and retry rather than losing them permanently. Circuit breakers prevent cascading failures by temporarily halting calls to failing downstream services. Bulkheads isolate failures in one part of a system from affecting other unrelated components.';
@@ -1265,60 +1289,126 @@ async function checkN_CacheHitCheck(baseUrl, apiKey, model, interfaceType, signa
   const PART_C = 'Software testing encompasses unit tests, integration tests, end-to-end tests, and performance tests. Unit tests verify individual components in isolation. Integration tests verify that components work correctly together. End-to-end tests simulate real user interactions with the complete system. Performance testing measures system behavior under load. Load testing determines how the system behaves at expected traffic levels. Stress testing identifies the breaking point of the system. Chaos engineering deliberately introduces failures to test system resilience. Feature flags enable gradual rollouts and quick rollbacks of new features. A/B testing compares different versions of features to determine which performs better. Canary deployments release changes to a small subset of users before full rollout. Blue-green deployments maintain two identical production environments for zero-downtime releases. Database indexing strategies significantly impact query performance. Connection pooling reduces the overhead of establishing database connections. Database sharding distributes data across multiple database instances. Read replicas provide scalable read capacity and improve query performance. Write-ahead logging ensures transaction durability in database systems. ACID properties guarantee that database transactions are processed reliably. Pagination strategies and cursor-based approaches handle large result sets efficiently. Database query optimization through explain plans and index analysis reduces unnecessary full table scans. ORM frameworks like Hibernate and Entity Framework abstract database interactions but require careful configuration to avoid performance pitfalls. Caching database query results with Redis or Memcached reduces repeated database load. Asynchronous processing through job queues like Celery or Sidekiq offloads time-consuming tasks from the request-response cycle. Database transaction isolation levels like read committed and serializable determine how concurrent transactions interact with each other. Optimistic concurrency control uses version numbers to detect conflicting updates without locking. Pessimistic locking acquires exclusive access to rows before modification to prevent lost updates. Time-series databases like InfluxDB and TimescaleDB are optimized for storing and querying timestamped measurements. Vector databases such as Pinecone, Weaviate, and Qdrant store high-dimensional embeddings for similarity search in AI applications. Graph databases like Neo4j and Amazon Neptune model complex relationship networks efficiently for recommendation engines and fraud detection. Object storage services like Amazon S3 and Google Cloud Storage provide durable, scalable repositories for unstructured binary data. Reproducibility in machine learning experiments requires tracking hyperparameters, training data versions, and code snapshots. Feature stores provide a centralized repository of curated ML features that ensure consistency between training and inference. Model registries track the lineage of deployed models from experimentation through production retirement. Online learning systems update model weights incrementally as new data arrives rather than retraining from scratch. Transfer learning fine-tunes pre-trained foundation models on domain-specific data to reduce training costs. Federated learning trains models across decentralized data sources without centralizing sensitive training data. Explainable AI techniques like SHAP and LIME provide interpretable attributions for individual predictions. Model drift detection monitors prediction accuracy over time to identify when models need retraining. Reinforcement learning from human feedback aligns language model outputs with human preferences and values. Prompt engineering crafts input text patterns that elicit desired behaviors from large language models without fine-tuning. Retrieval-augmented generation retrieves relevant documents from external knowledge bases to ground LLM responses in factual information.';
   const longPrompt = (PART_A + PART_B + PART_C + ' Repeat this marker exactly: CACHE_PROBE_7391\nAt the end, reply exactly: CACHE_OK').trim();
 
-  // First request (may create cache)
-  const r1 = await makeApiCall(baseUrl, apiKey, model, interfaceType, longPrompt, 10, 0, signal);
+  // ── Total timeout guard ─────────────────────────────────────────────
+  const totalController = new AbortController();
+  const totalTimeout = setTimeout(() => totalController.abort(), CACHE_PROBE_TOTAL_TIMEOUT_MS);
+
+  // ── Request #1 ─────────────────────────────────────────────────────
+  let r1 = { success: false, data: {}, status: 0, timeout: false };
+  try {
+    await new Promise((resolve, reject) => {
+      const guard = setTimeout(() => { totalController.abort(); reject(new Error('TOTAL_TIMEOUT')); }, CACHE_PROBE_TOTAL_TIMEOUT_MS);
+      makeApiCall(baseUrl, apiKey, model, interfaceType, longPrompt, 10, 0, signal, CACHE_PROBE_TIMEOUT_MS)
+        .then(result => { clearTimeout(guard); resolve(result); })
+        .catch(err => { clearTimeout(guard); reject(err); });
+    }).then(result => { r1 = result; })
+      .catch(err => {
+        if (err.message === 'TOTAL_TIMEOUT') {
+          r1 = { success: false, data: {}, status: 0, timeout: true, error: err.message };
+        } else {
+          r1 = { success: false, data: {}, status: 0, timeout: err.name === 'AbortError', error: err.message };
+        }
+      });
+  } catch (_) {}
+
+  clearTimeout(totalTimeout);
+  if (totalController.signal.aborted) {
+    return makeCacheErrorResult(zh, 'total_timeout', 0, {});
+  }
+
+  // ── Request #2 ─────────────────────────────────────────────────────
+  let r2 = { success: false, data: {}, status: 0, timeout: false };
+  if (r1.success) {
+    try {
+      await new Promise((resolve, reject) => {
+        const guard = setTimeout(() => { totalController.abort(); reject(new Error('TOTAL_TIMEOUT')); }, CACHE_PROBE_TOTAL_TIMEOUT_MS);
+        makeApiCall(baseUrl, apiKey, model, interfaceType, longPrompt, 10, 0, signal, CACHE_PROBE_TIMEOUT_MS)
+          .then(result => { clearTimeout(guard); resolve(result); })
+          .catch(err => { clearTimeout(guard); reject(err); });
+      }).then(result => { r2 = result; })
+        .catch(err => {
+          if (err.message === 'TOTAL_TIMEOUT') {
+            r2 = { success: false, data: {}, status: 0, timeout: true, error: err.message };
+          } else {
+            r2 = { success: false, data: {}, status: 0, timeout: err.name === 'AbortError', error: err.message };
+          }
+        });
+    } catch (_) {}
+  }
+
+  clearTimeout(totalTimeout);
+  if (totalController.signal.aborted) {
+    const usage1 = r1.data?.usage || {};
+    const cache1 = extractCacheUsage(usage1);
+    const partialEvidence = {
+      timeout: true, timeoutMs: CACHE_PROBE_TIMEOUT_MS, totalTimeoutMs: CACHE_PROBE_TOTAL_TIMEOUT_MS,
+      firstRequest: { promptTokens: cache1.promptTokens, cachedTokens: cache1.cachedTokens, cacheCreationTokens: cache1.cacheCreationTokens, cacheReadTokens: cache1.cacheReadTokens },
+      secondRequest: { promptTokens: null, cachedTokens: null, timeout: true },
+      fieldFound: cache1.fieldFound, sourceField: cache1.sourceField,
+    };
+    return makeCacheErrorResult(zh, 'total_timeout', 2, partialEvidence);
+  }
+
+  // ── Build evidence ─────────────────────────────────────────────────
   const usage1 = r1.data?.usage || {};
   const cache1 = extractCacheUsage(usage1);
-  evidence.firstRequest = {
-    promptTokens: cache1.promptTokens,
-    cachedTokens: cache1.cachedTokens,
-    cacheCreationTokens: cache1.cacheCreationTokens,
-    cacheReadTokens: cache1.cacheReadTokens,
-    latencyMs: r1.data?.usage?.latencyMs ?? null,
-  };
-
-  // Second request (should hit cache if supported)
-  const r2 = await makeApiCall(baseUrl, apiKey, model, interfaceType, longPrompt, 10, 0, signal);
   const usage2 = r2.data?.usage || {};
   const cache2 = extractCacheUsage(usage2);
 
-  // Latency comparison
-  let latencyImprovementRate = null;
-
-  evidence.firstRequest.latencyMs = null; // Will be set if response includes timing
+  evidence.firstRequest = {
+    promptTokens: cache1.promptTokens, cachedTokens: cache1.cachedTokens,
+    cacheCreationTokens: cache1.cacheCreationTokens, cacheReadTokens: cache1.cacheReadTokens,
+    timeout: !!r1.timeout, success: r1.success,
+  };
   evidence.secondRequest = {
-    promptTokens: cache2.promptTokens,
-    cachedTokens: cache2.cachedTokens,
-    cacheCreationTokens: cache2.cacheCreationTokens,
-    cacheReadTokens: cache2.cacheReadTokens,
-    latencyMs: null,
+    promptTokens: cache2.promptTokens, cachedTokens: cache2.cachedTokens,
+    cacheCreationTokens: cache2.cacheCreationTokens, cacheReadTokens: cache2.cacheReadTokens,
+    timeout: !!r2.timeout, success: r2.success,
   };
   evidence.sourceField = cache2.sourceField;
   evidence.fieldFound = cache2.fieldFound;
 
-  // Calculate latency improvement (if timing available in usage)
+  let latencyImprovementRate = null;
   const usageLat1 = r1.data?.usage?.latencyMs ?? r1.data?.latency ?? null;
   const usageLat2 = r2.data?.usage?.latencyMs ?? r2.data?.latency ?? null;
   if (usageLat1 != null && usageLat2 != null && usageLat1 > 0) {
     latencyImprovementRate = (usageLat1 - usageLat2) / usageLat1;
     evidence.latencyImprovementRate = Math.max(0, latencyImprovementRate);
-  } else {
-    evidence.latencyImprovementRate = null;
   }
-
   evidence.cacheHitRate = cache2.cacheHitRate;
   evidence.promptTokenConsistencyRate = null;
 
-  // Determine if probe tokens are sufficient for cache detection
   const actualPromptTokens = Math.max(cache1.promptTokens ?? 0, cache2.promptTokens ?? 0);
   evidence.probeTokenSufficient = actualPromptTokens >= 1024;
   evidence.minPromptTokensRequired = 1024;
   evidence.actualPromptTokens = actualPromptTokens;
 
-  // ── A: Cache field found (1 pt) ───────────────────────
-  let scoreA = cache2.fieldFound ? 1 : 0;
+  // ── r1 failed ─────────────────────────────────────────────────────
+  if (!r1.success) {
+    const summary = r1.timeout
+      ? (zh ? '缓存检测超时，无法验证缓存信号' : 'Cache check timeout — cannot verify cache signal')
+      : (zh ? '缓存检测请求失败，无法验证缓存信号' : 'Cache check request failed — cannot verify cache signal');
+    details.push(zh ? '缓存检测请求耗时过长，已自动跳过，不影响其他验货项。' : 'Cache probe timed out or failed — auto-skipped, does not block other checks.');
+    return mkCheck({
+      id: 'cacheHitCheck', label: { zh: '缓存命中检测', en: 'Cache Hit Check' },
+      maxScore: 5, score: 2, status: 'error', summary, details, deductions: [],
+      evidence: { ...evidence, timeout: !!r1.timeout, timeoutMs: CACHE_PROBE_TIMEOUT_MS, totalTimeoutMs: CACHE_PROBE_TOTAL_TIMEOUT_MS, statusColor: { color: '#f59e0b', bg: '#fef9c3' } }
+    });
+  }
 
-  // ── B: Cache hit rate (2 pts) ─────────────────────────
+  // ── r2 failed ─────────────────────────────────────────────────────
+  if (!r2.success) {
+    const summary = r2.timeout
+      ? (zh ? '缓存检测超时，无法验证缓存信号' : 'Cache check timeout — cannot verify cache signal')
+      : (zh ? '缓存检测请求失败，无法验证缓存信号' : 'Cache check request failed — cannot verify cache signal');
+    details.push(zh ? '缓存检测请求耗时过长，已自动跳过，不影响其他验货项。' : 'Cache probe timed out or failed — auto-skipped, does not block other checks.');
+    return mkCheck({
+      id: 'cacheHitCheck', label: { zh: '缓存命中检测', en: 'Cache Hit Check' },
+      maxScore: 5, score: 2, status: 'error', summary, details, deductions: [],
+      evidence: { ...evidence, timeout: !!r2.timeout, timeoutMs: CACHE_PROBE_TIMEOUT_MS, totalTimeoutMs: CACHE_PROBE_TOTAL_TIMEOUT_MS, statusColor: { color: '#f59e0b', bg: '#fef9c3' } }
+    });
+    // ── Both succeeded: normal scoring ─────────────────────────────────
+  let scoreA = cache2.fieldFound ? 1 : 0;
   let scoreB = 0;
   if (cache2.cacheHitRate != null) {
     const rate = cache2.cacheHitRate;
@@ -1329,8 +1419,6 @@ async function checkN_CacheHitCheck(baseUrl, apiKey, model, interfaceType, signa
     else if (rate >= 0.20) scoreB = 0.3;
     else scoreB = 0;
   }
-
-  // ── C: Absolute cached tokens (1 pt) ──────────────────
   let scoreC = 0;
   const absCached = cache2.cachedTokens ?? 0;
   if (absCached >= 1000) scoreC = 1;
@@ -1338,10 +1426,7 @@ async function checkN_CacheHitCheck(baseUrl, apiKey, model, interfaceType, signa
   else if (absCached >= 300) scoreC = 0.4;
   else if (absCached >= 1) scoreC = 0.2;
   else scoreC = 0;
-
-  // ── D: Prompt tokens consistency (0.5 pt) ─────────────
   let scoreD = 0;
-  evidence.promptTokenConsistencyRate = null;
   if (cache1.promptTokens != null && cache2.promptTokens != null) {
     const p1 = cache1.promptTokens;
     const p2 = cache2.promptTokens;
@@ -1351,87 +1436,71 @@ async function checkN_CacheHitCheck(baseUrl, apiKey, model, interfaceType, signa
     if (consistencyRate < 0.05) scoreD = 0.5;
     else if (consistencyRate < 0.20) scoreD = 0.25;
   }
-
-  // ── E: Latency improvement (0.5 pt) ─────────────────
   let scoreE = 0;
-  if (evidence.latencyImprovementRate != null && evidence.latencyImprovementRate > 0) {
-    if (evidence.latencyImprovementRate >= 0.30) scoreE = 0.5;
-    else if (evidence.latencyImprovementRate >= 0.10) scoreE = 0.3;
-    else if (evidence.latencyImprovementRate >= 0) scoreE = 0.1;
+  if (latencyImprovementRate != null && latencyImprovementRate > 0) {
+    if (latencyImprovementRate >= 0.30) scoreE = 0.5;
+    else if (latencyImprovementRate >= 0.10) scoreE = 0.3;
+    else if (latencyImprovementRate >= 0) scoreE = 0.1;
   }
 
-  // ── Determine status ────────────────────────────────
-  let totalScore = Math.round((scoreA + scoreB + scoreC + scoreD + scoreE) * 10) / 10;
+  const totalScore = Math.round((scoreA + scoreB + scoreC + scoreD + scoreE) * 10) / 10;
+
+  // Token insufficient → unknown
+  if (actualPromptTokens < 1024) {
+    const summary = zh ? '探测长度不足，无法验证缓存宣传' : 'Probe length insufficient — cannot verify cache claims';
+    details.push(zh ? `本次缓存探测的 prompt_tokens 低于 1024，无法有效验证缓存命中。未验证不等于没有缓存。当前实际：${actualPromptTokens} tokens` : `Probe prompt_tokens below 1024 — cannot effectively verify cache hit. Actual: ${actualPromptTokens} tokens. Unverified does not mean unavailable.`);
+    return mkCheck({
+      id: 'cacheHitCheck', label: { zh: '缓存命中检测', en: 'Cache Hit Check' },
+      maxScore: 5, score: 2.5, status: 'unknown', summary, details, deductions: [],
+      evidence: { ...evidence, statusColor: { color: '#94a3b8', bg: '#f1f5f9' } }
+    });
+  }
+
+  // No cache field → unknown
+  if (!cache2.fieldFound) {
+    const summary = zh ? 'API 未暴露缓存字段，无法验证缓存宣传' : 'API does not expose cache fields — cannot verify cache claims';
+    return mkCheck({
+      id: 'cacheHitCheck', label: { zh: '缓存命中检测', en: 'Cache Hit Check' },
+      maxScore: 5, score: 2.5, status: 'unknown', summary, details, deductions: [],
+      evidence: { ...evidence, statusColor: { color: '#94a3b8', bg: '#f1f5f9' } }
+    });
+  }
+
   let status = 'unknown';
   let summary = '';
-
-  // Probe token insufficient check (before success check)
-  if (actualPromptTokens < 1024) {
-    status = 'unknown';
-    totalScore = 2.5;
-    summary = zh ? '探测长度不足，无法验证缓存宣传' : 'Probe length insufficient — cannot verify cache claims';
-    details.push(zh
-      ? `本次缓存探测的 prompt_tokens 低于 1024，无法有效验证缓存命中。未验证不等于没有缓存。当前实际：${actualPromptTokens} tokens`
-      : `Probe prompt_tokens below 1024 — cannot effectively verify cache hit. Actual: ${actualPromptTokens} tokens. Unverified does not mean unavailable.`);
-    // Return early — do not calculate sub-scores for insufficient probe length
-    return mkCheck({
-      id: 'cacheHitCheck',
-      label: { zh: '缓存命中检测', en: 'Cache Hit Check' },
-      maxScore: 5,
-      score: totalScore,
-      status,
-      summary,
-      details,
-      deductions: [],
-      evidence: {
-        ...evidence,
-        statusColor: { color: '#94a3b8', bg: '#f1f5f9' },
-        fieldFound: cache2.fieldFound,
-        sourceField: cache2.sourceField,
-      }
-    });
-  } else if (!r1.success || !r2.success) {
-    status = 'error';
-    summary = zh ? '缓存检测请求失败，无法验证缓存信号' : 'Cache check request failed — cannot verify cache signal';
-    totalScore = 2;
-  } else if (!cache2.fieldFound) {
-    status = 'unknown';
-    summary = zh ? 'API 未暴露缓存字段，无法验证缓存宣传' : 'API does not expose cache fields — cannot verify cache claims';
-    totalScore = 2.5;
-  } else {
-    if (totalScore >= 4.5) { status = 'excellent'; summary = zh ? '缓存命中信号很强' : 'Very strong cache hit signal'; }
-    else if (totalScore >= 3.5) { status = 'good'; summary = zh ? '检测到较高缓存命中信号' : 'Detected strong cache hit signal'; }
-    else if (totalScore >= 2.0) { status = 'partial'; summary = zh ? '检测到部分缓存命中信号' : 'Detected partial cache hit signal'; }
-    else if (totalScore >= 0.5) { status = 'weak'; summary = zh ? '缓存命中信号较弱' : 'Weak cache hit signal'; }
-    else { status = 'none'; summary = zh ? '未检测到有效缓存命中' : 'No effective cache hit detected'; }
-  }
+  if (totalScore >= 4.5) { status = 'excellent'; summary = zh ? '缓存命中信号很强' : 'Very strong cache hit signal'; }
+  else if (totalScore >= 3.5) { status = 'good'; summary = zh ? '检测到较高缓存命中信号' : 'Detected strong cache hit signal'; }
+  else if (totalScore >= 2.0) { status = 'partial'; summary = zh ? '检测到部分缓存命中信号' : 'Detected partial cache hit signal'; }
+  else if (totalScore >= 0.5) { status = 'weak'; summary = zh ? '缓存命中信号较弱' : 'Weak cache hit signal'; }
+  else { status = 'none'; summary = zh ? '未检测到有效缓存命中' : 'No effective cache hit detected'; }
 
   const scoreConfig = {
-    excellent: { color: '#16a34a', bg: '#dcfce7' },
-    good: { color: '#16a34a', bg: '#dcfce7' },
-    partial: { color: '#d97706', bg: '#fef9c3' },
-    weak: { color: '#d97706', bg: '#fef9c3' },
-    none: { color: '#dc2626', bg: '#fee2e2' },
-    unknown: { color: '#94a3b8', bg: '#f1f5f9' },
-    error: { color: '#94a3b8', bg: '#f1f5f9' },
-    skipped: { color: '#94a3b8', bg: '#f1f5f9' },
+    excellent: { color: '#16a34a', bg: '#dcfce7' }, good: { color: '#16a34a', bg: '#dcfce7' },
+    partial: { color: '#d97706', bg: '#fef9c3' }, weak: { color: '#d97706', bg: '#fef9c3' },
+    none: { color: '#dc2626', bg: '#fee2e2' }, unknown: { color: '#94a3b8', bg: '#f1f5f9' },
+    error: { color: '#f59e0b', bg: '#fef9c3' }, skipped: { color: '#94a3b8', bg: '#f1f5f9' },
   };
-  const statusColor = scoreConfig[status] || scoreConfig.unknown;
 
   return mkCheck({
-    id: 'cacheHitCheck',
-    label: { zh: '缓存命中检测', en: 'Cache Hit Check' },
-    maxScore: 5,
-    score: totalScore,
-    status,
-    summary,
-    details,
-    deductions,
+    id: 'cacheHitCheck', label: { zh: '缓存命中检测', en: 'Cache Hit Check' },
+    maxScore: 5, score: totalScore, status, summary, details, deductions: [],
+    evidence: { ...evidence, statusColor: scoreConfig[status] || scoreConfig.unknown }
+  });
+}
+
+/** Helper: build a degraded cache result (timeout / total_timeout). */
+function makeCacheErrorResult(zh, reason, fallbackScore, partialEvidence) {
+  const summary = reason === 'total_timeout'
+    ? (zh ? '缓存检测超时，无法验证缓存信号' : 'Cache check timeout — cannot verify cache signal')
+    : (zh ? '缓存检测请求失败，无法验证缓存信号' : 'Cache check request failed — cannot verify cache signal');
+  const details = [zh ? '缓存检测请求耗时过长，已自动跳过，不影响其他验货项。' : 'Cache probe timed out or failed — auto-skipped, does not block other checks.'];
+  return mkCheck({
+    id: 'cacheHitCheck', label: { zh: '缓存命中检测', en: 'Cache Hit Check' },
+    maxScore: 5, score: fallbackScore, status: 'error', summary, details, deductions: [],
     evidence: {
-      ...evidence,
-      statusColor,
-      fieldFound: cache2.fieldFound,
-      sourceField: cache2.sourceField,
+      ...(partialEvidence || {}),
+      timeout: true, timeoutMs: CACHE_PROBE_TIMEOUT_MS, totalTimeoutMs: CACHE_PROBE_TOTAL_TIMEOUT_MS,
+      statusColor: { color: '#f59e0b', bg: '#fef9c3' },
     }
   });
 }
@@ -2610,6 +2679,7 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
       const fmtRate = (r) => r != null ? (Math.round(r * 10000) / 100) + '%' : '—';
       const cacheStatus = checkData.status || 'unknown';
       const isUnknown = cacheStatus === 'unknown';
+      const isError = cacheStatus === 'error';
       const actualTokens = ev.actualPromptTokens ?? ev.firstRequest?.promptTokens ?? '—';
       const threshold = ev.minPromptTokensRequired ?? 1024;
       const sufficient = ev.probeTokenSufficient;
@@ -2629,6 +2699,12 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
           <div><span style="color:#94a3b8">${zh ? '一致性：' : 'Consistency: '}</span>${fmtRate(ev.promptTokenConsistencyRate != null ? 1 - ev.promptTokenConsistencyRate : null)}</div>
           <div><span style="color:#94a3b8">${zh ? '延迟改善：' : 'Latency Impr.: '}</span>${fmtRate(ev.latencyImprovementRate)}</div>
         </div>
+        ${isError ? `<div style="margin-top:6px;padding:6px 8px;background:#fef9c3;border-radius:6px;font-size:10px;border:1px solid #f59e0b">
+          <div style="font-weight:600;color:#92400e;margin-bottom:4px">${zh ? '⚠ 缓存检测超时' : '⚠ Cache Check Timeout'}</div>
+          <div style="color:#92400e"><span style="color:#94a3b8">${zh ? '单次超时：' : 'Per-request timeout: '}</span>${ev.timeoutMs ?? CACHE_PROBE_TIMEOUT_MS}ms</div>
+          <div style="color:#92400e"><span style="color:#94a3b8">${zh ? '总超时上限：' : 'Total timeout: '}</span>${ev.totalTimeoutMs ?? CACHE_PROBE_TOTAL_TIMEOUT_MS}ms</div>
+          <div style="color:#92400e;margin-top:4px">${zh ? '说明：缓存检测请求耗时过长，已自动跳过，不影响其他验货项。' : 'Note: Cache probe timed out — auto-skipped, does not block other checks.'}</div>
+        </div>` : ''}
         ${isUnknown ? `<div style="font-size:10px;color:#64748b;line-height:1.5;margin-bottom:4px">${escH(checkData.summary || '')}</div>
         <div style="font-size:10px;color:#64748b;line-height:1.5;border-top:1px solid #e2e8f0;padding-top:4px">${zh ? '未暴露字段不等于没有缓存。' : 'Missing fields do not necessarily mean caching is unavailable.'}</div>` : `<div style="font-size:10px;color:#64748b;line-height:1.5">${escH(checkData.summary || '')}</div>`}
       </div>`;
@@ -2973,11 +3049,11 @@ window.Doctor = {
       this._refreshProgress(0, 'running');
       this._refreshProgress(1, 'running');
       const [reachResult, authResult] = await Promise.all([checkA_Reachability(normalizedUrl, apiKey, signal), checkB_Auth(normalizedUrl, apiKey, signal)]);
-      this._refreshProgress(0, reachResult.state, reachResult.summary);
-      this._refreshProgress(1, authResult.state, authResult.summary);
+      this._refreshProgress(0, reachResult.status, reachResult.summary);
+      this._refreshProgress(1, authResult.status, authResult.summary);
       this._refreshProgress(2, 'running');
       const modelListResult = await checkC_ModelList(normalizedUrl, apiKey, signal, model);
-      this._refreshProgress(2, modelListResult.state, modelListResult.summary);
+      this._refreshProgress(2, modelListResult.status, modelListResult.summary);
       let probedModelId = '';
       if (!this._userInputModelId && !this._autoDetectedModelId) {
         const allModels = extractModels(modelListResult?.data || {});
@@ -2994,22 +3070,31 @@ window.Doctor = {
       const modelIdInfo = determineFinalTestModelId(this._userInputModelId, this._autoDetectedModelId || probedModelId, modelListResult);
       this._modelIdInfo = modelIdInfo;
       const autoModelResult = await checkD_AutoModel(normalizedUrl, apiKey, modelIdInfo, authResult, signal, this._interfaceType);
-      this._refreshProgress(3, 'running');
-      const targetCallResult = await checkE_TargetCall(normalizedUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal);
-      // Model list + auto model + target call done → now show model ID detection
-      this._refreshProgress(3, targetCallResult.state, autoModelResult.summary || targetCallResult.summary);
+      this._refreshProgress(3, autoModelResult.status, autoModelResult.summary);
       this._refreshProgress(4, 'running');
-      const costResult = await checkJ_CostTransparency(normalizedUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult);
-      this._refreshProgress(4, costResult.state, costResult.summary);
+      const targetCallResult = await checkE_TargetCall(normalizedUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal);
+      this._refreshProgress(4, targetCallResult.status, targetCallResult.summary);
       this._refreshProgress(5, 'running');
+      const costResult = await checkJ_CostTransparency(normalizedUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult);
+      this._refreshProgress(5, costResult.status, costResult.summary);
+      const cacheInitMsg = zh ? '缓存命中检测中，超时将自动跳过...' : 'Checking cache hit signal. This step will auto-skip on timeout...';
+      const elCache = document.getElementById('prog-detail-5');
+      if (elCache) elCache.textContent = cacheInitMsg;
+      let cacheSlowTimer;
+      const slowMsg = zh ? '缓存检测较慢，正在等待上游响应...' : 'Cache probe is slower than expected. Waiting for upstream response...';
+      cacheSlowTimer = setTimeout(() => {
+        const el = document.getElementById('prog-detail-5');
+        if (el) el.textContent = slowMsg;
+      }, 8000);
       const cacheResult = await checkN_CacheHitCheck(normalizedUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult);
-      this._refreshProgress(5, cacheResult.state, cacheResult.summary);
+      clearTimeout(cacheSlowTimer);
+      this._refreshProgress(5, cacheResult.status, cacheResult.summary);
       this._refreshProgress(6, 'running');
       const modelIntegrityResult = await checkK_ModelIntegrity(normalizedUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult, modelIdInfo, deepMode);
-      this._refreshProgress(6, modelIntegrityResult.state, modelIntegrityResult.summary);
+      this._refreshProgress(6, modelIntegrityResult.status, modelIntegrityResult.summary);
       this._refreshProgress(7, 'running');
       const stabilityResult = await checkG_Stability(normalizedUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult);
-      this._refreshProgress(7, stabilityResult.state, stabilityResult.summary);
+      this._refreshProgress(7, stabilityResult.status, stabilityResult.summary);
       // Internal: usage audit (no visible progress)
       const usageResult = await checkH_UsageAudit(normalizedUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult);
       this._refreshProgress(8, 'running');
@@ -3065,15 +3150,15 @@ window.Doctor = {
     const zh = getDocLang() !== 'en';
     const totalSteps = 9;
     const steps = [
-      { zh: 'API 基础连通', en: 'API Connectivity' },
-      { zh: 'Key 鉴权', en: 'Key Authentication' },
-      { zh: '模型识别', en: 'Model Identification' },
+      { zh: 'API 服务器可达性', en: 'API Server Reachability' },
+      { zh: '鉴权 / Key 有效性', en: 'Auth / Key Validity' },
+      { zh: '模型列表获取', en: 'Model List Retrieval' },
+      { zh: '模型识别与选择', en: 'Model Identification' },
+      { zh: '目标模型调用质量', en: 'Target Model Call' },
       { zh: '扣费透明度检测', en: 'Cost Transparency' },
       { zh: '缓存命中检测', en: 'Cache Hit Check' },
       { zh: '模型能力验货', en: 'Model Capability' },
-      { zh: '稳定性采样', en: 'Stability Sampling' },
-      { zh: '客户端配置检查', en: 'Client Config' },
-      { zh: '生成验货报告', en: 'Generating Report' },
+      { zh: '基础兼容 + 客户端配置', en: 'Basic Compat + Client Config' },
     ];
     const rows = steps.slice(0, totalSteps).map((s, i) => `<div class="prog-row" id="prog-row-${i}">
       <span class="prog-icon" id="prog-icon-${i}"><div style="width:14px;height:14px;border:2px solid #e2e8f0;border-radius:50%"></div></span>
@@ -3086,23 +3171,23 @@ window.Doctor = {
 
   _refreshProgress(index, state, detail) {
     const zh = getDocLang() !== 'en';
-    const statusColorMap = { excellent: { icon: '#16a34a', bar: '#16a34a', cls: 'prog-row--done' }, good: { icon: '#16a34a', bar: '#16a34a', cls: 'prog-row--done' }, warning: { icon: '#f59e0b', bar: '#f59e0b', cls: 'prog-row--done prog-row--warn' }, failed: { icon: '#dc2626', bar: '#dc2626', cls: 'prog-row--done prog-row--fail' }, skipped: { icon: '#94a3b8', bar: '#94a3b8', cls: 'prog-row--done' }, pending: { icon: '#e2e8f0', bar: '#e2e8f0', cls: '' }, running: { icon: '#2563eb', bar: '#2563eb', cls: 'prog-row--running' } };
-    const defaultBarWidth = { excellent: '100%', good: '100%', warning: '65%', failed: '25%', skipped: '40%', pending: '0%', running: '30%' };
-    const defaultDetail = { excellent: zh?'优秀':'Excellent', good: zh?'良好':'Good', warning: zh?'注意':'Warning', failed: zh?'失败':'Failed', skipped: zh?'未验证':'Not verified', pending: '', running: zh?'检测中...':'Checking...' };
+    const statusColorMap = { excellent: { icon: '#16a34a', bar: '#16a34a', cls: 'prog-row--done' }, good: { icon: '#16a34a', bar: '#16a34a', cls: 'prog-row--done' }, warning: { icon: '#f59e0b', bar: '#f59e0b', cls: 'prog-row--done prog-row--warn' }, failed: { icon: '#dc2626', bar: '#dc2626', cls: 'prog-row--done prog-row--fail' }, skipped: { icon: '#94a3b8', bar: '#94a3b8', cls: 'prog-row--done' }, pending: { icon: '#e2e8f0', bar: '#e2e8f0', cls: '' }, running: { icon: '#2563eb', bar: '#2563eb', cls: 'prog-row--running' }, error: { icon: '#f59e0b', bar: '#f59e0b', cls: 'prog-row--done prog-row--warn' } };
+    const defaultBarWidth = { excellent: '100%', good: '100%', warning: '65%', failed: '25%', skipped: '40%', pending: '0%', running: '30%', error: '40%' };
+    const defaultDetail = { excellent: zh?'优秀':'Excellent', good: zh?'良好':'Good', warning: zh?'注意':'Warning', failed: zh?'失败':'Failed', skipped: zh?'未验证':'Not verified', pending: '', running: zh?'检测中...':'Checking...', error: zh?'未验证':'Not verified' };
     const cfg = statusColorMap[state] || statusColorMap.pending;
     const barW = defaultBarWidth[state] || '0%';
     const dtl = detail || defaultDetail[state] || '';
     const totalSteps = 9;
     const stepLabels = [
-      { zh: 'API 基础连通', en: 'API Connectivity' },
-      { zh: 'Key 鉴权', en: 'Key Authentication' },
-      { zh: '模型识别', en: 'Model Identification' },
+      { zh: 'API 服务器可达性', en: 'API Server Reachability' },
+      { zh: '鉴权 / Key 有效性', en: 'Auth / Key Validity' },
+      { zh: '模型列表获取', en: 'Model List Retrieval' },
+      { zh: '模型识别与选择', en: 'Model Identification' },
+      { zh: '目标模型调用质量', en: 'Target Model Call' },
       { zh: '扣费透明度检测', en: 'Cost Transparency' },
       { zh: '缓存命中检测', en: 'Cache Hit Check' },
       { zh: '模型能力验货', en: 'Model Capability' },
-      { zh: '稳定性采样', en: 'Stability Sampling' },
-      { zh: '客户端配置检查', en: 'Client Config' },
-      { zh: '生成验货报告', en: 'Generating Report' },
+      { zh: '基础兼容 + 客户端配置', en: 'Basic Compat + Client Config' },
     ];
     for (let i = 0; i < totalSteps; i++) {
       const row = document.getElementById('prog-row-' + i); const icon = document.getElementById('prog-icon-' + i);
@@ -3182,6 +3267,7 @@ window.Doctor = {
       skipped: { zh: '跳过', en: 'Skipped' },
     };
     const cacheLabel = cacheLabelMap[cacheStatus]?.[zh?'zh':'en'] || cacheStatus;
+    const cacheTimeoutSuffix = cacheStatus === 'error' ? (zh ? '（超时）' : ' (timeout)') : '';
     const cacheRateText = cacheRate != null ? ` (${(Math.round(cacheRate * 10000) / 100)}%)` : '';
     const g = grade?.grade || 'C';
     const decisionMap = {
@@ -3195,8 +3281,8 @@ window.Doctor = {
     const decisionText = decisionMap[g] || '';
     const maskedUrl = (typeof Doctor !== 'undefined' && Doctor._formData) ? maskBaseUrlForShare(Doctor._formData.baseUrl || '') : '';
     const text = zh
-      ? `AI API Doctor 验货报告\nURL: ${maskedUrl}\n验货分：${score}/100，${gradeLabel}\n扣费透明度：${costLabel}\n缓存命中检测：${cacheLabel}${cacheRateText}\n模型可信度：${modelLabel}\n稳定性：${stabilityLabel}\n来源透明度：${srcLabelCopy}\n主要建议：${suggestions[0] || '-'}\n建议：${decisionText}\n本报告仅基于可复现 API 信号，不构成最终证明。\nID：${reportId} · aiapidoctor.com`
-      : `AI API Doctor Report\nURL: ${maskedUrl}\nScore: ${score}/100, ${grade?.label || ''}\nCost: ${costLabel}\nCache Hit: ${cacheLabel}${cacheRateText}\nModel: ${modelLabel}\nStability: ${stabilityLabel}\nSource: ${srcLabelCopy}\nMain advice: ${suggestions[0] || '-'}\nAdvice: ${decisionText}\nBased on reproducible API signals only.\nID: ${reportId} · aiapidoctor.com`;
+      ? `AI API Doctor 验货报告\nURL: ${maskedUrl}\n验货分：${score}/100，${gradeLabel}\n扣费透明度：${costLabel}\n缓存命中检测：${cacheLabel}${cacheTimeoutSuffix}${cacheRateText}\n模型可信度：${modelLabel}\n稳定性：${stabilityLabel}\n来源透明度：${srcLabelCopy}\n主要建议：${suggestions[0] || '-'}\n建议：${decisionText}\n本报告仅基于可复现 API 信号，不构成最终证明。\nID：${reportId} · aiapidoctor.com`
+      : `AI API Doctor Report\nURL: ${maskedUrl}\nScore: ${score}/100, ${grade?.label || ''}\nCost: ${costLabel}\nCache Hit: ${cacheLabel}${cacheTimeoutSuffix}${cacheRateText}\nModel: ${modelLabel}\nStability: ${stabilityLabel}\nSource: ${srcLabelCopy}\nMain advice: ${suggestions[0] || '-'}\nAdvice: ${decisionText}\nBased on reproducible API signals only.\nID: ${reportId} · aiapidoctor.com`;
     copyToClipboard(text, zh ? '验货分已复制' : 'Score copied');
   }
 };
@@ -4855,8 +4941,117 @@ window.MockCases = {
     return { raw: final, capped, grade, desc: `Case CACHE-Q: actualPromptTokens=1300 >= 1024, fieldFound=true, cachedTokens=0 → status=none, score=1.0, fieldFound=true (NOT 'API 未暴露缓存字段')` };
   },
 
+  // Case CACHE-TIMEOUT-1: request #1 timeout, #2 not executed, status=error, score=2
+  caseCACHE_TIMEOUT_1() {
+    const checks = this._makeNormalChecks();
+    checks.cacheHitCheck = mkCheck({
+      id: 'cacheHitCheck', label: {zh:'缓存命中检测',en:'Cache Hit Check'}, maxScore: 5, score: 2, status: 'error',
+      summary: '缓存检测超时，无法验证缓存信号',
+      details: ['缓存检测请求耗时过长，已自动跳过，不影响其他验货项。'],
+      evidence: {
+        timeout: true, timeoutMs: 15000, totalTimeoutMs: 35000,
+        firstRequest: { promptTokens: null, cachedTokens: null, timeout: true, aborted: true },
+        secondRequest: null,
+        fieldFound: false, sourceField: null,
+        statusColor: { color: '#f59e0b', bg: '#fef9c3' },
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getScoreGrade(capped);
+    return { raw: final, capped, grade, desc: `Case CACHE-TIMEOUT-1: r1 timeout, r2 not executed, status=error, score=2 → enters 6/9, final report generated` };
+  },
+
+  // Case CACHE-TIMEOUT-2: r1 success, r2 timeout, preserves r1 evidence, status=error, score=2
+  caseCACHE_TIMEOUT_2() {
+    const checks = this._makeNormalChecks();
+    checks.cacheHitCheck = mkCheck({
+      id: 'cacheHitCheck', label: {zh:'缓存命中检测',en:'Cache Hit Check'}, maxScore: 5, score: 2, status: 'error',
+      summary: '缓存检测超时，无法验证缓存信号',
+      details: ['缓存检测请求耗时过长，已自动跳过，不影响其他验货项。'],
+      evidence: {
+        timeout: true, timeoutMs: 15000, totalTimeoutMs: 35000,
+        firstRequest: { promptTokens: 1400, cachedTokens: null, cacheCreationTokens: 1400, cacheReadTokens: null, success: true },
+        secondRequest: { promptTokens: null, cachedTokens: null, timeout: true, aborted: true },
+        fieldFound: true, sourceField: 'cache_tokens',
+        statusColor: { color: '#f59e0b', bg: '#fef9c3' },
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getScoreGrade(capped);
+    return { raw: final, capped, grade, desc: `Case CACHE-TIMEOUT-2: r1 success, r2 timeout, preserves r1 evidence, status=error, score=2 → enters 6/9, final report generated` };
+  },
+
+  // Case CACHE-NETWORK-ERR: fetch failed (non-timeout), status=error, score=2
+  caseCACHE_NETWORK_ERR() {
+    const checks = this._makeNormalChecks();
+    checks.cacheHitCheck = mkCheck({
+      id: 'cacheHitCheck', label: {zh:'缓存命中检测',en:'Cache Hit Check'}, maxScore: 5, score: 2, status: 'error',
+      summary: '缓存检测请求失败，无法验证缓存信号',
+      details: ['缓存检测请求耗时过长，已自动跳过，不影响其他验货项。'],
+      evidence: {
+        timeout: false, timeoutMs: 15000, totalTimeoutMs: 35000,
+        firstRequest: { promptTokens: null, cachedTokens: null, success: false, error: 'Failed to fetch' },
+        secondRequest: { promptTokens: null, cachedTokens: null, success: false },
+        fieldFound: false, sourceField: null,
+        statusColor: { color: '#f59e0b', bg: '#fef9c3' },
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getScoreGrade(capped);
+    return { raw: final, capped, grade, desc: `Case CACHE-NETWORK-ERR: fetch failed, status=error, score=2 → does NOT block main flow, final report generated` };
+  },
+
+  // Case CACHE-SLOW-BUT-OK: r1 12s, r2 10s, both succeed within 15s limit → normal scoring
+  caseCACHE_SLOW_BUT_OK() {
+    const checks = this._makeNormalChecks();
+    checks.cacheHitCheck = mkCheck({
+      id: 'cacheHitCheck', label: {zh:'缓存命中检测',en:'Cache Hit Check'}, maxScore: 5, score: 4.5, status: 'excellent',
+      summary: '缓存命中信号很强',
+      details: [],
+      evidence: {
+        timeout: false, timeoutMs: 15000, totalTimeoutMs: 35000,
+        firstRequest: { promptTokens: 1400, cachedTokens: null, cacheCreationTokens: 1400, cacheReadTokens: null, success: true },
+        secondRequest: { promptTokens: 1400, cachedTokens: 1380, cacheCreationTokens: null, cacheReadTokens: 1380, success: true },
+        fieldFound: true, sourceField: 'cache_tokens',
+        cacheHitRate: 0.99,
+        actualPromptTokens: 1400, probeTokenSufficient: true,
+        statusColor: { color: '#16a34a', bg: '#dcfce7' },
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getScoreGrade(capped);
+    return { raw: final, capped, grade, desc: `Case CACHE-SLOW-BUT-OK: r1=12s, r2=10s, both <15s limit, status=excellent, score=4.5 → NOT misjudged as timeout` };
+  },
+
+  // Case CACHE-LENGTH-LOW: both requests succeed but actualPromptTokens=221, status=unknown, score=2.5
+  caseCACHE_LENGTH_LOW() {
+    const checks = this._makeNormalChecks();
+    checks.cacheHitCheck = mkCheck({
+      id: 'cacheHitCheck', label: {zh:'缓存命中检测',en:'Cache Hit Check'}, maxScore: 5, score: 2.5, status: 'unknown',
+      summary: '探测长度不足，无法验证缓存宣传',
+      details: ['本次缓存探测的 prompt_tokens 低于 1024，无法有效验证缓存命中。未验证不等于没有缓存。当前实际：221 tokens'],
+      evidence: {
+        timeout: false,
+        firstRequest: { promptTokens: 221, cachedTokens: null, success: true },
+        secondRequest: { promptTokens: 221, cachedTokens: 200, success: true },
+        fieldFound: true, sourceField: 'cache_tokens',
+        cacheHitRate: 0.91,
+        actualPromptTokens: 221, minPromptTokensRequired: 1024, probeTokenSufficient: false,
+        statusColor: { color: '#94a3b8', bg: '#f1f5f9' },
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getScoreGrade(capped);
+    return { raw: final, capped, grade, desc: `Case CACHE-LENGTH-LOW: both succeed but actualPromptTokens=221 < 1024 → status=unknown, score=2.5, summary='探测长度不足' → enters 6/9` };
+  },
+
   runAll() {
-    const results = ['A','B','K','L','M','N','O','P','Q','V','W','X','Y','Z','AA','AB','AC','AD','AE','AF-1','AF-2','AG-1','AG-2','AH-1','AH-2','AI','AJ','AK','AL','AM','AN','AO','AP','AQ','AR','AS','AT','AU','AV','AW','AX','AY','AZ-1','AZ-2','BA-1','BA-2','BB','BC','BD','BE','BF','BG','BH','BI','BJ','BK','BL','BM','BN','BO','BU','BV','BW','BX','BY','BZ','CA','CB','CC','CD','CE','CF','CG','CH','CI','CJ','CL','CM','CN','CO','CP','CACHE-A','CACHE-B','CACHE-C','CACHE-D','CACHE-E','CACHE-F','CACHE-G','CACHE-H','CACHE-I','CACHE-J','CACHE-K','CACHE-L','CACHE-M','CACHE-N','CACHE-O','CACHE-P','CACHE-Q'].map(c => {
+    const results = ['A','B','K','L','M','N','O','P','Q','V','W','X','Y','Z','AA','AB','AC','AD','AE','AF-1','AF-2','AG-1','AG-2','AH-1','AH-2','AI','AJ','AK','AL','AM','AN','AO','AP','AQ','AR','AS','AT','AU','AV','AW','AX','AY','AZ-1','AZ-2','BA-1','BA-2','BB','BC','BD','BE','BF','BG','BH','BI','BJ','BK','BL','BM','BN','BO','BU','BV','BW','BX','BY','BZ','CA','CB','CC','CD','CE','CF','CG','CH','CI','CJ','CL','CM','CN','CO','CP','CACHE-A','CACHE-B','CACHE-C','CACHE-D','CACHE-E','CACHE-F','CACHE-G','CACHE-H','CACHE-I','CACHE-J','CACHE-K','CACHE-L','CACHE-M','CACHE-N','CACHE-O','CACHE-P','CACHE-Q','CACHE-TIMEOUT-1','CACHE-TIMEOUT-2','CACHE-NETWORK-ERR','CACHE-SLOW-BUT-OK','CACHE-LENGTH-LOW'].map(c => {
       const r = this['case' + c.replace('-','_')] ? this['case' + c.replace('-','_')]() : null;
       return r ? `${r.desc} | Grade: ${r.grade?.grade || '?'} ${r.grade?.labelZh || ''}` : `Case ${c}: not found`;
     });

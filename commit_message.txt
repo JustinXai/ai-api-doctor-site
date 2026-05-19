@@ -1,19 +1,24 @@
-fix: add missing CSS classes for progress UI and manual report card
+fix: cache probe validity — token threshold gate, early return, probe details, mock cases
 
-1. Progress UI (test.js Doctor._refreshProgress):
-   - Add .progress-wrap, .progress-title, .prog-row, .prog-row--warn,
-     .prog-row--fail, .prog-icon, .prog-bar-wrap, .prog-bar,
-     .prog-label, .prog-detail
-   - Add @keyframes prog-pulse for running animation
+1. Extend cache probe prompt:
+   - PART_A: 673 words (up from 241), PART_B: 633 words (up from 154),
+     PART_C: 606 words (up from 170)
+   - Total ~1921 words ≈ 2554 estimated tokens (targeting >=1500 actual API tokens)
+   - Both requests use the identical prompt string — no timestamps, no random IDs
 
-2. Manual report card (report.js):
-   - Add .billing-report-card, .report-header + variants,
-     .verdict-hero + verdict--ok/warning/danger, .delta-section,
-     .score-section (scoped .progress-bar-wrap height:8px to override
-     global height:4px), .evidence-chain, .evidence-node,
-     .evidence-arrow, .tech-grid, .tech-item, .safety-note,
-     .report-footer, .progress-bar__fill--green/orange/gray
+2. actualPromptTokens < 1024 gate (first priority, before all other checks):
+   - Returns early with status=unknown, score=2.5, summary='探测长度不足...'
+   - detail includes actualPromptTokens value
+   - evidence includes: probeTokenSufficient=false, actualPromptTokens, minPromptTokensRequired=1024
 
-3. .form-label--optional (report/index.html)
+3. Update cacheHitHtml (moduleSection):
+   - Adds green/yellow badge: "探测长度足够/不足" + actual tokens + threshold
+   - Shows actualPromptTokens, threshold (1024), sufficiency in expanded detail
+   - "API 未暴露缓存字段" only shown when actualPromptTokens >= 1024 and no field
 
-4. .container--narrow (support/index.html)
+4. Add mock cases:
+   - CACHE-O: actualPromptTokens=221, status=unknown, score=2.5,
+     summary='探测长度不足...', probeTokenSufficient=false, NO field error
+   - CACHE-P: actualPromptTokens=1300, no cache field → status=unknown, score=2.5,
+     summary='API 未暴露缓存字段...'
+   - CACHE-Q: actualPromptTokens=1300, cachedTokens=0, fieldFound=true → status=none, score=1.0
