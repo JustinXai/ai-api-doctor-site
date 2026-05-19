@@ -43,14 +43,15 @@ const PROMPT_STABILITY = 'Reply with exactly: OK';
 
 /* ═══════════════════════════════════════════════════════
    Score weights (total = 100)
-   Core: cost transparency (35) + model integrity (40) = 75 pts
+   Core: cost (30) + cache (5) + model (40) + stability (15) + compat (7) + client (3) = 100
    ═══════════════════════════════════════════════════════ */
 const WEIGHT = {
   basicCompatibility:  7,   // Basic reachability & auth (prerequisite)
-  costTransparency:   35,  // Usage billing transparency
+  costTransparency:   30,  // Usage billing transparency (compressed from 35)
+  cacheHitCheck:        5,  // Cache hit detection (new independent check)
   modelIntegrity:     40,  // Model capability & integrity signals
   stability:          15,  // Response stability
-  clientConfig:        3,  // Client config exportability (reduced from 6)
+  clientConfig:        3,  // Client config exportability
 };
 WEIGHT.total = Object.values(WEIGHT).reduce((a, b) => a + b, 0); // 100
 
@@ -869,7 +870,7 @@ async function checkJ_CostTransparency(baseUrl, apiKey, model, interfaceType, si
     && (targetUsage.completion_tokens != null || targetUsage.output_tokens != null)
     && targetUsage.total_tokens != null;
 
-  // ── J1: usage field completeness (5 pts) ──────────────────
+  // ── J1: usage field completeness (4 pts) ──────────────────
   if (!hasUsage) {
     subScores.usageField = 0;
     deductions.push(zh ? 'usage 字段完全缺失，无法审计消耗' : 'usage field completely missing — cannot audit consumption');
@@ -878,15 +879,15 @@ async function checkJ_CostTransparency(baseUrl, apiKey, model, interfaceType, si
     const hasCompletion = targetUsage.completion_tokens != null || targetUsage.output_tokens != null;
     const hasTotal = targetUsage.total_tokens != null;
     if (hasTotal && hasPrompt && hasCompletion) {
-      subScores.usageField = 5;
-    } else if (hasPrompt && hasCompletion) {
       subScores.usageField = 4;
+    } else if (hasPrompt && hasCompletion) {
+      subScores.usageField = 3.2;
       details.push(zh ? '有 prompt/completion_tokens 但缺 total_tokens' : 'Has prompt/completion_tokens but missing total_tokens');
     } else if (hasPrompt || hasCompletion) {
-      subScores.usageField = 3;
+      subScores.usageField = 2.5;
       details.push(zh ? '只有部分 usage 字段' : 'Only partial usage fields');
     } else {
-      subScores.usageField = 1.5;
+      subScores.usageField = 1;
       details.push(zh ? '只有 total_tokens' : 'Only total_tokens available');
     }
   }
@@ -923,7 +924,7 @@ async function checkJ_CostTransparency(baseUrl, apiKey, model, interfaceType, si
   if (totalVal === 0 || promptVal == null || completionVal == null) {
     subScores.totalTokens = 0;
   } else {
-    const expected = promptVal + completionVal;
+    const expected = (promptVal || 0) + (completionVal || 0);
     const diff = Math.abs(totalVal - expected);
     const ratio = expected > 0 ? diff / expected : 1;
     if (ratio < 0.05) subScores.totalTokens = 4;
@@ -958,14 +959,12 @@ async function checkJ_CostTransparency(baseUrl, apiKey, model, interfaceType, si
     subScores.shortReply = 0;
     deductions.push(zh ? '短回复测试未返回预期内容' : 'Short reply test did not return expected content');
   } else if (srComp > 50 && srReasoning === 0) {
-    // Severe anomaly: no reasoning token explanation
     subScores.shortReply = 0.5;
     deductions.push(zh
       ? `极短回复 OK 但 completion_tokens 严重偏高(${srComp})，无 reasoning_tokens 解释，扣费不可解释风险高`
       : `Short reply OK but completion_tokens(${srComp}) severely high with no reasoning_tokens — unexplained billing risk`);
   } else if (srComp > 50 && srReasoning > 0) {
     if (srReasoning > srComp * 0.7) {
-      // Mostly explained by reasoning_tokens
       subScores.shortReply = 4;
       details.push(zh
         ? `短回复 token 偏高(${srComp})，部分由 reasoning_tokens(${srReasoning}) 解释，建议结合后台余额继续核对`
@@ -987,8 +986,6 @@ async function checkJ_CostTransparency(baseUrl, apiKey, model, interfaceType, si
   }
 
   // ── J6: max_tokens limit effectiveness (4 pts) ──────────────
-  // NOTE: max_tokens mainly constrains completion tokens, not total tokens
-  // Don't fail just because total_tokens > max_tokens
   const maxResult = await makeApiCall(baseUrl, apiKey, model, interfaceType, 'Reply with one word only: OK', 5, 0, signal);
   const mtOutput = extractVisibleOutput(maxResult.data, interfaceType);
   const mtUsage = maxResult.data?.usage || {};
@@ -1017,6 +1014,7 @@ async function checkJ_CostTransparency(baseUrl, apiKey, model, interfaceType, si
   for (let i = 0; i < 3; i++) {
     const r = await makeApiCall(baseUrl, apiKey, model, interfaceType, 'Say: TEST', 10, 0, signal);
     stabilityCalls.push(r.data?.usage || {});
+    if (i < 2) await sleep(300);
   }
   evidence.usageStability = stabilityCalls;
   if (stabilityCalls.length >= 2) {
@@ -1039,10 +1037,7 @@ async function checkJ_CostTransparency(baseUrl, apiKey, model, interfaceType, si
     } else subScores.usageStability = 0;
   } else subScores.usageStability = 0;
 
-  // ── J8: Dual-prompt differential method (5 pts) ─────────────
-  // Prompt A: "Say hello." (short)
-  // Prompt B: "Say hello. Also repeat this marker exactly: ROUTE_TOKEN_CHECK_7391" (longer by a known delta)
-  // Compare API-reported prompt_tokens against locally estimated token count
+  // ── J8: Dual-prompt differential (2 pts) ──────────────
   const PROMPT_A = 'Say hello.';
   const PROMPT_B = 'Say hello. Also repeat this marker exactly: ROUTE_TOKEN_CHECK_7391';
   const resA = await makeApiCall(baseUrl, apiKey, model, interfaceType, PROMPT_A, 5, 0, signal);
@@ -1059,19 +1054,16 @@ async function checkJ_CostTransparency(baseUrl, apiKey, model, interfaceType, si
   let baseOverhead = null;
   let deltaRatio = null;
   if (promptTokensA == null) {
-    subScores.dualPrompt = 0;
+    j8Score = 0;
     details.push(zh ? '无法获取 prompt_tokens，无法执行双 prompt 差分测试' : 'Cannot get prompt_tokens — dual-prompt test not available');
   } else {
-    // baseOverhead: how much fixed overhead exists beyond local estimate
-    baseOverhead = promptTokensA - estimatedA;
-    // deltaRatio: how much extra API reports for the marker vs. local delta
+    const baseOverhead = promptTokensA - estimatedA;
     const apiDelta = promptTokensB != null ? promptTokensB - promptTokensA : null;
     const localDelta = estimatedB - estimatedA;
-    deltaRatio = apiDelta != null && localDelta > 0 ? apiDelta / Math.max(localDelta, 1) : null;
+    const deltaRatio = apiDelta != null && localDelta > 0 ? apiDelta / Math.max(localDelta, 1) : null;
     evidence.j8Test.baseOverhead = baseOverhead;
     evidence.j8Test.deltaRatio = deltaRatio;
 
-    // Scoring: baseOverhead + deltaRatio combined
     const overheadOk = baseOverhead <= 40;
     const overheadSlight = baseOverhead > 40 && baseOverhead <= 120;
     const overheadMid = baseOverhead > 120 && baseOverhead <= 500;
@@ -1083,55 +1075,282 @@ async function checkJ_CostTransparency(baseUrl, apiKey, model, interfaceType, si
     const deltaHigh = deltaRatio != null && deltaRatio > 5;
 
     if (overheadOk && deltaOk) {
-      j8Score = 5;
-    } else if ((overheadOk || overheadSlight) && (deltaOk || deltaSlight)) {
-      j8Score = 3;
-      details.push(zh
-        ? `prompt_tokens 存在轻微包装(${baseOverhead > 0 ? '+' : ''}${Math.round(baseOverhead)} overhead, deltaRatio ${deltaRatio != null ? '~' + deltaRatio.toFixed(1) : '?'})，不影响审计`
-        : `Minor prompt packaging detected (${Math.round(baseOverhead)} overhead, deltaRatio ${deltaRatio != null ? '~' + deltaRatio.toFixed(1) : '?'}), auditable`);
-    } else if ((overheadOk || overheadSlight || overheadMid) && (deltaOk || deltaSlight || deltaMid)) {
-      j8Score = 1;
+      j8Score = 2;
+    } else if ((overheadSlight || overheadMid) && (deltaOk || deltaSlight)) {
+      j8Score = 1.2;
+    } else if (overheadHigh || deltaMid) {
+      j8Score = 0.5;
+    } else {
+      j8Score = 0;
+    }
+
+    if (overheadSevere) {
+      deductions.push(zh
+        ? `prompt_tokens 增量膨胀明显(${baseOverhead} overhead)，存在 token inflation 风险`
+        : `Prompt token inflation detected (${baseOverhead} overhead) — token inflation risk`);
+    } else if (deltaHigh) {
+      deductions.push(zh
+        ? `prompt_tokens 增量膨胀明显(deltaRatio ${deltaRatio?.toFixed(1)})，存在 token inflation 风险`
+        : `Prompt token inflation detected (deltaRatio ${deltaRatio?.toFixed(1)}) — token inflation risk`);
+    } else if (overheadMid || deltaMid) {
       details.push(zh
         ? `prompt_tokens 存在包装(${Math.round(baseOverhead)} overhead, deltaRatio ${deltaRatio != null ? '~' + deltaRatio.toFixed(1) : '?'})，建议小额核对`
         : `Prompt packaging detected (${Math.round(baseOverhead)} overhead, deltaRatio ${deltaRatio != null ? '~' + deltaRatio.toFixed(1) : '?'}) — verify with small amount`);
-    } else {
-      j8Score = 0;
-      if (overheadSevere) {
-        deductions.push(zh
-          ? `prompt_tokens 明显高于本地估算(${promptTokensA} vs 估计${estimatedA}，overhead > 1000)，存在严重隐藏上下文或包装`
-          : `prompt_tokens(${promptTokensA}) far exceeds local estimate(${estimatedA}, overhead > 1000) — severe hidden context or packaging`);
-      } else if (deltaHigh) {
-        deductions.push(zh
-          ? `prompt_tokens 增量膨胀明显(deltaRatio ${deltaRatio?.toFixed(1)})，存在 token inflation 风险`
-          : `Prompt token inflation detected (deltaRatio ${deltaRatio?.toFixed(1)}) — token inflation risk`);
-      } else {
-        deductions.push(zh
-          ? `prompt_tokens 明显高于本地估算(${promptTokensA} vs 估计${estimatedA}，overhead ~${Math.round(baseOverhead)})，存在隐藏上下文、额外包装或 token inflation 风险`
-          : `prompt_tokens(${promptTokensA}) significantly higher than local estimate(${estimatedA}, overhead ~${Math.round(baseOverhead)}) — hidden context, extra packaging or token inflation`);
-      }
+    } else if (overheadSlight || deltaSlight) {
+      details.push(zh
+        ? `prompt_tokens 存在轻微包装(+${Math.round(baseOverhead)} overhead, deltaRatio ${deltaRatio != null ? '~' + deltaRatio.toFixed(1) : '?'})，不影响审计`
+        : `Minor prompt packaging detected (${Math.round(baseOverhead)} overhead, deltaRatio ${deltaRatio != null ? '~' + deltaRatio.toFixed(1) : '?'}), auditable`);
     }
-    subScores.dualPrompt = j8Score;
   }
+  subScores.j8 = j8Score;
 
-  // ── J9: Consumption explanation clarity (2 pts) ─────────────
-  const canExplain = hasUsage
-    && (targetUsage.prompt_tokens != null || targetUsage.input_tokens != null)
-    && (targetUsage.completion_tokens != null || targetUsage.output_tokens != null)
-    && targetUsage.total_tokens != null;
-  subScores.clarity = canExplain ? 2 : hasUsage ? 1 : 0;
+  // ── J9: Billing clarity (1 pt) ───────────────────────
+  subScores.billingClarity = hasUsage ? 1 : 0;
 
   const totalScore = Object.values(subScores).reduce((a, b) => a + b, 0);
-  const ratio = totalScore / 35;
+  const ratio = totalScore / 30;
   let status = ratio >= 0.95 ? 'excellent' : ratio >= 0.80 ? 'good' : ratio >= 0.50 ? 'warning' : 'failed';
   if (!hasUsage) status = 'failed';
-  const summary = status === 'excellent'
-    ? (zh ? 'usage 明细较完整，扣费可审计性较好' : 'usage details mostly complete — billing auditable')
-    : status === 'good'
-    ? (zh ? 'usage 基本完整，存在轻微波动' : 'usage mostly complete — minor fluctuations')
-    : status === 'warning'
-    ? (zh ? 'usage 部分缺失或存在异常，建议小额核对' : 'usage partially missing or abnormal — verify with small amount')
-    : (zh ? 'usage 明细不完整或严重异常' : 'usage details incomplete or severely abnormal');
-  return mkCheck({ id: 'costTransparency', label: { zh: '扣费透明度', en: 'Cost Transparency' }, maxScore: 35, score: totalScore, status, summary, details, deductions, evidence: { ...evidence, subScores, baseOverhead, deltaRatio } });
+  const summary = status === 'excellent' ? (zh ? 'usage 明细完整' : 'usage details complete')
+    : status === 'good' ? (zh ? 'usage 基本完整' : 'usage mostly complete')
+    : status === 'warning' ? (zh ? 'usage 部分缺失' : 'usage partially missing')
+    : (zh ? 'usage 明细不完整' : 'usage details incomplete');
+  return mkCheck({ id: 'costTransparency', label: { zh: '扣费透明度', en: 'Cost Transparency' }, maxScore: 30, score: totalScore, status, summary, details, deductions, evidence: { ...evidence, subScores, baseOverhead, deltaRatio } });
+}
+
+/* ═══════════════════════════════════════════════════════
+   Cache Usage Extraction Utility
+   Supports OpenAI, Azure, Anthropic, and common relay formats.
+   ═══════════════════════════════════════════════════════ */
+function extractCacheUsage(usage) {
+  if (!usage || typeof usage !== 'object') {
+    return { fieldFound: false, sourceField: null, cachedTokens: null, promptTokens: null, cacheReadTokens: null, cacheCreationTokens: null, inputTokens: null, cacheHitRate: null };
+  }
+
+  // Priority: prompt_tokens > input_tokens > total_input_tokens
+  const promptTokens = usage.prompt_tokens ?? usage.input_tokens ?? null;
+  const inputTokens = usage.input_tokens ?? null;
+
+  // OpenAI / Azure: usage.prompt_tokens_details.cached_tokens
+  const ptdCached = usage.prompt_tokens_details?.cached_tokens ?? usage.prompt_tokens_details?.['cached tokens'] ?? null;
+
+  // Claude / Anthropic: usage.cache_read_input_tokens
+  const cacheReadInput = usage.cache_read_input_tokens ?? null;
+  const cacheCreationInput = usage.cache_creation_input_tokens ?? null;
+
+  // Common relay fields
+  const cachedTokens = usage.cached_tokens
+    ?? usage.cache_read_input_tokens
+    ?? usage.cache_creation_input_tokens
+    ?? usage.cache_tokens
+    ?? usage.prompt_cache_hit_tokens
+    ?? usage.cache_hit_tokens
+    ?? usage.cache_read_tokens
+    ?? ptdCached;
+
+  let fieldFound = false;
+  let sourceField = null;
+  let resolvedCached = null;
+
+  if (ptdCached != null) {
+    fieldFound = true; sourceField = 'prompt_tokens_details.cached_tokens'; resolvedCached = ptdCached;
+  } else if (cacheReadInput != null) {
+    fieldFound = true; sourceField = 'cache_read_input_tokens'; resolvedCached = cacheReadInput;
+  } else if (usage.cache_read_input_tokens != null) {
+    fieldFound = true; sourceField = 'cache_read_input_tokens'; resolvedCached = usage.cache_read_input_tokens;
+  } else if (usage.cache_creation_input_tokens != null) {
+    fieldFound = true; sourceField = 'cache_creation_input_tokens'; resolvedCached = usage.cache_creation_input_tokens;
+  } else if (cachedTokens != null) {
+    fieldFound = true;
+    sourceField = 'cached_tokens';
+    resolvedCached = cachedTokens;
+  }
+
+  // Calculate cacheHitRate
+  let cacheHitRate = null;
+  if (resolvedCached != null && promptTokens != null && promptTokens > 0) {
+    // OpenAI style: cached / prompt
+    cacheHitRate = resolvedCached / promptTokens;
+  } else if (cacheReadInput != null && (cacheReadInput + (cacheCreationInput || 0) + (inputTokens || 0))) {
+    // Anthropic style: cache_read / (cache_read + cache_creation + input)
+    const denom = cacheReadInput + (cacheCreationInput || 0) + (inputTokens || 0);
+    if (denom > 0) cacheHitRate = cacheReadInput / denom;
+  }
+
+  return {
+    fieldFound,
+    sourceField,
+    cachedTokens: resolvedCached,
+    promptTokens,
+    cacheReadTokens: cacheReadInput,
+    cacheCreationTokens: cacheCreationInput,
+    inputTokens,
+    cacheHitRate: cacheHitRate != null ? Math.min(1, cacheHitRate) : null,
+  };
+}
+
+/* ═══════════════════════════════════════════════════════
+   Check N: Cache Hit Detection (5 pts)
+   ═══════════════════════════════════════════════════════ */
+async function checkN_CacheHitCheck(baseUrl, apiKey, model, interfaceType, signal, targetCallResult) {
+  const deductions = [];
+  const details = [];
+  const evidence = {};
+  const zh = getDocLang() !== 'en';
+
+  // Precondition: model must be callable
+  const targetWorks = (targetCallResult?.score || 0) >= 11;
+  if (!targetWorks) {
+    const summary = zh ? '前置检测失败，未执行缓存检测' : 'Prerequisite check failed — cache check skipped';
+    return mkCheck({
+      id: 'cacheHitCheck', label: { zh: '缓存命中检测', en: 'Cache Hit Check' },
+      maxScore: 5, score: 0, status: 'skipped', summary,
+      details: [], deductions: [], evidence: { fieldFound: false }
+    });
+  }
+
+  // Build a long prompt (~1200-1500 tokens)
+  const filler = 'The following passage describes the principles of distributed systems, stateless communication, and the client-server model in modern web architecture. Each HTTP request from a client contains all necessary information for the server to process that request without relying on stored context. This stateless nature allows servers to scale horizontally and simplifies error recovery. RESTful APIs use standard HTTP methods and status codes to provide a uniform interface. Authentication can be handled via bearer tokens or API keys. Rate limiting protects resources from abuse. Caching strategies like CDN and edge caching improve performance. ';
+  const longPrompt = (filler + filler + filler + filler).slice(0, 1100) + '\nRepeat this marker exactly: CACHE_PROBE_7391\nAt the end, reply exactly: CACHE_OK';
+
+  // First request (may create cache)
+  const r1 = await makeApiCall(baseUrl, apiKey, model, interfaceType, longPrompt, 10, 0, signal);
+  const usage1 = r1.data?.usage || {};
+  const cache1 = extractCacheUsage(usage1);
+  evidence.firstRequest = {
+    promptTokens: cache1.promptTokens,
+    cachedTokens: cache1.cachedTokens,
+    cacheCreationTokens: cache1.cacheCreationTokens,
+    cacheReadTokens: cache1.cacheReadTokens,
+    latencyMs: r1.data?.usage?.latencyMs ?? null,
+  };
+
+  // Second request (should hit cache if supported)
+  const r2 = await makeApiCall(baseUrl, apiKey, model, interfaceType, longPrompt, 10, 0, signal);
+  const usage2 = r2.data?.usage || {};
+  const cache2 = extractCacheUsage(usage2);
+
+  // Latency comparison
+  let latencyImprovementRate = null;
+
+  evidence.firstRequest.latencyMs = null; // Will be set if response includes timing
+  evidence.secondRequest = {
+    promptTokens: cache2.promptTokens,
+    cachedTokens: cache2.cachedTokens,
+    cacheCreationTokens: cache2.cacheCreationTokens,
+    cacheReadTokens: cache2.cacheReadTokens,
+    latencyMs: null,
+  };
+  evidence.sourceField = cache2.sourceField;
+  evidence.fieldFound = cache2.fieldFound;
+
+  // Calculate latency improvement (if timing available in usage)
+  const usageLat1 = r1.data?.usage?.latencyMs ?? r1.data?.latency ?? null;
+  const usageLat2 = r2.data?.usage?.latencyMs ?? r2.data?.latency ?? null;
+  if (usageLat1 != null && usageLat2 != null && usageLat1 > 0) {
+    latencyImprovementRate = (usageLat1 - usageLat2) / usageLat1;
+    evidence.latencyImprovementRate = Math.max(0, latencyImprovementRate);
+  } else {
+    evidence.latencyImprovementRate = null;
+  }
+
+  evidence.cacheHitRate = cache2.cacheHitRate;
+  evidence.promptTokenConsistencyRate = null;
+
+  // ── A: Cache field found (1 pt) ───────────────────────
+  let scoreA = cache2.fieldFound ? 1 : 0;
+
+  // ── B: Cache hit rate (2 pts) ─────────────────────────
+  let scoreB = 0;
+  if (cache2.cacheHitRate != null) {
+    const rate = cache2.cacheHitRate;
+    if (rate >= 0.98) scoreB = 2;
+    else if (rate >= 0.90) scoreB = 1.7;
+    else if (rate >= 0.70) scoreB = 1.2;
+    else if (rate >= 0.50) scoreB = 0.8;
+    else if (rate >= 0.20) scoreB = 0.3;
+    else scoreB = 0;
+  }
+
+  // ── C: Absolute cached tokens (1 pt) ──────────────────
+  let scoreC = 0;
+  const absCached = cache2.cachedTokens ?? 0;
+  if (absCached >= 1000) scoreC = 1;
+  else if (absCached >= 700) scoreC = 0.7;
+  else if (absCached >= 300) scoreC = 0.4;
+  else if (absCached >= 1) scoreC = 0.2;
+  else scoreC = 0;
+
+  // ── D: Prompt tokens consistency (0.5 pt) ─────────────
+  let scoreD = 0;
+  evidence.promptTokenConsistencyRate = null;
+  if (cache1.promptTokens != null && cache2.promptTokens != null) {
+    const p1 = cache1.promptTokens;
+    const p2 = cache2.promptTokens;
+    const maxP = Math.max(p1, p2);
+    const consistencyRate = maxP > 0 ? Math.abs(p1 - p2) / maxP : 1;
+    evidence.promptTokenConsistencyRate = consistencyRate;
+    if (consistencyRate < 0.05) scoreD = 0.5;
+    else if (consistencyRate < 0.20) scoreD = 0.25;
+  }
+
+  // ── E: Latency improvement (0.5 pt) ─────────────────
+  let scoreE = 0;
+  if (evidence.latencyImprovementRate != null && evidence.latencyImprovementRate > 0) {
+    if (evidence.latencyImprovementRate >= 0.30) scoreE = 0.5;
+    else if (evidence.latencyImprovementRate >= 0.10) scoreE = 0.3;
+    else if (evidence.latencyImprovementRate >= 0) scoreE = 0.1;
+  }
+
+  // ── Determine status and summary ──────────────────────
+  let totalScore = Math.round((scoreA + scoreB + scoreC + scoreD + scoreE) * 10) / 10;
+  let status = 'unknown';
+  let summary = '';
+
+  if (!r1.success || !r2.success) {
+    status = 'error';
+    summary = zh ? '缓存检测请求失败，无法验证缓存信号' : 'Cache check request failed — cannot verify cache signal';
+    totalScore = 2;
+  } else if (!cache2.fieldFound) {
+    status = 'unknown';
+    summary = zh ? 'API 未暴露缓存字段，无法验证缓存宣传' : 'API does not expose cache fields — cannot verify cache claims';
+    totalScore = 2.5;
+  } else {
+    if (totalScore >= 4.5) { status = 'excellent'; summary = zh ? '缓存命中信号很强' : 'Very strong cache hit signal'; }
+    else if (totalScore >= 3.5) { status = 'good'; summary = zh ? '检测到较高缓存命中信号' : 'Detected strong cache hit signal'; }
+    else if (totalScore >= 2.0) { status = 'partial'; summary = zh ? '检测到部分缓存命中信号' : 'Detected partial cache hit signal'; }
+    else if (totalScore >= 0.5) { status = 'weak'; summary = zh ? '缓存命中信号较弱' : 'Weak cache hit signal'; }
+    else { status = 'none'; summary = zh ? '未检测到有效缓存命中' : 'No effective cache hit detected'; }
+  }
+
+  const scoreConfig = {
+    excellent: { color: '#16a34a', bg: '#dcfce7' },
+    good: { color: '#16a34a', bg: '#dcfce7' },
+    partial: { color: '#d97706', bg: '#fef9c3' },
+    weak: { color: '#d97706', bg: '#fef9c3' },
+    none: { color: '#dc2626', bg: '#fee2e2' },
+    unknown: { color: '#94a3b8', bg: '#f1f5f9' },
+    error: { color: '#94a3b8', bg: '#f1f5f9' },
+    skipped: { color: '#94a3b8', bg: '#f1f5f9' },
+  };
+  const statusColor = scoreConfig[status] || scoreConfig.unknown;
+
+  return mkCheck({
+    id: 'cacheHitCheck',
+    label: { zh: '缓存命中检测', en: 'Cache Hit Check' },
+    maxScore: 5,
+    score: totalScore,
+    status,
+    summary,
+    details,
+    deductions,
+    evidence: {
+      ...evidence,
+      statusColor,
+      fieldFound: cache2.fieldFound,
+      sourceField: cache2.sourceField,
+    }
+  });
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -1866,16 +2085,18 @@ function getConfidence(checks) {
    ═══════════════════════════════════════════════════════ */
 function calcFinalScore(checks) {
   const costScore = checks.costTransparency?.score || 0;
+  const cacheScore = checks.cacheHitCheck?.score || 0;
   const modelScore = checks.modelIntegrity?.score || 0;
   const stabilityScore = checks.stability?.score || 0;
   const compatScore = checks.basicCompatibility?.score || 0;
   const clientScore = checks.clientConfig?.score || 0;
-  const costNorm = Math.min(100, (costScore / 35) * 100);
+  const costNorm = Math.min(100, (costScore / 30) * 100);
+  const cacheNorm = Math.min(100, (cacheScore / 5) * 100);
   const modelNorm = Math.min(100, (modelScore / 40) * 100);
   const stabilityNorm = Math.min(100, (stabilityScore / 15) * 100);
   const compatNorm = Math.min(100, (compatScore / 7) * 100);
   const clientNorm = Math.min(100, (clientScore / 3) * 100);
-  const final = Math.min(98, costNorm * 0.35 + modelNorm * 0.40 + stabilityNorm * 0.15 + compatNorm * 0.07 + clientNorm * 0.03);
+  const final = Math.min(98, costNorm * 0.30 + cacheNorm * 0.05 + modelNorm * 0.40 + stabilityNorm * 0.15 + compatNorm * 0.07 + clientNorm * 0.03);
   return { final: Math.round(final * 10) / 10 };
 }
 
@@ -2144,6 +2365,12 @@ function generateSuggestions(checks, modelIdInfo) {
   if (stabilityRisk === 'medium') add('stability_fluctuation', zh
     ? `稳定性采样存在波动，可能影响 Cline、Continue 等客户端体验。`
     : `Stability sampling shows fluctuation — may affect Cline, Continue and other client experiences.`);
+  // Priority 13: Cache weak signal (only for weak/none with fieldFound=true, NOT for unknown/error)
+  const cacheStatus = checks.cacheHitCheck?.status || 'unknown';
+  const cacheFieldFound = checks.cacheHitCheck?.evidence?.fieldFound || false;
+  if ((cacheStatus === 'weak' || cacheStatus === 'none') && cacheFieldFound) {
+    add('cache_weak', zh ? '缓存命中信号较弱，建议不要仅凭高缓存宣传判断成本。' : 'Weak cache hit signal — do not judge costs based solely on high cache claims.');
+  }
   // Priority 12: All good
   if (suggestions.length === 0) add('all_good', zh ? '扣费透明度、模型能力和稳定性信号表现良好，建议继续小额观察。' : 'Billing transparency, model capabilities and stability signals look good — recommend ongoing small-amount monitoring.');
   return suggestions.map(s => s.text).slice(0, 2); // limit to top 2
@@ -2284,6 +2511,27 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
     }
 
     // sourceTransparency detail — only in expand detail
+    // cacheHitCheck detail — only in expand detail
+    let cacheHitHtml = '';
+    if (checkKey === 'cacheHitCheck' && checkData.evidence) {
+      const ev = checkData.evidence;
+      const fmtRate = (r) => r != null ? (Math.round(r * 10000) / 100) + '%' : '—';
+      cacheHitHtml = `<div style="margin-top:8px;padding:8px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;font-size:11px">
+        <div style="font-weight:600;color:#0f172a;margin-bottom:6px">${zh ? '缓存命中检测明细' : 'Cache Hit Details'}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:10px;color:#374151;margin-bottom:6px">
+          <div><span style="color:#94a3b8">${zh ? '字段来源：' : 'Field: '}</span>${escH(ev.sourceField || (zh ? '未暴露' : 'Not exposed'))}</div>
+          <div><span style="color:#94a3b8">${zh ? '缓存命中率：' : 'Cache Rate: '}</span>${fmtRate(ev.cacheHitRate)}</div>
+          <div><span style="color:#94a3b8">${zh ? '第1次 prompt：' : '1st prompt: '}</span>${ev.firstRequest?.promptTokens ?? '—'}</div>
+          <div><span style="color:#94a3b8">${zh ? '第1次 cached：' : '1st cached: '}</span>${ev.firstRequest?.cachedTokens ?? '—'}</div>
+          <div><span style="color:#94a3b8">${zh ? '第2次 prompt：' : '2nd prompt: '}</span>${ev.secondRequest?.promptTokens ?? '—'}</div>
+          <div><span style="color:#94a3b8">${zh ? '第2次 cached：' : '2nd cached: '}</span>${ev.secondRequest?.cachedTokens ?? '—'}</div>
+          <div><span style="color:#94a3b8">${zh ? '一致性：' : 'Consistency: '}</span>${fmtRate(ev.promptTokenConsistencyRate != null ? 1 - ev.promptTokenConsistencyRate : null)}</div>
+          <div><span style="color:#94a3b8">${zh ? '延迟改善：' : 'Latency Impr.: '}</span>${fmtRate(ev.latencyImprovementRate)}</div>
+        </div>
+        <div style="font-size:10px;color:#64748b;line-height:1.5">${escH(checkData.summary || '')}</div>
+      </div>`;
+    }
+
     let sourceTransparencyHtml = '';
     if (checkKey === 'modelIntegrity' && checkData.evidence?.sourceTransparency) {
       const st = checkData.evidence.sourceTransparency;
@@ -2339,7 +2587,7 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
 
     const pillHtml = riskLevel ? `<span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:700;color:${riskColors[riskLevel].color};background:${riskColors[riskLevel].bg}">${zh ? riskLevelLabelZH(riskLevel) : riskLevelLabelEN(riskLevel)}</span>` : `<span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:700;color:${cfg.color};background:${cfg.bg}">${statusLabel(status, zh)}</span>`;
 
-    const hasDetailContent = detailDeductions || subItemsHtml || stabilitySamplesHtml || sourceTransparencyHtml;
+    const hasDetailContent = detailDeductions || subItemsHtml || stabilitySamplesHtml || cacheHitHtml || sourceTransparencyHtml;
 
     return `<div class="rc-check-block">
       <div class="rc-check-header" id="${rowId}" onclick="(function(){
@@ -2361,6 +2609,7 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
         ${detailDeductions}
         ${subItemsHtml ? `<div style="margin-bottom:8px">${subItemsHtml}</div>` : ''}
         ${stabilitySamplesHtml}
+        ${cacheHitHtml}
         ${sourceTransparencyHtml}
       </div>` : ''}
     </div>`;
@@ -2440,8 +2689,9 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
 
     <!-- 5 module sections -->
     <div style="background:#fff;border-radius:16px;padding:12px 16px;margin-bottom:10px">
-      <div style="font-size:11px;font-weight:700;color:#0f172a;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #f1f5f9">${zh ? '5项检测（点击展开详情）' : '5 Modules (tap to expand)'}</div>
+      <div style="font-size:11px;font-weight:700;color:#0f172a;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #f1f5f9">${zh ? '6项检测（点击展开详情）' : '6 Modules (tap to expand)'}</div>
       ${moduleSection('costTransparency', checks.costTransparency, costRisk)}
+      ${moduleSection('cacheHitCheck', checks.cacheHitCheck)}
       ${moduleSection('modelIntegrity', checks.modelIntegrity, modelRisk)}
       ${moduleSection('stability', checks.stability, stabilityRisk)}
       ${moduleSection('basicCompatibility', checks.basicCompatibility)}
@@ -2632,27 +2882,27 @@ window.Doctor = {
       const costResult = await checkJ_CostTransparency(normalizedUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult);
       this._refreshProgress(4, costResult.state, costResult.summary);
       this._refreshProgress(5, 'running');
-      const modelIntegrityResult = await checkK_ModelIntegrity(normalizedUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult, modelIdInfo, deepMode);
-      this._refreshProgress(5, modelIntegrityResult.state, modelIntegrityResult.summary);
+      const cacheResult = await checkN_CacheHitCheck(normalizedUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult);
+      this._refreshProgress(5, cacheResult.state, cacheResult.summary);
       this._refreshProgress(6, 'running');
+      const modelIntegrityResult = await checkK_ModelIntegrity(normalizedUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult, modelIdInfo, deepMode);
+      this._refreshProgress(6, modelIntegrityResult.state, modelIntegrityResult.summary);
+      this._refreshProgress(7, 'running');
       const stabilityResult = await checkG_Stability(normalizedUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult);
-      this._refreshProgress(6, stabilityResult.state, stabilityResult.summary);
+      this._refreshProgress(7, stabilityResult.state, stabilityResult.summary);
       // Internal: usage audit (no visible progress)
       const usageResult = await checkH_UsageAudit(normalizedUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult);
-      this._refreshProgress(7, 'running');
+      this._refreshProgress(8, 'running');
       const basicCompatResult = checkL_BasicCompatibility(reachResult, authResult, modelListResult, targetCallResult);
       const clientResult = checkI_ClientConfig(normalizedUrl, apiKey, modelIdInfo.finalTestModelId, modelListResult, targetCallResult);
       const combinedState = basicCompatResult.status === 'excellent' && clientResult.status === 'excellent' ? 'excellent' : basicCompatResult.status === 'failed' || clientResult.status === 'failed' ? 'warning' : 'good';
-      this._refreshProgress(7, combinedState, `${basicCompatResult.summary} / ${clientResult.summary}`);
+      this._refreshProgress(8, combinedState, `${basicCompatResult.summary} / ${clientResult.summary}`);
+      // Tool calling is tested internally (deep mode) but not a visible progress step
       let toolCallingResult = null;
       if (deepMode) {
-        this._refreshProgress(8, 'running');
-        toolCallingResult = await checkM_ToolCalling(normalizedUrl, apiKey, modelIdInfo.finalTestModelId, signal);
-        this._refreshProgress(8, toolCallingResult?.passed ? 'excellent' : 'warning', toolCallingResult?.summary || '');
-      } else {
-        this._refreshProgress(8, 'running');
+        try { toolCallingResult = await checkM_ToolCalling(normalizedUrl, apiKey, modelIdInfo.finalTestModelId, signal); } catch (_) {}
       }
-      const checks = { reachability: reachResult, auth: authResult, modelList: modelListResult, autoModel: autoModelResult, targetCall: targetCallResult, stability: stabilityResult, usageAudit: usageResult, costTransparency: costResult, modelIntegrity: modelIntegrityResult, basicCompatibility: basicCompatResult, clientConfig: clientResult };
+      const checks = { reachability: reachResult, auth: authResult, modelList: modelListResult, autoModel: autoModelResult, targetCall: targetCallResult, stability: stabilityResult, usageAudit: usageResult, costTransparency: costResult, cacheHitCheck: cacheResult, modelIntegrity: modelIntegrityResult, basicCompatibility: basicCompatResult, clientConfig: clientResult };
       const { final: finalScore } = calcFinalScore(checks);
       const cappedScore = applyCaps(finalScore, checks, modelIdInfo);
       const grade = getScoreGrade(cappedScore);
@@ -2693,17 +2943,17 @@ window.Doctor = {
     if (!container) return;
     if (state === 'done') { container.innerHTML = ''; return; }
     const zh = getDocLang() !== 'en';
-    const totalSteps = deepMode ? 9 : 8;
+    const totalSteps = 9;
     const steps = [
       { zh: 'API 基础连通', en: 'API Connectivity' },
       { zh: 'Key 鉴权', en: 'Key Authentication' },
       { zh: '模型识别', en: 'Model Identification' },
       { zh: '扣费透明度检测', en: 'Cost Transparency' },
+      { zh: '缓存命中检测', en: 'Cache Hit Check' },
       { zh: '模型能力验货', en: 'Model Capability' },
       { zh: '稳定性采样', en: 'Stability Sampling' },
       { zh: '客户端配置检查', en: 'Client Config' },
       { zh: '生成验货报告', en: 'Generating Report' },
-      { zh: 'Tool Calling 测试', en: 'Tool Calling Test' },
     ];
     const rows = steps.slice(0, totalSteps).map((s, i) => `<div class="prog-row" id="prog-row-${i}">
       <span class="prog-icon" id="prog-icon-${i}"><div style="width:14px;height:14px;border:2px solid #e2e8f0;border-radius:50%"></div></span>
@@ -2722,17 +2972,17 @@ window.Doctor = {
     const cfg = statusColorMap[state] || statusColorMap.pending;
     const barW = defaultBarWidth[state] || '0%';
     const dtl = detail || defaultDetail[state] || '';
-    const totalSteps = this._deepMode ? 9 : 8;
+    const totalSteps = 9;
     const stepLabels = [
       { zh: 'API 基础连通', en: 'API Connectivity' },
       { zh: 'Key 鉴权', en: 'Key Authentication' },
       { zh: '模型识别', en: 'Model Identification' },
       { zh: '扣费透明度检测', en: 'Cost Transparency' },
+      { zh: '缓存命中检测', en: 'Cache Hit Check' },
       { zh: '模型能力验货', en: 'Model Capability' },
       { zh: '稳定性采样', en: 'Stability Sampling' },
       { zh: '客户端配置检查', en: 'Client Config' },
       { zh: '生成验货报告', en: 'Generating Report' },
-      { zh: 'Tool Calling 测试', en: 'Tool Calling Test' },
     ];
     for (let i = 0; i < totalSteps; i++) {
       const row = document.getElementById('prog-row-' + i); const icon = document.getElementById('prog-icon-' + i);
@@ -2798,9 +3048,24 @@ window.Doctor = {
     const modelLabel = zh ? riskLevelLabelZH(modelRisk) : riskLevelLabelEN(modelRisk);
     const stabilityLabel = zh ? riskLevelLabelZH(stabilityRisk) : riskLevelLabelEN(stabilityRisk);
     const gradeLabel = grade?.gradeZh || grade?.label || score;
+    const cacheScore = checks?.cacheHitCheck?.score || 0;
+    const cacheStatus = checks?.cacheHitCheck?.status || 'unknown';
+    const cacheRate = checks?.cacheHitCheck?.evidence?.cacheHitRate;
+    const cacheLabelMap = {
+      excellent: { zh: '优秀', en: 'Excellent' },
+      good: { zh: '良好', en: 'Good' },
+      partial: { zh: '部分', en: 'Partial' },
+      weak: { zh: '较弱', en: 'Weak' },
+      none: { zh: '未命中', en: 'No Hit' },
+      unknown: { zh: '未验证', en: 'Unverified' },
+      error: { zh: '错误', en: 'Error' },
+      skipped: { zh: '跳过', en: 'Skipped' },
+    };
+    const cacheLabel = cacheLabelMap[cacheStatus]?.[zh?'zh':'en'] || cacheStatus;
+    const cacheRateText = cacheRate != null ? ` (${(Math.round(cacheRate * 10000) / 100)}%)` : '';
     const text = zh
-      ? `AI API Doctor 验货报告\n验货分：${score}/100，${gradeLabel}\n扣费透明度：${costLabel}\n模型可信度：${modelLabel}\n稳定性：${stabilityLabel}\n来源透明度：${srcLabelCopy}\n主要建议：${suggestions[0] || '-'}\n本报告仅基于可复现 API 信号，不构成最终证明。\nID：${reportId} · aiapidoctor.com`
-      : `AI API Doctor Report\nScore: ${score}/100, ${grade?.label || ''}\nCost: ${costLabel}\nModel: ${modelLabel}\nStability: ${stabilityLabel}\nSource: ${srcLabelCopy}\nMain advice: ${suggestions[0] || '-'}\nBased on reproducible API signals only.\nID: ${reportId} · aiapidoctor.com`;
+      ? `AI API Doctor 验货报告\n验货分：${score}/100，${gradeLabel}\n扣费透明度：${costLabel}\n缓存命中检测：${cacheLabel}${cacheRateText}\n模型可信度：${modelLabel}\n稳定性：${stabilityLabel}\n来源透明度：${srcLabelCopy}\n主要建议：${suggestions[0] || '-'}\n本报告仅基于可复现 API 信号，不构成最终证明。\nID：${reportId} · aiapidoctor.com`
+      : `AI API Doctor Report\nScore: ${score}/100, ${grade?.label || ''}\nCost: ${costLabel}\nCache Hit: ${cacheLabel}${cacheRateText}\nModel: ${modelLabel}\nStability: ${stabilityLabel}\nSource: ${srcLabelCopy}\nMain advice: ${suggestions[0] || '-'}\nBased on reproducible API signals only.\nID: ${reportId} · aiapidoctor.com`;
     copyToClipboard(text, zh ? '验货分已复制' : 'Score copied');
   }
 };
@@ -2886,7 +3151,8 @@ window.MockCases = {
       targetCall: mkCheck({ id: 'targetCall', label: {zh:'目标模型调用',en:'Target Model Call'}, maxScore: 22, score: 20, status: 'good', evidence: tce }),
       stability: mkCheck({ id: 'stability', label: {zh:'稳定性',en:'Stability'}, maxScore: 15, score: 15, status: 'excellent', evidence: se }),
       usageAudit: mkCheck({ id: 'usageAudit', label: {zh:'用量审计',en:'Usage Audit'}, maxScore: 6, score: 5.5, status: 'excellent', evidence: { usage: {prompt_tokens:5,completion_tokens:3,total_tokens:8} } }),
-      costTransparency: mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 35, status: 'excellent', evidence: ctEvidence }),
+      costTransparency: mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 30, score: 30, status: 'excellent', evidence: ctEvidence }),
+      cacheHitCheck: mkCheck({ id: 'cacheHitCheck', label: {zh:'缓存命中检测',en:'Cache Hit Check'}, maxScore: 5, score: 5, status: 'excellent', summary: '缓存命中信号很强', evidence: { fieldFound: true, cacheHitRate: 0.98, firstRequest: { promptTokens: 1300, cachedTokens: null }, secondRequest: { promptTokens: 1300, cachedTokens: 1280 } } }),
       modelIntegrity: mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 40, status: 'excellent', evidence: miEvidence }),
       basicCompatibility: mkCheck({ id: 'basicCompatibility', label: {zh:'基础兼容性',en:'Basic Compatibility'}, maxScore: 7, score: 6.5, status: 'excellent', evidence: {} }),
       clientConfig: mkCheck({ id: 'clientConfig', label: {zh:'客户端配置',en:'Client Config'}, maxScore: 3, score: 3, status: 'excellent', evidence: { baseUrlOrigin: 'https://api.example.com', keyMasked: 'sk-****', modelId: 'gpt-4', clineReady: true, continueReady: true, httpStatus: 200 } }),
@@ -2900,7 +3166,7 @@ window.MockCases = {
   caseA() {
     const checks = this._makeBaseChecks({ reachability: 0, auth: 0, modelList: 0, autoModel: 0, targetCall: 0 });
     checks.stability = mkCheck({ id: 'stability', label: {zh:'稳定性',en:'Stability'}, maxScore: 15, score: 0, status: 'skipped', evidence: { samples: [] } });
-    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 0, status: 'skipped', evidence: {} });
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 30, score: 0, status: 'skipped', evidence: {} });
     checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 0, status: 'skipped', evidence: {} });
     checks.basicCompatibility = mkCheck({ id: 'basicCompatibility', label: {zh:'基础兼容性',en:'Basic Compatibility'}, maxScore: 7, score: 0, status: 'failed', evidence: {} });
     checks.clientConfig = mkCheck({ id: 'clientConfig', label: {zh:'客户端配置',en:'Client Config'}, maxScore: 3, score: 0, status: 'failed', evidence: {} });
@@ -2912,7 +3178,7 @@ window.MockCases = {
   caseB() {
     const checks = this._makeBaseChecks({ reachability: 11, auth: 6, modelList: 0, autoModel: 0, targetCall: 0 });
     checks.stability = mkCheck({ id: 'stability', label: {zh:'稳定性',en:'Stability'}, maxScore: 15, score: 0, status: 'skipped', evidence: { samples: [] } });
-    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 0, status: 'skipped', evidence: {} });
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 30, score: 0, status: 'skipped', evidence: {} });
     checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 0, status: 'skipped', evidence: {} });
     checks.basicCompatibility = mkCheck({ id: 'basicCompatibility', label: {zh:'基础兼容性',en:'Basic Compatibility'}, maxScore: 7, score: 2, status: 'warning', evidence: {} });
     checks.clientConfig = mkCheck({ id: 'clientConfig', label: {zh:'客户端配置',en:'Client Config'}, maxScore: 3, score: 3, status: 'excellent', evidence: { baseUrlOrigin: 'https://api.example.com', modelId: 'gpt-4', clineReady: true, continueReady: true, httpStatus: 200 } });
@@ -2924,7 +3190,7 @@ window.MockCases = {
   // Case K: No usage (tightened cap)
   caseK() {
     const checks = this._makeNormalChecks();
-    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 6, status: 'failed',
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 30, score: 6, status: 'failed',
       deductions: ['usage 字段完全缺失，无法审计消耗'],
       evidence: { usageTest: {hasUsage: false}, shortReplyTest: {ok: true, completionTokens: 3, reasoningTokens: 0}, subScores: {} } });
     const { final } = calcFinalScore(checks);
@@ -2935,7 +3201,7 @@ window.MockCases = {
   // Case L: Short reply OK but completion_tokens=80, no reasoning_tokens
   caseL() {
     const checks = this._makeNormalChecks();
-    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 13.5, status: 'failed',
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 30, score: 13.5, status: 'failed',
       deductions: ['极短回复 OK 但 completion_tokens(80) 严重偏高，无 reasoning_tokens 解释'],
       evidence: { usageTest: {hasUsage:true,usageComplete:true,prompt_tokens:5,completion_tokens:3,total_tokens:8}, shortReplyTest: {ok:true,completionTokens:80,reasoningTokens:0,totalTokens:85}, maxTokensTest:{completionTokens:3}, usageStability:[{total_tokens:15},{total_tokens:15}], promptTokenEstTest:{shortPrompt:'Say hello.',estimatedTokens:4,apiPromptTokens:4}, subScores:{} } });
     const { final } = calcFinalScore(checks);
@@ -2946,7 +3212,7 @@ window.MockCases = {
   // Case M: total_tokens inconsistent (30% diff)
   caseM() {
     const checks = this._makeNormalChecks();
-    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 24, status: 'warning',
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 30, score: 24, status: 'warning',
       details: ['total_tokens(30) 与 prompt+completion=8 差异 275%'],
       evidence: { usageTest: {hasUsage:true,usageComplete:true,prompt_tokens:5,completion_tokens:3,total_tokens:30}, shortReplyTest: {ok:true,completionTokens:3,reasoningTokens:0,totalTokens:30}, subScores: {} } });
     const { final } = calcFinalScore(checks);
@@ -3051,7 +3317,7 @@ window.MockCases = {
   // Case Z: usage complete but total_tokens diff 30%
   caseZ() {
     const checks = this._makeNormalChecks();
-    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 24, status: 'warning',
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 30, score: 24, status: 'warning',
       details: ['total_tokens(50) 与 prompt+completion=20 差异 150%'],
       evidence: { usageTest: {hasUsage:true,usageComplete:true,prompt_tokens:10,completion_tokens:10,total_tokens:50}, shortReplyTest: {ok:true,completionTokens:3,reasoningTokens:0}, subScores:{} } });
     const { final } = calcFinalScore(checks);
@@ -3062,7 +3328,7 @@ window.MockCases = {
   // Case AA: max_tokens=5 but returns very long
   caseAA() {
     const checks = this._makeNormalChecks();
-    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 26, status: 'warning',
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 30, score: 26, status: 'warning',
       details: ['max_tokens 限制未完全生效'],
       evidence: { usageTest: {hasUsage:true,usageComplete:true,prompt_tokens:5,completion_tokens:3,total_tokens:8}, shortReplyTest: {ok:true,completionTokens:3,reasoningTokens:0}, maxTokensTest: {completionTokens:50}, subScores:{} } });
     const { final } = calcFinalScore(checks);
@@ -3073,7 +3339,7 @@ window.MockCases = {
   // Case AB: Short reply OK, completion_tokens=60, no reasoning_tokens
   caseAB() {
     const checks = this._makeNormalChecks();
-    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 15.5, status: 'failed',
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 30, score: 15.5, status: 'failed',
       deductions: ['极短回复 OK 但 completion_tokens(60) 严重偏高，无 reasoning_tokens 解释'],
       evidence: { usageTest: {hasUsage:true,usageComplete:true,prompt_tokens:5,completion_tokens:3,total_tokens:8}, shortReplyTest: {ok:true,completionTokens:60,reasoningTokens:0,totalTokens:65}, subScores:{} } });
     const { final } = calcFinalScore(checks);
@@ -3084,7 +3350,7 @@ window.MockCases = {
   // Case AC: Short reply OK, completion_tokens=60, reasoning_tokens=55
   caseAC() {
     const checks = this._makeNormalChecks();
-    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 25, status: 'warning',
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 30, score: 25, status: 'warning',
       details: ['短回复 token 偏高(60)，reasoning_tokens(55) 部分解释'],
       evidence: { usageTest: {hasUsage:true,usageComplete:true,prompt_tokens:5,completion_tokens:3,total_tokens:8}, shortReplyTest: {ok:true,completionTokens:60,reasoningTokens:55,totalTokens:65}, subScores:{} } });
     const { final } = calcFinalScore(checks);
@@ -3140,7 +3406,7 @@ window.MockCases = {
   },
   caseAG_2() { // usage missing
     const checks = this._makeNormalChecks();
-    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 6, status: 'failed',
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 30, score: 6, status: 'failed',
       evidence: { usageTest: {hasUsage:false}, shortReplyTest:{ok:true,completionTokens:3}, subScores:{} } });
     const { final } = calcFinalScore(checks);
     const capped = applyCaps(final, checks, {});
@@ -3171,7 +3437,7 @@ window.MockCases = {
   // To get capped=84: need raw≈84, costScore=23 gives raw=85.2, capped=84
   caseAI() {
     const checks = this._makeNormalChecks();
-    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 23, status: 'warning',
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 30, score: 23, status: 'warning',
       details: ['prompt_tokens 比本地估算高 1233% (80 vs 估计6)'],
       evidence: {
         usageTest:{hasUsage:true,usageComplete:true,prompt_tokens:5,completion_tokens:3,total_tokens:8},
@@ -3190,7 +3456,7 @@ window.MockCases = {
   // J9 score: 0, cost high risk, cap 76
   caseAJ() {
     const checks = this._makeNormalChecks();
-    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 33, status: 'warning',
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 30, score: 33, status: 'warning',
       deductions: ['prompt_tokens 明显高于本地估算(200 vs 估计6)，存在隐藏上下文或 token inflation 风险，建议结合后台余额小额核对'],
       evidence: {
         usageTest:{hasUsage:true,usageComplete:true,prompt_tokens:5,completion_tokens:3,total_tokens:8},
@@ -3279,7 +3545,7 @@ window.MockCases = {
   // J8: overhead=18 (≤40), deltaRatio normal → J8 at least 3/5
   caseAP() {
     const checks = this._makeNormalChecks();
-    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 30, status: 'warning',
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 30, score: 30, status: 'excellent',
       details: ['prompt_tokens 存在轻微包装(+18 overhead, deltaRatio normal)，不影响审计'],
       evidence: {
         usageTest:{hasUsage:true,usageComplete:true,prompt_tokens:5,completion_tokens:3,total_tokens:8},
@@ -3298,7 +3564,7 @@ window.MockCases = {
   // Case AQ: promptTokens=5061, overhead > 1000
   caseAQ() {
     const checks = this._makeNormalChecks();
-    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 17, status: 'failed',
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 30, score: 17, status: 'failed',
       deductions: ['prompt_tokens 明显高于本地估算(5061 vs 估计2，overhead > 1000)，存在严重隐藏上下文或包装'],
       evidence: {
         usageTest:{hasUsage:true,usageComplete:true,prompt_tokens:5061,completion_tokens:3,total_tokens:5064},
@@ -3345,7 +3611,7 @@ window.MockCases = {
   // Case AT: "Kiro 开发环境" + comp=81 + max_tokens not enforced + overhead > 1000
   caseAT() {
     const checks = this._makeNormalChecks();
-    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 15, status: 'failed',
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 30, score: 15, status: 'failed',
       deductions: ['极短回复 OK 但 completion_tokens(81) 严重偏高，无 reasoning_tokens 解释','prompt_tokens 明显高于本地估算(5061 vs 估计2，overhead > 1000)'],
       evidence: {
         usageTest:{hasUsage:true,usageComplete:true,prompt_tokens:5061,completion_tokens:81,total_tokens:5142},
@@ -3384,7 +3650,7 @@ window.MockCases = {
   // Case AV: hard_contamination + token anomaly
   caseAV() {
     const checks = this._makeNormalChecks();
-    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 20, status: 'failed',
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 30, score: 20, status: 'failed',
       evidence: {
         usageTest:{hasUsage:true,usageComplete:true,prompt_tokens:5061,completion_tokens:3,total_tokens:5064},
         shortReplyTest:{ok:true,completionTokens:3,reasoningTokens:0,totalTokens:8},
@@ -3422,7 +3688,7 @@ window.MockCases = {
   // Case AX: usage missing, but all ability tests pass
   caseAX() {
     const checks = this._makeNormalChecks();
-    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 6, status: 'failed',
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 30, score: 6, status: 'failed',
       deductions: ['usage 字段完全缺失，无法审计消耗'],
       evidence: {
         usageTest:{hasUsage:false}, shortReplyTest:{ok:true,completionTokens:3,reasoningTokens:0},
@@ -3481,7 +3747,7 @@ window.MockCases = {
   },
   caseBA_2() { // proxy_route + token anomaly
     const checks = this._makeNormalChecks();
-    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 35, score: 15, status: 'failed',
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 30, score: 15, status: 'failed',
       deductions: ['极短回复 OK 但 completion_tokens(81) 严重偏高，无 reasoning_tokens 解释'],
       evidence: {
         usageTest:{hasUsage:true,usageComplete:true,prompt_tokens:5,completion_tokens:81,total_tokens:86},
@@ -4169,8 +4435,229 @@ window.MockCases = {
     return { raw: final, capped, grade, desc: 'Case CP: zh UI → toggle text MUST be [展开...], NOT [Expand...] (display verification)' };
   },
 
+  // Case CACHE-A: second usage.prompt_tokens_details.cached_tokens=1280, prompt=1300, latency 1000ms->600ms → excellent
+  caseCACHEA() {
+    const checks = this._makeNormalChecks();
+    checks.cacheHitCheck = mkCheck({
+      id: 'cacheHitCheck', label: {zh:'缓存命中检测',en:'Cache Hit Check'}, maxScore: 5, score: 4.7, status: 'excellent',
+      summary: '缓存命中信号很强',
+      evidence: {
+        fieldFound: true, sourceField: 'prompt_tokens_details.cached_tokens',
+        cacheHitRate: 0.985, promptTokenConsistencyRate: 0.01, latencyImprovementRate: 0.4,
+        firstRequest: { promptTokens: 1305, cachedTokens: null, latencyMs: 1000 },
+        secondRequest: { promptTokens: 1305, cachedTokens: 1280, latencyMs: 600 },
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getScoreGrade(capped);
+    return { raw: final, capped, grade, desc: `Case CACHE-A: cached=1280, prompt=1300, rate=98.5%, score=4.7, status=excellent → capped=${capped}` };
+  },
+
+  // Case CACHE-B: cached=1180, prompt=1300, latency改善20% → good
+  caseCACHEB() {
+    const checks = this._makeNormalChecks();
+    checks.cacheHitCheck = mkCheck({
+      id: 'cacheHitCheck', label: {zh:'缓存命中检测',en:'Cache Hit Check'}, maxScore: 5, score: 3.8, status: 'good',
+      summary: '检测到较高缓存命中信号',
+      evidence: {
+        fieldFound: true, sourceField: 'cached_tokens',
+        cacheHitRate: 0.908, promptTokenConsistencyRate: 0.02, latencyImprovementRate: 0.2,
+        firstRequest: { promptTokens: 1300, cachedTokens: null },
+        secondRequest: { promptTokens: 1300, cachedTokens: 1180 },
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getScoreGrade(capped);
+    return { raw: final, capped, grade, desc: `Case CACHE-B: cached=1180, prompt=1300, rate=90.8%, score=3.8, status=good → capped=${capped}` };
+  },
+
+  // Case CACHE-C: cached=650, prompt=1300, rate=50% → partial
+  caseCACHEC() {
+    const checks = this._makeNormalChecks();
+    checks.cacheHitCheck = mkCheck({
+      id: 'cacheHitCheck', label: {zh:'缓存命中检测',en:'Cache Hit Check'}, maxScore: 5, score: 2.8, status: 'partial',
+      summary: '检测到部分缓存命中信号',
+      evidence: { fieldFound: true, cacheHitRate: 0.5, firstRequest: { promptTokens: 1300 }, secondRequest: { promptTokens: 1300, cachedTokens: 650 } }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getScoreGrade(capped);
+    return { raw: final, capped, grade, desc: `Case CACHE-C: cached=650, rate=50%, score=2.8, status=partial → capped=${capped}` };
+  },
+
+  // Case CACHE-D: cached=100, prompt=1300, rate=7.7% → weak
+  caseCACHED() {
+    const checks = this._makeNormalChecks();
+    checks.cacheHitCheck = mkCheck({
+      id: 'cacheHitCheck', label: {zh:'缓存命中检测',en:'Cache Hit Check'}, maxScore: 5, score: 1.2, status: 'weak',
+      summary: '缓存命中信号较弱',
+      evidence: { fieldFound: true, cacheHitRate: 0.077, firstRequest: { promptTokens: 1300 }, secondRequest: { promptTokens: 1300, cachedTokens: 100 } }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getScoreGrade(capped);
+    return { raw: final, capped, grade, desc: `Case CACHE-D: cached=100, rate=7.7%, score=1.2, status=weak → capped=${capped}` };
+  },
+
+  // Case CACHE-E: cache field found but cachedTokens=0 → none
+  caseCACHEE() {
+    const checks = this._makeNormalChecks();
+    checks.cacheHitCheck = mkCheck({
+      id: 'cacheHitCheck', label: {zh:'缓存命中检测',en:'Cache Hit Check'}, maxScore: 5, score: 1.0, status: 'none',
+      summary: '未检测到有效缓存命中',
+      evidence: { fieldFound: true, sourceField: 'cached_tokens', cacheHitRate: 0, firstRequest: { promptTokens: 1300 }, secondRequest: { promptTokens: 1300, cachedTokens: 0 } }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getScoreGrade(capped);
+    return { raw: final, capped, grade, desc: `Case CACHE-E: fieldFound=true, cachedTokens=0, score=1.0, status=none → capped=${capped} (no hard cap)` };
+  },
+
+  // Case CACHE-F: no cache fields → unknown, score=2.5
+  caseCACHEF() {
+    const checks = this._makeNormalChecks();
+    checks.cacheHitCheck = mkCheck({
+      id: 'cacheHitCheck', label: {zh:'缓存命中检测',en:'Cache Hit Check'}, maxScore: 5, score: 2.5, status: 'unknown',
+      summary: 'API 未暴露缓存字段，无法验证缓存宣传',
+      evidence: { fieldFound: false }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getScoreGrade(capped);
+    return { raw: final, capped, grade, desc: `Case CACHE-F: fieldFound=false, score=2.5, status=unknown → capped=${capped} (no hard cap, not in suggestions)` };
+  },
+
+  // Case CACHE-G: Anthropic style cache_read_input_tokens=1200, creation=0, input=100
+  caseCACHEG() {
+    const checks = this._makeNormalChecks();
+    checks.cacheHitCheck = mkCheck({
+      id: 'cacheHitCheck', label: {zh:'缓存命中检测',en:'Cache Hit Check'}, maxScore: 5, score: 3.9, status: 'good',
+      summary: '检测到较高缓存命中信号',
+      evidence: {
+        fieldFound: true, sourceField: 'cache_read_input_tokens',
+        cacheHitRate: 0.923, // 1200/(1200+0+100)
+        firstRequest: { promptTokens: null },
+        secondRequest: { promptTokens: null, cacheReadTokens: 1200, cacheCreationTokens: 0, inputTokens: 100 }
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getScoreGrade(capped);
+    return { raw: final, capped, grade, desc: `Case CACHE-G: Anthropic cache_read=1200/(1200+0+100)=92.3%, score=3.9, status=good → capped=${capped}` };
+  },
+
+  // Case CACHE-H: promptTokens inconsistency > 20%
+  caseCACHEH() {
+    const checks = this._makeNormalChecks();
+    checks.cacheHitCheck = mkCheck({
+      id: 'cacheHitCheck', label: {zh:'缓存命中检测',en:'Cache Hit Check'}, maxScore: 5, score: 3.2, status: 'partial',
+      summary: '检测到部分缓存命中信号',
+      evidence: {
+        fieldFound: true, cacheHitRate: 0.92,
+        promptTokenConsistencyRate: 0.25, // 25% inconsistency
+        firstRequest: { promptTokens: 1300 },
+        secondRequest: { promptTokens: 975 }, // >20% different
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getScoreGrade(capped);
+    return { raw: final, capped, grade, desc: `Case CACHE-H: promptTokens inconsistency 25%, score=3.2, status=partial → capped=${capped}` };
+  },
+
+  // Case CACHE-I: high cache but no latency improvement
+  caseCACHEI() {
+    const checks = this._makeNormalChecks();
+    checks.cacheHitCheck = mkCheck({
+      id: 'cacheHitCheck', label: {zh:'缓存命中检测',en:'Cache Hit Check'}, maxScore: 5, score: 3.5, status: 'good',
+      summary: '检测到较高缓存命中信号',
+      evidence: {
+        fieldFound: true, cacheHitRate: 0.94, latencyImprovementRate: 0,
+        firstRequest: { promptTokens: 1300 },
+        secondRequest: { promptTokens: 1300, cachedTokens: 1222 },
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getScoreGrade(capped);
+    return { raw: final, capped, grade, desc: `Case CACHE-I: rate=94% but no latency improvement, score=3.5, status=good → capped=${capped}` };
+  },
+
+  // Case CACHE-J: request failed → error, score=2
+  caseCACHEJ() {
+    const checks = this._makeNormalChecks();
+    checks.cacheHitCheck = mkCheck({
+      id: 'cacheHitCheck', label: {zh:'缓存命中检测',en:'Cache Hit Check'}, maxScore: 5, score: 2, status: 'error',
+      summary: '缓存检测请求失败，无法验证缓存信号',
+      evidence: { fieldFound: false }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getScoreGrade(capped);
+    return { raw: final, capped, grade, desc: `Case CACHE-J: request failed, score=2, status=error → capped=${capped} (no hard cap)` };
+  },
+
+  // Case CACHE-K: targetCall failed → skipped, score=0
+  caseCACHEK() {
+    const checks = this._makeNormalChecks();
+    checks.targetCall = mkCheck({ id: 'targetCall', score: 5, maxScore: 22, status: 'warning' });
+    checks.cacheHitCheck = mkCheck({
+      id: 'cacheHitCheck', label: {zh:'缓存命中检测',en:'Cache Hit Check'}, maxScore: 5, score: 0, status: 'skipped',
+      summary: '前置检测失败，未执行缓存检测',
+      evidence: { fieldFound: false }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getScoreGrade(capped);
+    return { raw: final, capped, grade, desc: `Case CACHE-K: prerequisite failed, score=0, status=skipped → capped=${capped}` };
+  },
+
+  // Case CACHE-L: all满分 but cache unknown 2.5 → no collapse, still decent score
+  caseCACHEL() {
+    const checks = this._makeNormalChecks();
+    checks.cacheHitCheck = mkCheck({
+      id: 'cacheHitCheck', label: {zh:'缓存命中检测',en:'Cache Hit Check'}, maxScore: 5, score: 2.5, status: 'unknown',
+      summary: 'API 未暴露缓存字段，无法验证缓存宣传',
+      evidence: { fieldFound: false }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getScoreGrade(capped);
+    return { raw: final, capped, grade, desc: `Case CACHE-L: all满分 but cache unknown 2.5 → capped=${capped} (no collapse, not in suggestions)` };
+  },
+
+  // Case CACHE-M: progress integration — 9 steps with cache as step 5
+  caseCACHEM() {
+    const checks = this._makeNormalChecks();
+    checks.cacheHitCheck = mkCheck({
+      id: 'cacheHitCheck', label: {zh:'缓存命中检测',en:'Cache Hit Check'}, maxScore: 5, score: 3.5, status: 'good',
+      summary: '检测到较高缓存命中信号',
+      evidence: { fieldFound: true, cacheHitRate: 0.92, firstRequest: {}, secondRequest: { cachedTokens: 1200 } }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getScoreGrade(capped);
+    return { raw: final, capped, grade, desc: `Case CACHE-M: progress shows 9 steps, cache=step5, report shows 6 modules with cache=2nd row` };
+  },
+
+  // Case CACHE-N: copyScore and saveImage include cache info
+  caseCACHEN() {
+    const checks = this._makeNormalChecks();
+    checks.cacheHitCheck = mkCheck({
+      id: 'cacheHitCheck', label: {zh:'缓存命中检测',en:'Cache Hit Check'}, maxScore: 5, score: 4.5, status: 'excellent',
+      summary: '缓存命中信号很强',
+      evidence: { fieldFound: true, cacheHitRate: 0.98, firstRequest: {}, secondRequest: { cachedTokens: 1280 } }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getScoreGrade(capped);
+    return { raw: final, capped, grade, desc: `Case CACHE-N: copyScore includes cache hit label, saveImage shows 6 modules including cache` };
+  },
+
   runAll() {
-    const results = ['A','B','K','L','M','N','O','P','Q','V','W','X','Y','Z','AA','AB','AC','AD','AE','AF-1','AF-2','AG-1','AG-2','AH-1','AH-2','AI','AJ','AK','AL','AM','AN','AO','AP','AQ','AR','AS','AT','AU','AV','AW','AX','AY','AZ-1','AZ-2','BA-1','BA-2','BB','BC','BD','BE','BF','BG','BH','BI','BJ','BK','BL','BM','BN','BO','BU','BV','BW','BX','BY','BZ','CA','CB','CC','CD','CE','CF','CG','CH','CI','CJ','CL','CM','CN','CO','CP'].map(c => {
+    const results = ['A','B','K','L','M','N','O','P','Q','V','W','X','Y','Z','AA','AB','AC','AD','AE','AF-1','AF-2','AG-1','AG-2','AH-1','AH-2','AI','AJ','AK','AL','AM','AN','AO','AP','AQ','AR','AS','AT','AU','AV','AW','AX','AY','AZ-1','AZ-2','BA-1','BA-2','BB','BC','BD','BE','BF','BG','BH','BI','BJ','BK','BL','BM','BN','BO','BU','BV','BW','BX','BY','BZ','CA','CB','CC','CD','CE','CF','CG','CH','CI','CJ','CL','CM','CN','CO','CP','CACHE-A','CACHE-B','CACHE-C','CACHE-D','CACHE-E','CACHE-F','CACHE-G','CACHE-H','CACHE-I','CACHE-J','CACHE-K','CACHE-L','CACHE-M','CACHE-N'].map(c => {
       const r = this['case' + c.replace('-','_')] ? this['case' + c.replace('-','_')]() : null;
       return r ? `${r.desc} | Grade: ${r.grade?.grade || '?'} ${r.grade?.labelZh || ''}` : `Case ${c}: not found`;
     });
