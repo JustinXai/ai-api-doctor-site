@@ -153,7 +153,7 @@ function maskKey(key) {
  *    e.g. https://aizhongzhuan.com/v1 → https://aiz***uan.com/v1
  *    e.g. https://api.example.com/v1 → https://api***com/v1
  * 3. IP: keep first 2 and last 2 octets, middle = *.*
- *    e.g. https://1.2.3.4/v1 → https://1.2.*.*/v1
+ *    e.g. https://1.2.3.4/v1 → https://1.2.X.X/v1
  * 4. localhost: no masking
  * 5. Keep path (e.g. /v1)
  * 6. Strip query params and hash
