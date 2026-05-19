@@ -1257,11 +1257,12 @@ async function checkN_CacheHitCheck(baseUrl, apiKey, model, interfaceType, signa
     });
   }
 
-  // Build a long prompt (~1800-2200 estimated tokens, >= 1200 actual API tokens)
-  // Use a repeated English paragraph — no timestamps, no random IDs, no dynamic content
-  const PART_A = 'The principles of distributed systems and client-server architecture form the foundation of modern web services. Each HTTP request must contain all necessary context since servers maintain no session state between requests. RESTful APIs leverage standard HTTP methods and status codes to provide predictable interfaces. Authentication typically involves bearer tokens or API keys passed in request headers. Caching strategies at the CDN and edge layers significantly improve response times. Rate limiting protects backend services from abuse and ensures fair resource allocation. Load balancing distributes incoming traffic across multiple server instances. Database replication ensures high availability and fault tolerance. Horizontal scaling allows systems to handle increased load by adding more machines to the pool. Container orchestration platforms like Kubernetes automate deployment and management of containerized applications. Microservices architecture decomposes monolithic applications into independently deployable services. Message queues enable asynchronous communication between services and help decouple system components. Monitoring and observability tools provide insights into system health and performance metrics. Incident response procedures ensure rapid recovery from failures. Disaster recovery planning includes regular backups and tested restoration procedures. Security best practices include encryption in transit using TLS, least-privilege access control, and regular security audits. API rate limiting prevents single clients from monopolizing resources. Content delivery networks cache static assets close to end users. Service mesh architectures provide a dedicated infrastructure layer for service-to-service communication. Infrastructure as code enables reproducible and version-controlled infrastructure provisioning. Continuous integration and continuous deployment pipelines automate the software release process. ';
-  const PART_B = 'In the context of cloud-native application development, containers provide consistent execution environments across development, testing, and production stages. Docker and containerd are popular container runtime environments. Kubernetes has become the de facto standard for container orchestration in production environments. Helm charts simplify the packaging and deployment of complex Kubernetes applications. Service mesh implementations like Istio and Linkerd provide traffic management, security, and observability features at the infrastructure layer. Observability encompasses metrics, logs, and distributed traces — the three pillars of understanding system behavior. OpenTelemetry provides vendor-neutral instrumentation for collecting telemetry data. Prometheus and Grafana are widely used for metrics collection and visualization. Jaeger and Zipkin support distributed tracing across service boundaries. Cloud-native applications are designed to be resilient, scalable, and manageable. Twelve-factor app methodology guides the development of cloud-ready applications. Configuration management tools like Ansible, Terraform, and Puppet automate infrastructure provisioning. GitOps workflows use Git repositories as the single source of truth for declarative infrastructure. ';
-  const PART_C = 'Software testing encompasses unit tests, integration tests, end-to-end tests, and performance tests. Unit tests verify individual components in isolation. Integration tests verify that components work correctly together. End-to-end tests simulate real user interactions with the complete system. Performance testing measures system behavior under load. Load testing determines how the system behaves at expected traffic levels. Stress testing identifies the breaking point of the system. Chaos engineering deliberately introduces failures to test system resilience. Feature flags enable gradual rollouts and quick rollbacks of new features. A/B testing compares different versions of features to determine which performs better. Canary deployments release changes to a small subset of users before full rollout. Blue-green deployments maintain two identical production environments for zero-downtime releases. Database indexing strategies significantly impact query performance. Connection pooling reduces the overhead of establishing database connections. Database sharding distributes data across multiple database instances. Read replicas provide scalable read capacity and improve query performance. Write-ahead logging ensures transaction durability in database systems. ACID properties guarantee that database transactions are processed reliably. ';
+  // Build a long prompt (~2500 estimated local tokens, targeting >= 1500 actual API prompt_tokens)
+  // Both requests use the exact same string — no timestamps, no random IDs, no dynamic content
+  // Only the fixed marker CACHE_PROBE_7391 is included
+  const PART_A = 'The principles of distributed systems and client-server architecture form the foundation of modern web services. Each HTTP request must contain all necessary context since servers maintain no session state between requests. RESTful APIs leverage standard HTTP methods and status codes to provide predictable interfaces. Authentication typically involves bearer tokens or API keys passed in request headers. Caching strategies at the CDN and edge layers significantly improve response times. Rate limiting protects backend services from abuse and ensures fair resource allocation. Load balancing distributes incoming traffic across multiple server instances. Database replication ensures high availability and fault tolerance. Horizontal scaling allows systems to handle increased load by adding more machines to the pool. Container orchestration platforms like Kubernetes automate deployment and management of containerized applications. Microservices architecture decomposes monolithic applications into independently deployable services. Message queues enable asynchronous communication between services and help decouple system components. Monitoring and observability tools provide insights into system health and performance metrics. Incident response procedures ensure rapid recovery from failures. Disaster recovery planning includes regular backups and tested restoration procedures. Security best practices include encryption in transit using TLS, least-privilege access control, and regular security audits. API rate limiting prevents single clients from monopolizing resources. Content delivery networks cache static assets close to end users. Service mesh architectures provide a dedicated infrastructure layer for service-to-service communication. Infrastructure as code enables reproducible and version-controlled infrastructure provisioning. Continuous integration and continuous deployment pipelines automate the software release process. API versioning strategies like URL path versioning and header-based versioning help maintain backward compatibility as services evolve. WebSocket connections provide full-duplex communication channels over a single TCP connection, enabling real-time bidirectional data transfer. GraphQL offers a flexible query language that allows clients to request exactly the data they need, reducing over-fetching and under-fetching problems. OAuth 2.0 and OpenID Connect provide standardized protocols for authorization and authentication across distributed systems. JSON Web Tokens enable stateless authentication by encoding user identity information directly in the token. SAML and LDAP support enterprise identity management and single sign-on across multiple applications. Distributed caching with Redis or Memcached reduces database load by storing frequently accessed data in memory. Consistent hashing algorithms help distribute cache entries evenly across cluster nodes while minimizing remapping when nodes join or leave. Cache invalidation strategies like time-to-live expiration and event-driven invalidation ensure that stale data does not persist indefinitely. Write-through and write-back caching policies trade off between consistency and performance depending on application requirements. CDN edge networks cache content at geographic points of presence to reduce latency for globally distributed users. HTTP cache-control headers guide browser and proxy caching behavior to reduce redundant server requests. ETags and last-modified timestamps enable conditional requests that save bandwidth when content has not changed. Content-addressable storage systems retrieve data based on cryptographic hashes rather than file paths, ensuring data integrity. Gossip protocols enable distributed systems to reach consensus on cluster membership without a central coordinator. Consensus algorithms like Raft and Paxos ensure that distributed databases maintain consistency across replica nodes. Two-phase commit protocols coordinate atomic transactions across multiple database systems but introduce latency and coordination overhead. CAP theorem states that distributed systems can only guarantee two of three properties: consistency, availability, and partition tolerance. Eventual consistency models allow temporary divergence between replicas in exchange for improved availability during network partitions. Vector clocks track the causal ordering of events across distributed nodes to detect conflicts. Conflict-free replicated data types enable concurrent updates without requiring central coordination. Saga pattern decomposes long-running distributed transactions into a sequence of local transactions with compensating rollback actions. CQRS separates read and write models to optimize query performance independently from update throughput. Event sourcing persists state changes as an immutable sequence of events rather than current state snapshots. Change data capture streams database modifications to downstream consumers in near real-time. Dead letter queues capture failed messages for later inspection and retry rather than losing them permanently. Circuit breakers prevent cascading failures by temporarily halting calls to failing downstream services. Bulkheads isolate failures in one part of a system from affecting other unrelated components.';
+  const PART_B = 'In the context of cloud-native application development, containers provide consistent execution environments across development, testing, and production stages. Docker and containerd are popular container runtime environments. Kubernetes has become the de facto standard for container orchestration in production environments. Helm charts simplify the packaging and deployment of complex Kubernetes applications. Service mesh implementations like Istio and Linkerd provide traffic management, security, and observability features at the infrastructure layer. Observability encompasses metrics, logs, and distributed traces — the three pillars of understanding system behavior. OpenTelemetry provides vendor-neutral instrumentation for collecting telemetry data. Prometheus and Grafana are widely used for metrics collection and visualization. Jaeger and Zipkin support distributed tracing across service boundaries. Cloud-native applications are designed to be resilient, scalable, and manageable. Twelve-factor app methodology guides the development of cloud-ready applications. Configuration management tools like Ansible, Terraform, and Puppet automate infrastructure provisioning. GitOps workflows use Git repositories as the single source of truth for declarative infrastructure. Container networking and service discovery enable dynamic communication between pods in a Kubernetes cluster. Sidecar proxies intercept network traffic to enforce policies without modifying application code. Certificate management and mutual TLS provide authenticated and encrypted communication between services. Cloud providers offer managed Kubernetes services like Amazon EKS, Azure AKS, and Google GKE that reduce operational overhead. Serverless platforms like AWS Lambda, Azure Functions, and Google Cloud Functions enable running code without managing servers. Auto-scaling based on CPU usage or request count ensures that applications maintain performance under variable load conditions. Function as a Service platforms charge based on execution time and memory usage, making them cost-effective for sporadic workloads. Event-driven architectures using Apache Kafka or AWS Kinesis enable real-time data streaming and processing at scale. Structured logging in JSON format facilitates automated log parsing and analysis in centralized logging systems. Kubernetes namespaces isolate resources and enforce access controls across multiple teams sharing a cluster. Resource quotas prevent individual teams from monopolizing cluster compute and memory capacity. Pod disruption budgets ensure that a minimum number of replicas remain available during voluntary disruptions like node upgrades. Vertical pod autoscalers adjust container resource requests based on historical usage patterns. Platform engineering teams build internal developer platforms that abstract infrastructure complexity and accelerate feature delivery. Backstage from Spotify provides a software catalog and developer portal that surfaces ownership and documentation. Horizontal pod autoscalers adjust replica counts based on custom metrics beyond CPU and memory. Pod priority and preemption ensure that critical workloads are scheduled ahead of less important ones when cluster resources are constrained. StatefulSets manage persistent workloads that require stable network identities and stable storage. Persistent volumes and persistent volume claims abstract storage provisioning from pod scheduling. Volume snapshots enable point-in-time copies of persistent data for backup and disaster recovery. Resource limits and requests ensure that pods receive guaranteed CPU and memory allocation while preventing resource exhaustion. Quality of service classes — guaranteed, burstable, and best-effort — determine pod scheduling priority under resource pressure. Node affinity and pod affinity rules control the placement of pods across cluster nodes for resilience and performance. Taints and tolerations prevent general workloads from being scheduled on specialized infrastructure nodes. DaemonSets ensure that specific pods run on every node in the cluster for logging, monitoring, and networking functions.';
+  const PART_C = 'Software testing encompasses unit tests, integration tests, end-to-end tests, and performance tests. Unit tests verify individual components in isolation. Integration tests verify that components work correctly together. End-to-end tests simulate real user interactions with the complete system. Performance testing measures system behavior under load. Load testing determines how the system behaves at expected traffic levels. Stress testing identifies the breaking point of the system. Chaos engineering deliberately introduces failures to test system resilience. Feature flags enable gradual rollouts and quick rollbacks of new features. A/B testing compares different versions of features to determine which performs better. Canary deployments release changes to a small subset of users before full rollout. Blue-green deployments maintain two identical production environments for zero-downtime releases. Database indexing strategies significantly impact query performance. Connection pooling reduces the overhead of establishing database connections. Database sharding distributes data across multiple database instances. Read replicas provide scalable read capacity and improve query performance. Write-ahead logging ensures transaction durability in database systems. ACID properties guarantee that database transactions are processed reliably. Pagination strategies and cursor-based approaches handle large result sets efficiently. Database query optimization through explain plans and index analysis reduces unnecessary full table scans. ORM frameworks like Hibernate and Entity Framework abstract database interactions but require careful configuration to avoid performance pitfalls. Caching database query results with Redis or Memcached reduces repeated database load. Asynchronous processing through job queues like Celery or Sidekiq offloads time-consuming tasks from the request-response cycle. Database transaction isolation levels like read committed and serializable determine how concurrent transactions interact with each other. Optimistic concurrency control uses version numbers to detect conflicting updates without locking. Pessimistic locking acquires exclusive access to rows before modification to prevent lost updates. Time-series databases like InfluxDB and TimescaleDB are optimized for storing and querying timestamped measurements. Vector databases such as Pinecone, Weaviate, and Qdrant store high-dimensional embeddings for similarity search in AI applications. Graph databases like Neo4j and Amazon Neptune model complex relationship networks efficiently for recommendation engines and fraud detection. Object storage services like Amazon S3 and Google Cloud Storage provide durable, scalable repositories for unstructured binary data. Reproducibility in machine learning experiments requires tracking hyperparameters, training data versions, and code snapshots. Feature stores provide a centralized repository of curated ML features that ensure consistency between training and inference. Model registries track the lineage of deployed models from experimentation through production retirement. Online learning systems update model weights incrementally as new data arrives rather than retraining from scratch. Transfer learning fine-tunes pre-trained foundation models on domain-specific data to reduce training costs. Federated learning trains models across decentralized data sources without centralizing sensitive training data. Explainable AI techniques like SHAP and LIME provide interpretable attributions for individual predictions. Model drift detection monitors prediction accuracy over time to identify when models need retraining. Reinforcement learning from human feedback aligns language model outputs with human preferences and values. Prompt engineering crafts input text patterns that elicit desired behaviors from large language models without fine-tuning. Retrieval-augmented generation retrieves relevant documents from external knowledge bases to ground LLM responses in factual information.';
   const longPrompt = (PART_A + PART_B + PART_C + ' Repeat this marker exactly: CACHE_PROBE_7391\nAt the end, reply exactly: CACHE_OK').trim();
 
   // First request (may create cache)
@@ -1369,7 +1370,26 @@ async function checkN_CacheHitCheck(baseUrl, apiKey, model, interfaceType, signa
     status = 'unknown';
     totalScore = 2.5;
     summary = zh ? '探测长度不足，无法验证缓存宣传' : 'Probe length insufficient — cannot verify cache claims';
-    details.push(zh ? '本次缓存探测的 prompt_tokens 低于 1024，无法有效验证缓存命中。未验证不等于没有缓存。' : 'Probe prompt_tokens below 1024 — cannot effectively verify cache hit. Unverified does not mean unavailable.');
+    details.push(zh
+      ? `本次缓存探测的 prompt_tokens 低于 1024，无法有效验证缓存命中。未验证不等于没有缓存。当前实际：${actualPromptTokens} tokens`
+      : `Probe prompt_tokens below 1024 — cannot effectively verify cache hit. Actual: ${actualPromptTokens} tokens. Unverified does not mean unavailable.`);
+    // Return early — do not calculate sub-scores for insufficient probe length
+    return mkCheck({
+      id: 'cacheHitCheck',
+      label: { zh: '缓存命中检测', en: 'Cache Hit Check' },
+      maxScore: 5,
+      score: totalScore,
+      status,
+      summary,
+      details,
+      deductions: [],
+      evidence: {
+        ...evidence,
+        statusColor: { color: '#94a3b8', bg: '#f1f5f9' },
+        fieldFound: cache2.fieldFound,
+        sourceField: cache2.sourceField,
+      }
+    });
   } else if (!r1.success || !r2.success) {
     status = 'error';
     summary = zh ? '缓存检测请求失败，无法验证缓存信号' : 'Cache check request failed — cannot verify cache signal';
@@ -2590,8 +2610,15 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
       const fmtRate = (r) => r != null ? (Math.round(r * 10000) / 100) + '%' : '—';
       const cacheStatus = checkData.status || 'unknown';
       const isUnknown = cacheStatus === 'unknown';
+      const actualTokens = ev.actualPromptTokens ?? ev.firstRequest?.promptTokens ?? '—';
+      const threshold = ev.minPromptTokensRequired ?? 1024;
+      const sufficient = ev.probeTokenSufficient;
       cacheHitHtml = `<div style="margin-top:8px;padding:8px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;font-size:11px">
         <div style="font-weight:600;color:#0f172a;margin-bottom:6px">${zh ? '缓存命中检测明细' : 'Cache Hit Details'}</div>
+        <div style="margin-bottom:6px;padding:6px 8px;background:${sufficient ? '#dcfce7' : '#fef3c7'};border-radius:6px;font-size:10px;display:flex;align-items:center;gap:6px">
+          <span style="font-weight:700;color:${sufficient ? '#16a34a' : '#d97706'}">${sufficient ? (zh ? '探测长度足够' : 'Probe Sufficient') : (zh ? '探测长度不足' : 'Probe Insufficient')}</span>
+          <span style="color:${sufficient ? '#166534' : '#92400e'}">${zh ? '实际：' : 'Actual: '}${actualTokens !== '—' ? actualTokens : '—'} tokens &nbsp;|&nbsp; ${zh ? '阈值：' : 'Threshold: '}${threshold} tokens</span>
+        </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:10px;color:#374151;margin-bottom:6px">
           <div><span style="color:#94a3b8">${zh ? '字段来源：' : 'Field: '}</span>${escH(ev.sourceField || (zh ? '未暴露' : 'Not exposed'))}</div>
           <div><span style="color:#94a3b8">${zh ? '缓存命中率：' : 'Cache Rate: '}</span>${fmtRate(ev.cacheHitRate)}</div>
@@ -4760,8 +4787,76 @@ window.MockCases = {
     return { raw: final, capped, grade, desc: `Case CACHE-N: copyScore includes cache hit label, saveImage shows 6 modules including cache` };
   },
 
+  // Case CACHE-O: actualPromptTokens < 1024 → status=unknown, score=2.5
+  // Must NOT show "API 未暴露缓存字段"
+  caseCACHE_O() {
+    const checks = this._makeNormalChecks();
+    checks.cacheHitCheck = mkCheck({
+      id: 'cacheHitCheck', label: {zh:'缓存命中检测',en:'Cache Hit Check'}, maxScore: 5, score: 2.5, status: 'unknown',
+      summary: '探测长度不足，无法验证缓存宣传',
+      details: ['本次缓存探测的 prompt_tokens 低于 1024，无法有效验证缓存命中。未验证不等于没有缓存。当前实际：221 tokens'],
+      evidence: {
+        actualPromptTokens: 221,
+        minPromptTokensRequired: 1024,
+        probeTokenSufficient: false,
+        fieldFound: false,
+        sourceField: null,
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getScoreGrade(capped);
+    return { raw: final, capped, grade, desc: `Case CACHE-O: actualPromptTokens=221 < 1024 → status=unknown, score=2.5, summary='探测长度不足...' (NOT 'API 未暴露缓存字段'), probeTokenSufficient=false` };
+  },
+
+  // Case CACHE-P: actualPromptTokens >= 1024 but no cache field → status=unknown, score=2.5
+  caseCACHE_P() {
+    const checks = this._makeNormalChecks();
+    checks.cacheHitCheck = mkCheck({
+      id: 'cacheHitCheck', label: {zh:'缓存命中检测',en:'Cache Hit Check'}, maxScore: 5, score: 2.5, status: 'unknown',
+      summary: 'API 未暴露缓存字段，无法验证缓存宣传',
+      details: [],
+      evidence: {
+        actualPromptTokens: 1300,
+        minPromptTokensRequired: 1024,
+        probeTokenSufficient: true,
+        fieldFound: false,
+        sourceField: null,
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getScoreGrade(capped);
+    return { raw: final, capped, grade, desc: `Case CACHE-P: actualPromptTokens=1300 >= 1024, no cache field → status=unknown, score=2.5, summary='API 未暴露缓存字段...', probeTokenSufficient=true` };
+  },
+
+  // Case CACHE-Q: actualPromptTokens >= 1024, field found but cachedTokens=0 → treat as none/weak
+  // Must NOT say "API 未暴露缓存字段"
+  caseCACHE_Q() {
+    const checks = this._makeNormalChecks();
+    checks.cacheHitCheck = mkCheck({
+      id: 'cacheHitCheck', label: {zh:'缓存命中检测',en:'Cache Hit Check'}, maxScore: 5, score: 1.0, status: 'none',
+      summary: '未检测到有效缓存命中',
+      details: [],
+      evidence: {
+        actualPromptTokens: 1300,
+        minPromptTokensRequired: 1024,
+        probeTokenSufficient: true,
+        fieldFound: true,
+        sourceField: 'cached_tokens',
+        cacheHitRate: 0,
+        firstRequest: { promptTokens: 1300 },
+        secondRequest: { promptTokens: 1300, cachedTokens: 0 },
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getScoreGrade(capped);
+    return { raw: final, capped, grade, desc: `Case CACHE-Q: actualPromptTokens=1300 >= 1024, fieldFound=true, cachedTokens=0 → status=none, score=1.0, fieldFound=true (NOT 'API 未暴露缓存字段')` };
+  },
+
   runAll() {
-    const results = ['A','B','K','L','M','N','O','P','Q','V','W','X','Y','Z','AA','AB','AC','AD','AE','AF-1','AF-2','AG-1','AG-2','AH-1','AH-2','AI','AJ','AK','AL','AM','AN','AO','AP','AQ','AR','AS','AT','AU','AV','AW','AX','AY','AZ-1','AZ-2','BA-1','BA-2','BB','BC','BD','BE','BF','BG','BH','BI','BJ','BK','BL','BM','BN','BO','BU','BV','BW','BX','BY','BZ','CA','CB','CC','CD','CE','CF','CG','CH','CI','CJ','CL','CM','CN','CO','CP','CACHE-A','CACHE-B','CACHE-C','CACHE-D','CACHE-E','CACHE-F','CACHE-G','CACHE-H','CACHE-I','CACHE-J','CACHE-K','CACHE-L','CACHE-M','CACHE-N'].map(c => {
+    const results = ['A','B','K','L','M','N','O','P','Q','V','W','X','Y','Z','AA','AB','AC','AD','AE','AF-1','AF-2','AG-1','AG-2','AH-1','AH-2','AI','AJ','AK','AL','AM','AN','AO','AP','AQ','AR','AS','AT','AU','AV','AW','AX','AY','AZ-1','AZ-2','BA-1','BA-2','BB','BC','BD','BE','BF','BG','BH','BI','BJ','BK','BL','BM','BN','BO','BU','BV','BW','BX','BY','BZ','CA','CB','CC','CD','CE','CF','CG','CH','CI','CJ','CL','CM','CN','CO','CP','CACHE-A','CACHE-B','CACHE-C','CACHE-D','CACHE-E','CACHE-F','CACHE-G','CACHE-H','CACHE-I','CACHE-J','CACHE-K','CACHE-L','CACHE-M','CACHE-N','CACHE-O','CACHE-P','CACHE-Q'].map(c => {
       const r = this['case' + c.replace('-','_')] ? this['case' + c.replace('-','_')]() : null;
       return r ? `${r.desc} | Grade: ${r.grade?.grade || '?'} ${r.grade?.labelZh || ''}` : `Case ${c}: not found`;
     });
