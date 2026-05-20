@@ -1931,6 +1931,8 @@ async function checkK_ModelIntegrity(baseUrl, apiKey, model, interfaceType, sign
       ? (zh ? '模型回答中出现开发环境、工具人格或系统提示污染信号，可能影响原始模型行为。' : 'Model response shows development environment, tool persona or system prompt contamination — may affect original model behavior.')
       : identityCategory === 'ambiguous'
       ? (zh ? '模型身份未能明确确认，结论置信度降低。' : 'Model identity could not be confirmed — conclusion confidence reduced.')
+      : identityCategory === 'family_match'
+      ? (zh ? '模型自报与目标模型属于同一大模型家族，但未能精确确认具体版本。这不等于降配，但具体版本仍需结合能力测试和 usage 信号判断。' : 'Model self-reported as same model family as target, but exact version not confirmed. Not equal to downgrade — evaluate with capability tests and usage signals.')
       : (zh ? '模型身份信号基本正常。' : 'Model identity signal is basically normal.'),
   };
 
@@ -2072,7 +2074,7 @@ async function checkK_ModelIntegrity(baseUrl, apiKey, model, interfaceType, sign
 
   const identitySummaryMap = {
     exact_match: zh ? '核心能力测试表现正常，未发现明显降配信号' : 'Core capability tests normal — no significant downgrade signals',
-    family_match: zh ? '模型属于同一家族，核心能力测试表现基本正常' : 'Model in same family — core capability tests basically normal',
+    family_match: zh ? '模型家族匹配，具体版本未确认' : 'Model family matched — exact version not confirmed',
     platform_or_proxy_identity: zh
       ? (detectedSource ? `检测到平台代理层身份暴露：${detectedSource}` : `检测到平台代理层身份暴露`)
       : (detectedSource ? `Platform proxy layer identity detected: ${detectedSource}` : `Platform proxy layer identity detected`),
@@ -2181,7 +2183,62 @@ async function checkM_ToolCalling(baseUrl, apiKey, model, signal) {
    Risk Level Helpers
    ═══════════════════════════════════════════════════════ */
 function getCostRiskLevel(score) { return score >= 30 ? 'low' : score >= 22 ? 'medium' : 'high'; }
-function getModelRiskLevel(score) { return score >= 34 ? 'low' : score >= 26 ? 'medium' : 'high'; }
+/**
+ * Model Integrity risk level — evidence-aware, family_match cannot be high.
+ * Hard conditions for "high":
+ *   - target call failed
+ *   - wrong_family
+ *   - hard_contamination
+ *   - coreAbilityFailures >= 3
+ *   - identityScore === 0 && coreAbilityFailures >= 1
+ *   - score < 18
+ * family_match, platform_or_proxy_identity, ambiguous alone → never high.
+ */
+function getModelIntegrityRiskLevel(score, evidence) {
+  if (!evidence) return score >= 34 ? 'low' : score >= 26 ? 'medium' : 'high';
+  const category = evidence.modelIdentityLevel || 'exact_match';
+  const coreFailures = evidence.coreAbilityFailures || 0;
+  const targetCallQuality = evidence.subScores?.targetCallQuality ?? 5;
+  const targetFailed = targetCallQuality < 2; // < 2 means poor quality (0-1.5 = failed)
+  const identityScore = evidence.modelIdentityScore ?? 6;
+
+  // Hard high-risk conditions
+  if (targetFailed) return 'high';
+  if (category === 'wrong_family') return 'high';
+  if (category === 'hard_contamination') return 'high';
+  if (coreFailures >= 3) return 'high';
+  if (identityScore === 0 && coreFailures >= 1) return 'high';
+  if (score < 18) return 'high';
+
+  // low: full match, no failures, score >= 34
+  if (category === 'exact_match' && coreFailures === 0 && score >= 34) return 'low';
+
+  // family_match: max medium
+  if (category === 'family_match') {
+    if (coreFailures === 0 && score >= 22) return 'medium';
+    if (coreFailures <= 1) return 'medium';
+    return 'medium';
+  }
+
+  // platform_or_proxy_identity: max medium
+  if (category === 'platform_or_proxy_identity' || category === 'proxy_route_identity') {
+    if (coreFailures <= 1 && score >= 22) return 'medium';
+    if (score >= 22) return 'medium';
+    return 'medium';
+  }
+
+  // ambiguous: max medium
+  if (category === 'ambiguous') {
+    if (coreFailures <= 1 && score >= 22) return 'medium';
+    if (score >= 22) return 'medium';
+    return 'medium';
+  }
+
+  // default: score-based
+  if (score >= 34 && coreFailures === 0) return 'low';
+  if (score >= 22) return 'medium';
+  return 'high';
+}
 /**
  * Returns the stability risk level, with forced override rules.
  * Raw score-based level can be overridden to 'high' if any latency metric
@@ -2212,7 +2269,7 @@ function getConfidence(checks) {
   const zh = getDocLang() !== 'en';
   const hasUsage = !!(checks.targetCall?.evidence?.usage && Object.keys(checks.targetCall.evidence.usage).length > 0);
   const costRisk = getCostRiskLevel(checks.costTransparency?.score || 0);
-  const modelRisk = getModelRiskLevel(checks.modelIntegrity?.score || 0);
+  const modelRisk = getModelIntegrityRiskLevel(checks.modelIntegrity?.score || 0, checks.modelIntegrity?.evidence);
   const stabilityRisk = getStabilityRiskLevel(checks.stability?.score || 0, checks);
   const identityCategory = checks.modelIntegrity?.evidence?.modelIdentityLevel;
   const coreAbilityFailures = checks.modelIntegrity?.evidence?.coreAbilityFailures || 0;
@@ -2281,7 +2338,7 @@ function applyCaps(rawScore, checks, modelIdInfo) {
   const modelScore = checks.modelIntegrity?.score || 0;
   const stabilityScore = checks.stability?.score || 0;
   const costRisk = getCostRiskLevel(costScore);
-  const modelRisk = getModelRiskLevel(modelScore);
+  const modelRisk = getModelIntegrityRiskLevel(modelScore, checks.modelIntegrity?.evidence);
   const stabilityRisk = getStabilityRiskLevel(stabilityScore, checks);
   const highRiskCount = [costRisk === 'high', modelRisk === 'high', stabilityRisk === 'high'].filter(Boolean).length;
   const hasUsage = !!(checks.targetCall?.evidence?.usage && Object.keys(checks.targetCall.evidence.usage).length > 0);
@@ -2409,7 +2466,7 @@ function applyCaps(rawScore, checks, modelIdInfo) {
 function getJudgment(score, checks) {
   const zh = getDocLang() !== 'en';
   const costRisk = getCostRiskLevel(checks.costTransparency?.score || 0);
-  const modelRisk = getModelRiskLevel(checks.modelIntegrity?.score || 0);
+  const modelRisk = getModelIntegrityRiskLevel(checks.modelIntegrity?.score || 0, checks.modelIntegrity?.evidence);
   const stabilityRisk = getStabilityRiskLevel(checks.stability?.score || 0, checks);
   const identityCategory = checks.modelIntegrity?.evidence?.modelIdentityLevel || 'exact_match';
   const detectedSource = checks.modelIntegrity?.evidence?.sourceTransparency?.detectedSource || null;
@@ -2469,7 +2526,7 @@ function generateSuggestions(checks, modelIdInfo) {
   const modelScore = checks.modelIntegrity?.score || 0;
   const stabilityScore = checks.stability?.score || 0;
   const costRisk = getCostRiskLevel(costScore);
-  const modelRisk = getModelRiskLevel(modelScore);
+  const modelRisk = getModelIntegrityRiskLevel(modelScore, checks.modelIntegrity?.evidence);
   const stabilityRisk = getStabilityRiskLevel(stabilityScore, checks);
   const targetWorks = (checks.targetCall?.score || 0) >= 11;
   const identityCategory = checks.modelIntegrity?.evidence?.modelIdentityLevel || 'exact_match';
@@ -2544,7 +2601,7 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
   const escH = s => esc(String(s || ''));
   const riskColors = { low: { color: '#16a34a', bg: '#dcfce7' }, medium: { color: '#d97706', bg: '#fef9c3' }, high: { color: '#dc2626', bg: '#fee2e2' } };
   const costRisk = getCostRiskLevel(checks.costTransparency?.score || 0);
-  const modelRisk = getModelRiskLevel(checks.modelIntegrity?.score || 0);
+  const modelRisk = getModelIntegrityRiskLevel(checks.modelIntegrity?.score || 0, checks.modelIntegrity?.evidence);
   const stabilityRisk = getStabilityRiskLevel(checks.stability?.score || 0, checks);
   const identityCategory = checks.modelIntegrity?.evidence?.modelIdentityLevel || 'exact_match';
   const coreAbilityFailures = checks.modelIntegrity?.evidence?.coreAbilityFailures ?? 0;
@@ -2568,14 +2625,15 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
   const hasUsage = !!(checks.targetCall?.evidence?.usage && Object.keys(checks.targetCall.evidence.usage).length > 0);
 
   // Priority: cost>model>stability>proxy (user requirement order)
-  // Priority: cost>model>stability>identity>proxy (identityCategory checked before proxy)
+  // modelRisk === 'high' now only for hard conditions: wrong_family/hard_contamination/coreFailures>=3/targetFailed/score<18
   let verdictDesc = '';
   if (costRisk === 'high') verdictDesc = zh ? 'usage/token信号异常，扣费不易核对' : 'usage/token abnormal — billing hard to audit.';
   else if (modelRisk === 'high') verdictDesc = zh ? '模型能力或身份异常，建议谨慎使用' : 'Model capability/identity anomalies — use with caution.';
   else if (stabilityRisk === 'high') verdictDesc = zh ? '稳定性波动较大，建议谨慎用于客户端' : 'Stability fluctuates significantly — use caution.';
-  else if (identityCategory === 'ambiguous') verdictDesc = zh ? '模型身份未确认，建议结合 usage 和能力测试判断' : 'Model identity unconfirmed — evaluate with usage and capability tests.';
   else if (identityCategory === 'wrong_family') verdictDesc = zh ? '模型家族不一致，存在降配风险' : 'Model family inconsistent — possible downgrade.';
   else if (identityCategory === 'hard_contamination') verdictDesc = zh ? '模型回答存在工具人格污染' : 'Model shows tool-persona contamination.';
+  else if (identityCategory === 'family_match') verdictDesc = zh ? '模型家族匹配，具体版本未确认' : 'Model family matched — exact version not confirmed.';
+  else if (identityCategory === 'ambiguous') verdictDesc = zh ? '模型身份未确认，建议结合 usage 和能力测试判断' : 'Model identity unconfirmed — evaluate with usage and capability tests.';
   else if (isProxyOrPlatform) verdictDesc = zh ? '检测到平台代理层，来源透明度降低' : 'Platform proxy layer detected — reduced source transparency.';
   else if (!hasUsage) verdictDesc = zh ? 'usage缺失，扣费不可审计' : 'usage missing — billing unauditable.';
   else if (costRisk === 'low' && modelRisk === 'low' && stabilityRisk === 'low' && identityCategory === 'exact_match') verdictDesc = zh ? '主要信号正常，建议继续小额观察' : 'All signals normal — continue monitoring.';
@@ -2747,20 +2805,24 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
     if (checkKey === 'modelIntegrity') {
       const idCat = checkData.evidence?.modelIdentityLevel || 'exact_match';
       const caf = checkData.evidence?.coreAbilityFailures ?? 0;
-      // High-risk causes take priority in summary
-      if (caf >= 2) {
+      // Priority: hard conditions first, then identity category
+      if (caf >= 3) {
         summaryText = zh ? '模型能力测试异常' : 'Model capability test abnormal';
       } else if (idCat === 'wrong_family') {
         summaryText = zh ? '模型家族不一致' : 'Model family inconsistent';
       } else if (idCat === 'hard_contamination') {
         summaryText = zh ? '工具人格污染信号' : 'Tool persona contamination';
-      } else if (idCat === 'ambiguous') {
-        summaryText = zh ? '模型身份未确认' : 'Model identity unconfirmed';
+      } else if (caf >= 1) {
+        summaryText = zh ? '部分能力测试未通过' : 'Some capability tests failed';
+      } else if (idCat === 'family_match') {
+        summaryText = zh ? '模型家族匹配，具体版本未确认' : 'Model family matched — exact version not confirmed';
       } else if (idCat === 'platform_or_proxy_identity' || idCat === 'proxy_route_identity') {
         const ds = checkData.evidence?.sourceTransparency?.detectedSource;
         summaryText = ds
           ? (zh ? `来源透明度较低：${ds}` : `Low source transparency: ${ds}`)
           : (zh ? '来源透明度较低' : 'Low source transparency');
+      } else if (idCat === 'ambiguous') {
+        summaryText = zh ? '模型身份未确认' : 'Model identity unconfirmed';
       }
     }
 
@@ -3243,7 +3305,7 @@ window.Doctor = {
     const { score, grade, reportId, deepMode, checks } = this._result;
     const modeLabel = deepMode ? (zh ? '深度验货' : 'Deep Check') : (zh ? '一键验货' : 'One-Click');
     const costRisk = getCostRiskLevel(checks?.costTransparency?.score || 0);
-    const modelRisk = getModelRiskLevel(checks?.modelIntegrity?.score || 0);
+    const modelRisk = getModelIntegrityRiskLevel(checks?.modelIntegrity?.score || 0, checks?.modelIntegrity?.evidence);
     const stabilityScore = checks?.stability?.score || 0;
     const stabilityRisk = getStabilityRiskLevel(stabilityScore, checks);
     const identityCategory = checks?.modelIntegrity?.evidence?.modelIdentityLevel || 'exact_match';
@@ -5060,8 +5122,142 @@ window.MockCases = {
     return { raw: final, capped, grade, desc: `Case CACHE-LENGTH-LOW: both succeed but actualPromptTokens=221 < 1024 → status=unknown, score=2.5, summary='探测长度不足' → enters 6/9` };
   },
 
+  // Case MI-FAMILY-1: gpt-5.2-pro → "ChatGPT" = family_match, coreAbilityFailures=0, score=23
+  // family_match alone → medium risk (NOT high), summary = 模型家族匹配，具体版本未确认
+  caseMI_FAMILY_1() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 23, status: 'excellent',
+      evidence: {
+        modelIdentityScore: 4, modelIdentityLevel: 'family_match',
+        sourceTransparency: { category: 'family_match', label: '家族匹配', riskLevel: 'low', detectedSource: null, evidenceText: 'ChatGPT', explanation: '模型自报与目标模型属于同一大模型家族，但未能精确确认具体版本。' },
+        coreAbilityFailures: 0,
+        subScores: {modelIdentity:4,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:4,needle:4,consistency:2}
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getScoreGrade(capped);
+    const risk = getModelIntegrityRiskLevel(23, checks.modelIntegrity.evidence);
+    return { raw: final, capped, grade, risk, desc: `Case MI-FAMILY-1: gpt-5.2-pro→ChatGPT, family_match, caf=0, score=23 → risk=${risk} (expected medium, NOT high), summary='模型家族匹配，具体版本未确认'` };
+  },
+
+  // Case MI-FAMILY-2: claude-opus-4.6 → "Claude" = family_match, coreAbilityFailures=0, score=24
+  caseMI_FAMILY_2() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 24, status: 'excellent',
+      evidence: {
+        modelIdentityScore: 4, modelIdentityLevel: 'family_match',
+        sourceTransparency: { category: 'family_match', label: '家族匹配', riskLevel: 'low', detectedSource: null, evidenceText: 'Claude', explanation: '模型自报与目标模型属于同一大模型家族，但未能精确确认具体版本。' },
+        coreAbilityFailures: 0,
+        subScores: {modelIdentity:4,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:4,needle:4,consistency:2}
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getScoreGrade(capped);
+    const risk = getModelIntegrityRiskLevel(24, checks.modelIntegrity.evidence);
+    return { raw: final, capped, grade, risk, desc: `Case MI-FAMILY-2: claude-opus-4.6→Claude, family_match, caf=0, score=24 → risk=${risk} (expected medium, NOT high)` };
+  },
+
+  // Case MI-WRONG-1: claude-opus-4.6 → "ChatGPT" = wrong_family → HIGH risk
+  caseMI_WRONG_1() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 15, status: 'warning',
+      evidence: {
+        modelIdentityScore: 0, modelIdentityLevel: 'wrong_family',
+        sourceTransparency: { category: 'wrong_family', label: '模型家族不一致', riskLevel: 'high', detectedSource: null, evidenceText: 'ChatGPT', explanation: '模型自报家族与目标 Model ID 明显不一致，存在模型降配或路由错误疑似风险。' },
+        coreAbilityFailures: 0,
+        subScores: {modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:4,needle:4,consistency:2}
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getScoreGrade(capped);
+    const risk = getModelIntegrityRiskLevel(15, checks.modelIntegrity.evidence);
+    return { raw: final, capped, grade, risk, desc: `Case MI-WRONG-1: claude→ChatGPT, wrong_family → risk=${risk} (expected high, should remain high)` };
+  },
+
+  // Case MI-WRONG-2: gpt-5.2-pro → "Claude" = wrong_family → HIGH risk
+  caseMI_WRONG_2() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 15, status: 'warning',
+      evidence: {
+        modelIdentityScore: 0, modelIdentityLevel: 'wrong_family',
+        sourceTransparency: { category: 'wrong_family', label: '模型家族不一致', riskLevel: 'high', detectedSource: null, evidenceText: 'Claude', explanation: '模型自报家族与目标 Model ID 明显不一致，存在模型降配或路由错误疑似风险。' },
+        coreAbilityFailures: 0,
+        subScores: {modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:4,needle:4,consistency:2}
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getScoreGrade(capped);
+    const risk = getModelIntegrityRiskLevel(15, checks.modelIntegrity.evidence);
+    return { raw: final, capped, grade, risk, desc: `Case MI-WRONG-2: gpt→Claude, wrong_family → risk=${risk} (expected high, should remain high)` };
+  },
+
+  // Case MI-ABILITY-1: family_match + coreAbilityFailures=3 → HIGH risk (ability failures override)
+  caseMI_ABILITY_1() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 18, status: 'warning',
+      evidence: {
+        modelIdentityScore: 4, modelIdentityLevel: 'family_match',
+        sourceTransparency: { category: 'family_match', label: '家族匹配', riskLevel: 'low', detectedSource: null, evidenceText: 'ChatGPT', explanation: '模型自报与目标模型属于同一大模型家族。' },
+        coreAbilityFailures: 3,
+        subScores: {modelIdentity:4,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:4,needle:0,consistency:2}
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getScoreGrade(capped);
+    const risk = getModelIntegrityRiskLevel(18, checks.modelIntegrity.evidence);
+    return { raw: final, capped, grade, risk, desc: `Case MI-ABILITY-1: family_match + caf=3 → risk=${risk} (expected high due to coreFailures>=3)` };
+  },
+
+  // Case MI-PROXY-1: platform_or_proxy_identity, caf=0, score=24 → MEDIUM (NOT high)
+  caseMI_PROXY_1() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 24, status: 'excellent',
+      evidence: {
+        modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
+        sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'aws bedrock', evidenceText: 'AWS Bedrock', explanation: '检测到平台代理层身份暴露。' },
+        coreAbilityFailures: 0,
+        subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:4,needle:4,consistency:2}
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getScoreGrade(capped);
+    const risk = getModelIntegrityRiskLevel(24, checks.modelIntegrity.evidence);
+    return { raw: final, capped, grade, risk, desc: `Case MI-PROXY-1: platform_or_proxy_identity, caf=0, score=24 → risk=${risk} (expected medium, NOT high)` };
+  },
+
+  // Case MI-AMBIGUOUS-1: ambiguous, caf=0, score=23 → MEDIUM (NOT high)
+  caseMI_AMBIGUOUS_1() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 23, status: 'excellent',
+      evidence: {
+        modelIdentityScore: 1.5, modelIdentityLevel: 'ambiguous',
+        sourceTransparency: { category: 'ambiguous', label: '身份未确认', riskLevel: 'medium', detectedSource: null, evidenceText: "I don't have access to the exact model name", explanation: '模型身份未能明确确认，结论置信度降低。' },
+        coreAbilityFailures: 0,
+        subScores: {modelIdentity:1.5,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:4,needle:4,consistency:2}
+      }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getScoreGrade(capped);
+    const risk = getModelIntegrityRiskLevel(23, checks.modelIntegrity.evidence);
+    return { raw: final, capped, grade, risk, desc: `Case MI-AMBIGUOUS-1: ambiguous, caf=0, score=23 → risk=${risk} (expected medium, NOT high)` };
+  },
+
   runAll() {
-    const results = ['A','B','K','L','M','N','O','P','Q','V','W','X','Y','Z','AA','AB','AC','AD','AE','AF-1','AF-2','AG-1','AG-2','AH-1','AH-2','AI','AJ','AK','AL','AM','AN','AO','AP','AQ','AR','AS','AT','AU','AV','AW','AX','AY','AZ-1','AZ-2','BA-1','BA-2','BB','BC','BD','BE','BF','BG','BH','BI','BJ','BK','BL','BM','BN','BO','BU','BV','BW','BX','BY','BZ','CA','CB','CC','CD','CE','CF','CG','CH','CI','CJ','CL','CM','CN','CO','CP','CACHE-A','CACHE-B','CACHE-C','CACHE-D','CACHE-E','CACHE-F','CACHE-G','CACHE-H','CACHE-I','CACHE-J','CACHE-K','CACHE-L','CACHE-M','CACHE-N','CACHE-O','CACHE-P','CACHE-Q','CACHE-TIMEOUT-1','CACHE-TIMEOUT-2','CACHE-NETWORK-ERR','CACHE-SLOW-BUT-OK','CACHE-LENGTH-LOW'].map(c => {
+    const results = ['A','B','K','L','M','N','O','P','Q','V','W','X','Y','Z','AA','AB','AC','AD','AE','AF-1','AF-2','AG-1','AG-2','AH-1','AH-2','AI','AJ','AK','AL','AM','AN','AO','AP','AQ','AR','AS','AT','AU','AV','AW','AX','AY','AZ-1','AZ-2','BA-1','BA-2','BB','BC','BD','BE','BF','BG','BH','BI','BJ','BK','BL','BM','BN','BO','BU','BV','BW','BX','BY','BZ','CA','CB','CC','CD','CE','CF','CG','CH','CI','CJ','CL','CM','CN','CO','CP','CACHE-A','CACHE-B','CACHE-C','CACHE-D','CACHE-E','CACHE-F','CACHE-G','CACHE-H','CACHE-I','CACHE-J','CACHE-K','CACHE-L','CACHE-M','CACHE-N','CACHE-O','CACHE-P','CACHE-Q','CACHE-TIMEOUT-1','CACHE-TIMEOUT-2','CACHE-NETWORK-ERR','CACHE-SLOW-BUT-OK','CACHE-LENGTH-LOW','MI-FAMILY-1','MI-FAMILY-2','MI-WRONG-1','MI-WRONG-2','MI-ABILITY-1','MI-PROXY-1','MI-AMBIGUOUS-1'].map(c => {
       const r = this['case' + c.replace('-','_')] ? this['case' + c.replace('-','_')]() : null;
       return r ? `${r.desc} | Grade: ${r.grade?.grade || '?'} ${r.grade?.labelZh || ''}` : `Case ${c}: not found`;
     });
