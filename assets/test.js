@@ -1821,12 +1821,13 @@ function evaluateModelIdentity(identityText, finalTestModelId) {
   }
 
   // ── Step 5: Platform / proxy / IDE / Agent identity ──
-  // Only count if there's a strong entity OR a positive (not negative) weak platform word.
-  // NOT triggered by "serving platform" in a "don't know" sentence.
+  // Rules:
+  // - MUST have a STRONG entity keyword (Windsurf, Cursor, AWS Bedrock, etc.)
+  // - MUST NOT be a negative/unknown framing (avoid "I don't know... serving platform")
+  // - Weak platform words (gateway, relay, serving platform, etc.) alone → ambiguous
   const hasStrong = hasStrongEntity(rawResponse);
-  const hasWeak = hasWeakPlatformWord(rawResponse);
 
-  if (hasStrong || hasWeak) {
+  if (hasStrong && !isNegativeUnknownResponse(rawResponse)) {
     return {
       category: 'platform_or_proxy_identity',
       score: 3,
@@ -1836,6 +1837,9 @@ function evaluateModelIdentity(identityText, finalTestModelId) {
       detectedSource: extractDetectedSource(rawResponse),
     };
   }
+  // Weak platform words without a strong entity → ambiguous (identity unconfirmed)
+  // e.g. "served through OpenAI-compatible gateway" → ambiguous, not platform proxy
+  // This prevents "平台代理层暴露" from appearing without explicit platform entity
 
   // ── Step 6: Fallback ambiguous ──
   return {
@@ -2070,8 +2074,8 @@ async function checkK_ModelIntegrity(baseUrl, apiKey, model, interfaceType, sign
     exact_match: zh ? '核心能力测试表现正常，未发现明显降配信号' : 'Core capability tests normal — no significant downgrade signals',
     family_match: zh ? '模型属于同一家族，核心能力测试表现基本正常' : 'Model in same family — core capability tests basically normal',
     platform_or_proxy_identity: zh
-      ? `检测到平台代理层身份暴露：${detectedSource || ''}`
-      : `Platform proxy layer identity detected: ${detectedSource || ''}`,
+      ? (detectedSource ? `检测到平台代理层身份暴露：${detectedSource}` : `检测到平台代理层身份暴露`)
+      : (detectedSource ? `Platform proxy layer identity detected: ${detectedSource}` : `Platform proxy layer identity detected`),
     ambiguous: zh ? '模型身份未能明确确认，存在来源不透明风险' : 'Model identity not clearly confirmed — source transparency uncertain',
     wrong_family: zh ? '模型自报家族与目标 Model ID 不一致，存在降配疑似风险' : 'Model self-reported family inconsistent with target — possible downgrade risk',
     hard_contamination: zh ? '检测到工具人格或系统提示污染信号，建议谨慎使用' : 'Tool persona or system prompt contamination detected — use with caution',
@@ -2738,21 +2742,25 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
       </div>`;
     }
 
-    // modelIntegrity summary compression (section 六)
+    // modelIntegrity summary: prioritize high-risk signals for summary text
     let summaryText = checkData.summary || '';
     if (checkKey === 'modelIntegrity') {
       const idCat = checkData.evidence?.modelIdentityLevel || 'exact_match';
-      if (idCat === 'platform_or_proxy_identity' || idCat === 'proxy_route_identity') {
-        const ds = checkData.evidence?.sourceTransparency?.detectedSource;
-        summaryText = ds
-          ? (zh ? `来源透明度较低：${ds}` : `Low source transparency: ${ds}`)
-          : (zh ? '来源透明度较低' : 'Low source transparency');
-      } else if (idCat === 'ambiguous') {
-        summaryText = zh ? '模型身份未确认' : 'Model identity unconfirmed';
+      const caf = checkData.evidence?.coreAbilityFailures ?? 0;
+      // High-risk causes take priority in summary
+      if (caf >= 2) {
+        summaryText = zh ? '模型能力测试异常' : 'Model capability test abnormal';
       } else if (idCat === 'wrong_family') {
         summaryText = zh ? '模型家族不一致' : 'Model family inconsistent';
       } else if (idCat === 'hard_contamination') {
         summaryText = zh ? '工具人格污染信号' : 'Tool persona contamination';
+      } else if (idCat === 'ambiguous') {
+        summaryText = zh ? '模型身份未确认' : 'Model identity unconfirmed';
+      } else if (idCat === 'platform_or_proxy_identity' || idCat === 'proxy_route_identity') {
+        const ds = checkData.evidence?.sourceTransparency?.detectedSource;
+        summaryText = ds
+          ? (zh ? `来源透明度较低：${ds}` : `Low source transparency: ${ds}`)
+          : (zh ? '来源透明度较低' : 'Low source transparency');
       }
     }
 
@@ -2882,7 +2890,7 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
       const decisionText = decisionMap[g] || '';
       const decisionColors = { A: { bg: '#dcfce7', color: '#166534' }, B: { bg: '#dcfce7', color: '#166534' }, C: { bg: '#fef9c3', color: '#92400e' }, D: { bg: '#fef3c7', color: '#b45309' }, E: { bg: '#fee2e2', color: '#991b1b' }, F: { bg: '#fee2e2', color: '#991b1b' } };
       const dc = decisionColors[g] || decisionColors.C;
-      return decisionText ? `<div style="background:${dc.bg};border-radius:8px;padding:6px 12px;margin-bottom:8px;font-size:11px;color:${dc.color};line-height:1.4"><b>${zh ? '建议：' : 'Advice: '}</b>${escH(decisionText)}</div>` : '';
+      return decisionText ? `<div style="background:${dc.bg};border-radius:8px;padding:6px 12px;margin-bottom:8px;font-size:11px;color:${dc.color};line-height:1.4"><b>${zh ? '决策：' : 'Decision: '}</b>${escH(decisionText)}</div>` : '';
     })()}
 
     <!-- 5 module sections -->
@@ -3283,8 +3291,8 @@ window.Doctor = {
     const decisionText = decisionMap[g] || '';
     const maskedUrl = (typeof Doctor !== 'undefined' && Doctor._formData) ? maskBaseUrlForShare(Doctor._formData.baseUrl || '') : '';
     const text = zh
-      ? `AI API Doctor 验货报告\nURL: ${maskedUrl}\n验货分：${score}/100，${gradeLabel}\n扣费透明度：${costLabel}\n缓存命中检测：${cacheLabel}${cacheTimeoutSuffix}${cacheRateText}\n模型可信度：${modelLabel}\n稳定性：${stabilityLabel}\n来源透明度：${srcLabelCopy}\n主要建议：${suggestions[0] || '-'}\n建议：${decisionText}\n本报告仅基于可复现 API 信号，不构成最终证明。\nID：${reportId} · aiapidoctor.com`
-      : `AI API Doctor Report\nURL: ${maskedUrl}\nScore: ${score}/100, ${grade?.label || ''}\nCost: ${costLabel}\nCache Hit: ${cacheLabel}${cacheTimeoutSuffix}${cacheRateText}\nModel: ${modelLabel}\nStability: ${stabilityLabel}\nSource: ${srcLabelCopy}\nMain advice: ${suggestions[0] || '-'}\nAdvice: ${decisionText}\nBased on reproducible API signals only.\nID: ${reportId} · aiapidoctor.com`;
+      ? `AI API Doctor 验货报告\nURL: ${maskedUrl}\n验货分：${score}/100，${gradeLabel}\n扣费透明度：${costLabel}\n缓存命中检测：${cacheLabel}${cacheTimeoutSuffix}${cacheRateText}\n模型可信度：${modelLabel}\n稳定性：${stabilityLabel}\n来源透明度：${srcLabelCopy}\n主要建议：${suggestions[0] || '-'}\n决策：${decisionText}\n本报告仅基于可复现 API 信号，不构成最终证明。\nID：${reportId} · aiapidoctor.com`
+      : `AI API Doctor Report\nURL: ${maskedUrl}\nScore: ${score}/100, ${grade?.label || ''}\nCost: ${costLabel}\nCache Hit: ${cacheLabel}${cacheTimeoutSuffix}${cacheRateText}\nModel: ${modelLabel}\nStability: ${stabilityLabel}\nSource: ${srcLabelCopy}\nMain advice: ${suggestions[0] || '-'}\nDecision: ${decisionText}\nBased on reproducible API signals only.\nID: ${reportId} · aiapidoctor.com`;
     copyToClipboard(text, zh ? '验货分已复制' : 'Score copied');
   }
 };
