@@ -1407,7 +1407,9 @@ async function checkN_CacheHitCheck(baseUrl, apiKey, model, interfaceType, signa
       maxScore: 5, score: 2, status: 'error', summary, details, deductions: [],
       evidence: { ...evidence, timeout: !!r2.timeout, timeoutMs: CACHE_PROBE_TIMEOUT_MS, totalTimeoutMs: CACHE_PROBE_TOTAL_TIMEOUT_MS, statusColor: { color: '#f59e0b', bg: '#fef9c3' } }
     });
-    // ── Both succeeded: normal scoring ─────────────────────────────────
+  }
+
+  // ── Both succeeded: normal scoring ─────────────────────────────────
   let scoreA = cache2.fieldFound ? 1 : 0;
   let scoreB = 0;
   if (cache2.cacheHitRate != null) {

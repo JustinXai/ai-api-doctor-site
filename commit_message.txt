@@ -1,24 +1,13 @@
-fix: cache probe validity — token threshold gate, early return, probe details, mock cases
+fix: add missing } closing brace in checkN_CacheHitCheck
 
-1. Extend cache probe prompt:
-   - PART_A: 673 words (up from 241), PART_B: 633 words (up from 154),
-     PART_C: 606 words (up from 170)
-   - Total ~1921 words ≈ 2554 estimated tokens (targeting >=1500 actual API tokens)
-   - Both requests use the identical prompt string — no timestamps, no random IDs
+Root cause: the if (!r2.success) block at ~line 1409 was missing its
+closing brace }, causing ALL subsequent code (scoreA-E, status, summary,
+scoreConfig, the return statement, everything) to be INSIDE the r2-failure
+if block. This made all the nested let declarations in sibling if/else
+branches conflict (let summary declared 3 times across nested branches
+inside the same parent scope), triggering a SyntaxError.
 
-2. actualPromptTokens < 1024 gate (first priority, before all other checks):
-   - Returns early with status=unknown, score=2.5, summary='探测长度不足...'
-   - detail includes actualPromptTokens value
-   - evidence includes: probeTokenSufficient=false, actualPromptTokens, minPromptTokensRequired=1024
+Fix: add the missing } after the r2-failure early return block.
 
-3. Update cacheHitHtml (moduleSection):
-   - Adds green/yellow badge: "探测长度足够/不足" + actual tokens + threshold
-   - Shows actualPromptTokens, threshold (1024), sufficiency in expanded detail
-   - "API 未暴露缓存字段" only shown when actualPromptTokens >= 1024 and no field
-
-4. Add mock cases:
-   - CACHE-O: actualPromptTokens=221, status=unknown, score=2.5,
-     summary='探测长度不足...', probeTokenSufficient=false, NO field error
-   - CACHE-P: actualPromptTokens=1300, no cache field → status=unknown, score=2.5,
-     summary='API 未暴露缓存字段...'
-   - CACHE-Q: actualPromptTokens=1300, cachedTokens=0, fieldFound=true → status=none, score=1.0
+This was the real reason the button didn't work — the entire JS script
+failed to parse, window.Doctor was never defined, and Doctor.run() threw.
