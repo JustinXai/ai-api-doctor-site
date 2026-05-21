@@ -2260,6 +2260,175 @@ function stabilityLabelZH(score) { return score >= 13 ? '优秀' : score >= 9 ? 
 function stabilityLabelEN(score) { return score >= 13 ? 'Excellent' : score >= 9 ? 'Good' : score >= 5 ? 'Usable' : 'Poor'; }
 
 /* ═══════════════════════════════════════════════════════
+   Failure Summary — structured failure reason for Failed/low-score reports
+   ═══════════════════════════════════════════════════════ */
+/**
+ * Generate a structured failure summary for low-score / Failed reports.
+ * Returns { shouldShow, primaryReason, secondaryReason, reasons, shortText, detailText }
+ * Only populates reasons that are actually detected from evidence.
+ */
+function generateFailureSummary(score, grade, checks) {
+  const zh = getDocLang() !== 'en';
+  const reasons = [];
+  const addReason = (code, label, severity, evidence, module) => {
+    if (!reasons.some(r => r.code === code)) {
+      reasons.push({ code, label, severity, evidence, module });
+    }
+  };
+
+  // ── P1: Base URL unreachable ──
+  const reachScore = checks.reachability?.score || 0;
+  const reachStatus = checks.reachability?.status || 'unknown';
+  if (reachScore === 0 || reachStatus === 'failed') {
+    const evidenceText = checks.reachability?.summary ||
+      (zh ? 'Base URL 请求失败或返回非 API 响应' : 'Base URL request failed or returned non-API response');
+    addReason('BASE_URL_UNREACHABLE',
+      zh ? 'Base URL 不可达' : 'Base URL unreachable',
+      'critical', evidenceText, 'compatibility');
+  }
+
+  // ── P2: Auth failure ──
+  const authScore = checks.auth?.score || 0;
+  const authStatus = checks.auth?.status || 'unknown';
+  if (authScore === 0 || authStatus === 'failed') {
+    const evidenceText = checks.auth?.summary ||
+      (zh ? 'API 返回 401/403 或鉴权错误' : 'API returned 401/403 or authentication error');
+    addReason('AUTH_FAILED',
+      zh ? 'Key 鉴权失败' : 'API key authentication failed',
+      'critical', evidenceText, 'auth');
+  }
+
+  // ── P3: Target model not callable ──
+  const tcScore = checks.targetCall?.score || 0;
+  const tcMax = checks.targetCall?.maxScore || 22;
+  const tcStatus = checks.targetCall?.status || 'unknown';
+  if (tcScore === 0 || tcScore < 5 || tcStatus === 'failed') {
+    const evidenceText = checks.targetCall?.summary ||
+      (zh ? '目标模型调用失败，无法完成核心测试' : 'Target model call failed — unable to complete core tests');
+    addReason('TARGET_MODEL_FAILED',
+      zh ? '目标模型不可调用' : 'Target model is not callable',
+      'critical', evidenceText, 'model');
+  }
+
+  // ── P4: Non-compatible response ──
+  const tcResponse = checks.targetCall?.evidence?.responseParsed;
+  if (!tcResponse || (tcResponse && !tcResponse.choices)) {
+    // Only flag if target call at least partially succeeded but response format is wrong
+    if (tcScore > 0) {
+      addReason('NON_COMPATIBLE_RESPONSE',
+        zh ? '返回格式不兼容' : 'Response is not OpenAI-compatible',
+        'critical',
+        zh ? '接口返回不符合 OpenAI-compatible chat/completions 格式' : 'Response does not conform to OpenAI-compatible chat/completions format',
+        'response');
+    }
+  }
+
+  // ── P5: Usage abnormal ──
+  const costRisk = checks.costTransparency?.evidence ? getCostRiskLevel(checks.costTransparency.score || 0) : 'low';
+  const usageEvidence = checks.costTransparency?.evidence;
+  const hasUsage = !!(checks.targetCall?.evidence?.usage && Object.keys(checks.targetCall.evidence.usage).length > 0);
+  if (costRisk === 'high' || !hasUsage) {
+    addReason('USAGE_ABNORMAL',
+      zh ? 'usage 明细缺失或异常' : 'Usage fields are missing or abnormal',
+      'high',
+      usageEvidence?.usageIssue ||
+      (zh ? 'usage 字段不完整或 token 统计异常，难以核对实际扣费' : 'usage fields incomplete or token stats abnormal — hard to audit actual billing'),
+      'usage');
+  }
+
+  // ── P6: Stability failed ──
+  const stabScore = checks.stability?.score || 0;
+  const stabRisk = getStabilityRiskLevel(stabScore, checks);
+  const stabEvidence = checks.stability?.evidence || {};
+  if (stabRisk === 'high' || stabScore < 8) {
+    addReason('STABILITY_FAILED',
+      zh ? '稳定性采样失败或严重波动' : 'Stability sampling failed or fluctuated significantly',
+      'high',
+      stabEvidence.avgLatency > 3000 || stabEvidence.maxLatency > 10000 || stabEvidence.latencyJitter > 5000
+        ? (zh ? `延迟异常：平均 ${Math.round(stabEvidence.avgLatency)}ms，最大 ${stabEvidence.maxLatency}ms，波动 ${Math.round(stabEvidence.latencyJitter)}ms` : `Latency abnormal: avg ${Math.round(stabEvidence.avgLatency)}ms, max ${stabEvidence.maxLatency}ms, jitter ${Math.round(stabEvidence.latencyJitter)}ms`)
+        : (zh ? '稳定性采样失败、超时或延迟波动过大' : 'Stability sampling failed, timed out, or excessive latency fluctuation'),
+      'stability');
+  }
+
+  // ── P7: Identity test failed ──
+  const idCat = checks.modelIntegrity?.evidence?.modelIdentityLevel || 'exact_match';
+  const idStatus = checks.modelIntegrity?.status || 'excellent';
+  if (idCat === 'failed' || idCat === 'empty' || idStatus === 'failed') {
+    addReason('IDENTITY_TEST_FAILED',
+      zh ? '模型身份测试失败' : 'Model identity test failed',
+      'medium',
+      zh ? '模型身份探测请求失败，无法判断来源透明度' : 'Model identity probe request failed — cannot determine source transparency',
+      'source');
+  }
+
+  // ── P8: Model ability abnormal ──
+  const modelRisk = checks.modelIntegrity?.evidence
+    ? getModelIntegrityRiskLevel(checks.modelIntegrity.score || 0, checks.modelIntegrity.evidence)
+    : getModelIntegrityRiskLevel(checks.modelIntegrity?.score || 0, null);
+  const caf = checks.modelIntegrity?.evidence?.coreAbilityFailures || 0;
+  if (modelRisk === 'high' || caf >= 3 || idCat === 'wrong_family' || idCat === 'hard_contamination') {
+    addReason('MODEL_ABILITY_FAILED',
+      zh ? '模型能力测试异常' : 'Model ability checks failed',
+      'high',
+      zh
+        ? `核心能力测试异常（${caf} 项失败）${idCat === 'wrong_family' ? '，模型家族不一致' : idCat === 'hard_contamination' ? '，工具人格污染' : ''}`
+        : `Core ability tests abnormal (${caf} failures)${idCat === 'wrong_family' ? ', model family inconsistent' : idCat === 'hard_contamination' ? ', tool persona contamination' : ''}`,
+      'model');
+  }
+
+  // ── P9: Cache skipped ──
+  const cacheStatus = checks.cacheHitCheck?.status || 'unknown';
+  if (cacheStatus === 'skipped') {
+    addReason('CACHE_SKIPPED',
+      zh ? '缓存检测跳过' : 'Cache check skipped',
+      'low',
+      zh ? '由于前置模型调用或 usage 检测未满足条件，缓存检测未执行' : 'Cache check not executed due to failed prerequisite model call or usage detection',
+      'cache');
+  }
+
+  // ── Determine shouldShow ──
+  const g = grade?.grade || 'C';
+  const shouldShow = (
+    score < 40 ||
+    g === 'F' ||
+    g === 'E' ||
+    costRisk === 'high' ||
+    modelRisk === 'high' ||
+    stabRisk === 'high' ||
+    idCat === 'failed' ||
+    cacheStatus === 'skipped' ||
+    reachScore === 0 ||
+    authScore === 0 ||
+    tcScore < 5
+  );
+
+  if (!shouldShow || reasons.length === 0) {
+    return { shouldShow: false, primaryReason: null, secondaryReason: null, reasons: [], shortText: '', detailText: '' };
+  }
+
+  const primary = reasons[0];
+  const secondary = reasons[1] || null;
+
+  const primaryText = primary.label;
+  const secondaryText = secondary ? (zh
+    ? `；同时存在 ${secondary.label}`
+    : `; also: ${secondary.label}`)
+    : '';
+
+  const shortText = primaryText + secondaryText;
+  const detailText = reasons.map(r => `• ${r.label}：${r.evidence}`).join('\n');
+
+  return {
+    shouldShow: true,
+    primaryReason: primaryText,
+    secondaryReason: secondary ? secondaryText.replace(/^；同时存在 |^; also /, '') : null,
+    reasons,
+    shortText,
+    detailText,
+  };
+}
+
+/* ═══════════════════════════════════════════════════════
    Conclusion confidence level
    high: usage complete, all tests passed, no inconsistencies
    medium: usage partial, proxy_route_identity, 1 failure, stability medium
@@ -2596,7 +2765,7 @@ function generateSuggestions(checks, modelIdInfo) {
    ═══════════════════════════════════════════════════════ */
 function buildReportCardHTML(result, formData, lang, modelIdInfo) {
   const zh = lang !== 'en';
-  const { score, checks, reportId, deepMode, toolCallingResult } = result;
+  const { score, checks, reportId, deepMode, toolCallingResult, failureSummary } = result;
   const grade = getScoreGrade(score);
   const escH = s => esc(String(s || ''));
   const riskColors = { low: { color: '#16a34a', bg: '#dcfce7' }, medium: { color: '#d97706', bg: '#fef9c3' }, high: { color: '#dc2626', bg: '#fee2e2' } };
@@ -2938,6 +3107,16 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
     <!-- Verdict description (short, one line) -->
     <div style="background:#fff;border-radius:12px;padding:8px 14px;margin-bottom:8px;font-size:11px;color:#374151;line-height:1.5">${escH(verdictDesc)}</div>
 
+    <!-- Failure summary — only shown when shouldShow -->
+    ${failureSummary?.shouldShow ? (() => {
+      const isFailed = grade.grade === 'F' || grade.grade === 'E';
+      const bgColor = isFailed ? '#fff5f5' : '#fffbeb';
+      const borderColor = isFailed ? '#fecaca' : '#fde68a';
+      const textColor = isFailed ? '#991b1b' : '#92400e';
+      const label = zh ? '失败主因：' : 'Main failure reason: ';
+      return `<div style="background:${bgColor};border:1px solid ${borderColor};border-radius:8px;padding:8px 14px;margin-bottom:8px;font-size:11px;color:${textColor};line-height:1.5"><b>${label}</b>${escH(failureSummary.shortText)}</div>`;
+    })() : ''}
+
     <!-- Grade-based decision recommendation (one line, compact) -->
     ${(() => {
       const g = grade.grade;
@@ -3184,7 +3363,8 @@ window.Doctor = {
       const cappedScore = applyCaps(finalScore, checks, modelIdInfo);
       const grade = getScoreGrade(cappedScore);
       const judgment = getJudgment(cappedScore, checks);
-      this._result = { score: cappedScore, finalScore, grade, judgment, checks, deepMode, toolCallingResult, modelIdInfo, reportId: generateReportId(), timestamp: new Date().toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) };
+      const failureSummary = generateFailureSummary(cappedScore, grade, checks);
+      this._result = { score: cappedScore, finalScore, grade, judgment, checks, deepMode, toolCallingResult, modelIdInfo, reportId: generateReportId(), timestamp: new Date().toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }), failureSummary };
       this._refreshProgress(8, 'excellent', zh ? '生成报告' : 'Report ready');
       this.showResult(this._result);
     } catch (err) {
@@ -3302,7 +3482,7 @@ window.Doctor = {
   copyScore() {
     if (!this._result) { showToast(getDocLang() !== 'en' ? '请先检测' : 'Please run check first'); return; }
     const zh = getDocLang() !== 'en';
-    const { score, grade, reportId, deepMode, checks } = this._result;
+    const { score, grade, reportId, deepMode, checks, failureSummary } = this._result;
     const modeLabel = deepMode ? (zh ? '深度验货' : 'Deep Check') : (zh ? '一键验货' : 'One-Click');
     const costRisk = getCostRiskLevel(checks?.costTransparency?.score || 0);
     const modelRisk = getModelIntegrityRiskLevel(checks?.modelIntegrity?.score || 0, checks?.modelIntegrity?.evidence);
@@ -3352,9 +3532,12 @@ window.Doctor = {
     };
     const decisionText = decisionMap[g] || '';
     const maskedUrl = (typeof Doctor !== 'undefined' && Doctor._formData) ? maskBaseUrlForShare(Doctor._formData.baseUrl || '') : '';
+    const failureLine = (failureSummary?.shouldShow && failureSummary.shortText)
+      ? (zh ? `\n失败主因：${failureSummary.shortText}` : `\nMain failure reason: ${failureSummary.shortText}`)
+      : '';
     const text = zh
-      ? `AI API Doctor 验货报告\nURL: ${maskedUrl}\n验货分：${score}/100，${gradeLabel}\n扣费透明度：${costLabel}\n缓存命中检测：${cacheLabel}${cacheTimeoutSuffix}${cacheRateText}\n模型可信度：${modelLabel}\n稳定性：${stabilityLabel}\n来源透明度：${srcLabelCopy}\n主要建议：${suggestions[0] || '-'}\n决策：${decisionText}\n本报告仅基于可复现 API 信号，不构成最终证明。\nID：${reportId} · aiapidoctor.com`
-      : `AI API Doctor Report\nURL: ${maskedUrl}\nScore: ${score}/100, ${grade?.label || ''}\nCost: ${costLabel}\nCache Hit: ${cacheLabel}${cacheTimeoutSuffix}${cacheRateText}\nModel: ${modelLabel}\nStability: ${stabilityLabel}\nSource: ${srcLabelCopy}\nMain advice: ${suggestions[0] || '-'}\nDecision: ${decisionText}\nBased on reproducible API signals only.\nID: ${reportId} · aiapidoctor.com`;
+      ? `AI API Doctor 验货报告\nURL: ${maskedUrl}\n验货分：${score}/100，${gradeLabel}\n扣费透明度：${costLabel}\n缓存命中检测：${cacheLabel}${cacheTimeoutSuffix}${cacheRateText}\n模型可信度：${modelLabel}\n稳定性：${stabilityLabel}\n来源透明度：${srcLabelCopy}${failureLine}\n主要建议：${suggestions[0] || '-'}\n决策：${decisionText}\n本报告仅基于可复现 API 信号，不构成最终证明。\nID：${reportId} · aiapidoctor.com`
+      : `AI API Doctor Report\nURL: ${maskedUrl}\nScore: ${score}/100, ${grade?.label || ''}\nCost: ${costLabel}\nCache Hit: ${cacheLabel}${cacheTimeoutSuffix}${cacheRateText}\nModel: ${modelLabel}\nStability: ${stabilityLabel}\nSource: ${srcLabelCopy}${failureLine}\nMain advice: ${suggestions[0] || '-'}\nDecision: ${decisionText}\nBased on reproducible API signals only.\nID: ${reportId} · aiapidoctor.com`;
     copyToClipboard(text, zh ? '验货分已复制' : 'Score copied');
   }
 };
@@ -5256,8 +5439,150 @@ window.MockCases = {
     return { raw: final, capped, grade, risk, desc: `Case MI-AMBIGUOUS-1: ambiguous, caf=0, score=23 → risk=${risk} (expected medium, NOT high)` };
   },
 
+  // ── Failure Summary Mock Cases ──────────────────────────────────────
+
+
+  // Case FAIL-1: baseReachability failed -> BASE_URL_UNREACHABLE
+  caseFAIL_1() {
+    const checks = this._makeNormalChecks();
+    checks.reachability = mkCheck({ id: 'reachability', score: 0, status: 'failed', summary: 'Base URL 不可达' });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getScoreGrade(capped);
+    const fs = generateFailureSummary(capped, grade, checks);
+    const descStr = 'FAIL-1: base failed shouldShow=' + fs.shouldShow + ' primary=' + (fs.primaryReason || 'null');
+    return { raw: final, capped, grade, fs, desc: descStr };
+  },
+
+  // Case FAIL-2: auth 401 -> AUTH_FAILED
+  caseFAIL_2() {
+    const checks = this._makeNormalChecks();
+    checks.auth = mkCheck({ id: 'auth', score: 0, status: 'failed', summary: 'API Key 鉴权失败' });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getScoreGrade(capped);
+    const fs = generateFailureSummary(capped, grade, checks);
+    const descStr = 'FAIL-2: auth 401 shouldShow=' + fs.shouldShow + ' primary=' + (fs.primaryReason || 'null');
+    return { raw: final, capped, grade, fs, desc: descStr };
+  },
+
+  // Case FAIL-3: targetModelCall failed + usage high -> TARGET_MODEL_FAILED + USAGE_ABNORMAL
+  caseFAIL_3() {
+    const checks = this._makeNormalChecks();
+    checks.targetCall = mkCheck({ id: 'targetCall', score: 0, maxScore: 22, status: 'failed', summary: '目标模型不可调用' });
+    checks.costTransparency = mkCheck({ id: 'costTransparency', score: 15, status: 'warning', summary: 'usage 字段不完整' });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getScoreGrade(capped);
+    const fs = generateFailureSummary(capped, grade, checks);
+    const descStr = 'FAIL-3: target failed + usage high shouldShow=' + fs.shouldShow + ' primary=' + (fs.primaryReason || 'null') + ' secondary=' + (fs.secondaryReason || 'null');
+    return { raw: final, capped, grade, fs, desc: descStr };
+  },
+
+  // Case FAIL-4: usage missing + stability high -> USAGE_ABNORMAL + STABILITY_FAILED
+  caseFAIL_4() {
+    const checks = this._makeNormalChecks();
+    checks.targetCall.evidence = {};
+    checks.costTransparency = mkCheck({ id: 'costTransparency', score: 18, status: 'warning', summary: 'usage 缺失' });
+    checks.stability = mkCheck({ id: 'stability', score: 5, status: 'warning', evidence: { avgLatency: 4000, maxLatency: 12000, latencyJitter: 6000, samples: [{ok:true},{ok:false},{ok:false}] } });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getScoreGrade(capped);
+    const fs = generateFailureSummary(capped, grade, checks);
+    const descStr = 'FAIL-4: usage missing + stability high shouldShow=' + fs.shouldShow + ' primary=' + (fs.primaryReason || 'null') + ' secondary=' + (fs.secondaryReason || 'null');
+    return { raw: final, capped, grade, fs, desc: descStr };
+  },
+
+  // Case FAIL-5: sourceTransparency test_failed only -> IDENTITY_TEST_FAILED
+  caseFAIL_5() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', score: 0, status: 'failed',
+      evidence: { modelIdentityLevel: 'failed', coreAbilityFailures: 0, modelIdentityScore: 0, subScores: {} }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getScoreGrade(capped);
+    const fs = generateFailureSummary(capped, grade, checks);
+    const descStr = 'FAIL-5: identity test_failed shouldShow=' + fs.shouldShow + ' primary=' + (fs.primaryReason || 'null');
+    return { raw: final, capped, grade, fs, desc: descStr };
+  },
+
+  // Case FAIL-6: cache skipped + no other severe issue -> CACHE_SKIPPED only
+  caseFAIL_6() {
+    const checks = this._makeNormalChecks();
+    checks.cacheHitCheck = mkCheck({ id: 'cacheHitCheck', score: 2, status: 'skipped', summary: '缓存检测跳过' });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getScoreGrade(capped);
+    const fs = generateFailureSummary(capped, grade, checks);
+    const descStr = 'FAIL-6: cache skipped shouldShow=' + fs.shouldShow + ' primary=' + (fs.primaryReason || 'null');
+    return { raw: final, capped, grade, fs, desc: descStr };
+  },
+
+  // Case FAIL-7: cache unknown only -> shouldShow=false
+  caseFAIL_7() {
+    const checks = this._makeNormalChecks();
+    checks.cacheHitCheck = mkCheck({ id: 'cacheHitCheck', score: 2.5, status: 'unknown', summary: 'API 未暴露缓存字段' });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getScoreGrade(capped);
+    const fs = generateFailureSummary(capped, grade, checks);
+    const descStr = 'FAIL-7: cache unknown only shouldShow=' + fs.shouldShow + ' (expected false)';
+    return { raw: final, capped, grade, fs, desc: descStr };
+  },
+
+  // Case FAIL-8: family_match + score 70 -> shouldShow=false
+  caseFAIL_8() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', score: 30, status: 'excellent',
+      evidence: { modelIdentityLevel: 'family_match', coreAbilityFailures: 0, modelIdentityScore: 4, subScores: { targetCallQuality: 5 } }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getScoreGrade(capped);
+    const fs = generateFailureSummary(capped, grade, checks);
+    const descStr = 'FAIL-8: family_match + score=70 shouldShow=' + fs.shouldShow + ' (expected false)';
+    return { raw: final, capped, grade, fs, desc: descStr };
+  },
+
+  // Case FAIL-9: platform_or_proxy + score 75 -> shouldShow=false
+  caseFAIL_9() {
+    const checks = this._makeNormalChecks();
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', score: 28, status: 'excellent',
+      evidence: { modelIdentityLevel: 'platform_or_proxy_identity', coreAbilityFailures: 0, modelIdentityScore: 3, subScores: { targetCallQuality: 5 } }
+    });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getScoreGrade(capped);
+    const fs = generateFailureSummary(capped, grade, checks);
+    const descStr = 'FAIL-9: platform_or_proxy + score=75 shouldShow=' + fs.shouldShow + ' (expected false)';
+    return { raw: final, capped, grade, fs, desc: descStr };
+  },
+
+  // Case FAIL-10: score=15.8 + multiple failures -> shouldShow=true multiple reasons
+  caseFAIL_10() {
+    const checks = this._makeNormalChecks();
+    checks.costTransparency = mkCheck({ id: 'costTransparency', score: 10, status: 'warning', summary: 'usage 缺失' });
+    checks.targetCall.evidence = {};
+    checks.stability = mkCheck({ id: 'stability', score: 4, status: 'warning', evidence: { avgLatency: 5000, maxLatency: 15000, latencyJitter: 8000, samples: [{ok:true},{ok:false},{ok:false},{ok:false},{ok:false}] } });
+    checks.modelIntegrity = mkCheck({
+      id: 'modelIntegrity', score: 12, status: 'warning',
+      evidence: { modelIdentityLevel: 'failed', coreAbilityFailures: 1, modelIdentityScore: 0, subScores: { targetCallQuality: 2 } }
+    });
+    checks.cacheHitCheck = mkCheck({ id: 'cacheHitCheck', score: 2, status: 'skipped', summary: '缓存检测跳过' });
+    const { final } = calcFinalScore(checks);
+    const capped = applyCaps(final, checks, {});
+    const grade = getScoreGrade(capped);
+    const fs = generateFailureSummary(capped, grade, checks);
+    const descStr = 'FAIL-10: score=15.8 multiple failures shouldShow=' + fs.shouldShow + ' reasons=' + fs.reasons.length + ' primary=' + (fs.primaryReason || 'null');
+    return { raw: final, capped, grade, fs, desc: descStr };
+  },
+
   runAll() {
-    const results = ['A','B','K','L','M','N','O','P','Q','V','W','X','Y','Z','AA','AB','AC','AD','AE','AF-1','AF-2','AG-1','AG-2','AH-1','AH-2','AI','AJ','AK','AL','AM','AN','AO','AP','AQ','AR','AS','AT','AU','AV','AW','AX','AY','AZ-1','AZ-2','BA-1','BA-2','BB','BC','BD','BE','BF','BG','BH','BI','BJ','BK','BL','BM','BN','BO','BU','BV','BW','BX','BY','BZ','CA','CB','CC','CD','CE','CF','CG','CH','CI','CJ','CL','CM','CN','CO','CP','CACHE-A','CACHE-B','CACHE-C','CACHE-D','CACHE-E','CACHE-F','CACHE-G','CACHE-H','CACHE-I','CACHE-J','CACHE-K','CACHE-L','CACHE-M','CACHE-N','CACHE-O','CACHE-P','CACHE-Q','CACHE-TIMEOUT-1','CACHE-TIMEOUT-2','CACHE-NETWORK-ERR','CACHE-SLOW-BUT-OK','CACHE-LENGTH-LOW','MI-FAMILY-1','MI-FAMILY-2','MI-WRONG-1','MI-WRONG-2','MI-ABILITY-1','MI-PROXY-1','MI-AMBIGUOUS-1'].map(c => {
+    const results = ['A','B','K','L','M','N','O','P','Q','V','W','X','Y','Z','AA','AB','AC','AD','AE','AF-1','AF-2','AG-1','AG-2','AH-1','AH-2','AI','AJ','AK','AL','AM','AN','AO','AP','AQ','AR','AS','AT','AU','AV','AW','AX','AY','AZ-1','AZ-2','BA-1','BA-2','BB','BC','BD','BE','BF','BG','BH','BI','BJ','BK','BL','BM','BN','BO','BU','BV','BW','BX','BY','BZ','CA','CB','CC','CD','CE','CF','CG','CH','CI','CJ','CL','CM','CN','CO','CP','CACHE-A','CACHE-B','CACHE-C','CACHE-D','CACHE-E','CACHE-F','CACHE-G','CACHE-H','CACHE-I','CACHE-J','CACHE-K','CACHE-L','CACHE-M','CACHE-N','CACHE-O','CACHE-P','CACHE-Q','CACHE-TIMEOUT-1','CACHE-TIMEOUT-2','CACHE-NETWORK-ERR','CACHE-SLOW-BUT-OK','CACHE-LENGTH-LOW','MI-FAMILY-1','MI-FAMILY-2','MI-WRONG-1','MI-WRONG-2','MI-ABILITY-1','MI-PROXY-1','MI-AMBIGUOUS-1','FAIL-1','FAIL-2','FAIL-3','FAIL-4','FAIL-5','FAIL-6','FAIL-7','FAIL-8','FAIL-9','FAIL-10'].map(c => {
       const r = this['case' + c.replace('-','_')] ? this['case' + c.replace('-','_')]() : null;
       return r ? `${r.desc} | Grade: ${r.grade?.grade || '?'} ${r.grade?.labelZh || ''}` : `Case ${c}: not found`;
     });
