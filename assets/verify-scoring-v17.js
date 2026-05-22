@@ -620,6 +620,68 @@ const TEST_CASES = [
       scoreConsistencyCheck: true,
     }
   },
+  {
+    name: 'Case 16: screenshot_stability_and_normalization',
+    checks: makeChecks({
+      basicCompatibility: { score: 6.6, maxScore: 7, status: 'excellent', evidence: {} }, // Old 6.6/7 → normalized to ~23.6/25
+      clientConfig: { score: 3, maxScore: 3, status: 'excellent', evidence: {} }, // Old 3/3 → normalized to 5/5
+      targetCall: { score: 0, maxScore: 22, status: 'excellent', httpStatus: 200, responseParsed: true, output: 'OK' }, // Override to 0
+      costTransparency: { score: 25, maxScore: 25, status: 'excellent', evidence: { usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 } } },
+      cacheHitCheck: { score: 3.7, maxScore: 5, status: 'warning', evidence: { sourceField: null, probeTokenSufficient: false } },
+      modelIntegrity: {
+        score: 7,
+        maxScore: 15,
+        status: 'warning',
+        evidence: {
+          modelIdentityLevel: 'ambiguous',
+          modelIdentityScore: 7,
+          coreAbilityFailures: 0
+        }
+      },
+      stability: {
+        score: 17, // 5/5 + avg~3040ms(4) + ratio~3.41(1) = 12+4+1=17
+        maxScore: 25,
+        status: 'warning',
+        evidence: {
+          avgLatency: 3040,
+          medianLatency: 2067,
+          maxLatency: 7051,
+          latencyRatio: 3.41,
+          latencyJitter: 5212,
+          stabilitySuccessScore: 12,
+          stabilityAverageLatencyScore: 4,
+          stabilityJitterScore: 1,
+          samples: [
+            {ok: true, status: 200, latency: 2393, hasContent: true},
+            {ok: true, status: 200, latency: 1852, hasContent: true},
+            {ok: true, status: 200, latency: 2067, hasContent: true},
+            {ok: true, status: 200, latency: 7051, hasContent: true},
+            {ok: true, status: 200, latency: 1839, hasContent: true},
+          ]
+        }
+      },
+    }),
+    expected: {
+      minTotalScore: 80, // 23.6 + 25 + 17 + 7 + 3.7 + 5 = 81.3
+      maxTotalScore: 85,
+      noCap: true,
+      capApplied: false,
+      capReason: null,
+      coreCompatScore: 23.6, // 6.6/7 → 23.6/25 (with targetCall=0)
+      coreCompatMax: 25,
+      clientScore: 5, // 3/3 → 5/5
+      clientMax: 5,
+      stabilityScore: 17, // 12 + 4 + 1 = 17 (5/5 + avg3040ms(4) + ratio3.41(1))
+      stabilityMax: 25,
+      stabilityRisk: 'medium', // 17/25 >= 15, < 18 → medium
+      usageScore: 25,
+      usageRisk: 'low',
+      identityScore: 7,
+      identityRisk: 'medium', // ambiguous
+      cacheScore: 3.7,
+      scoreConsistencyCheck: true,
+    }
+  },
 ];
 
 // ─── Run Tests ───────────────────────────────────────────────────

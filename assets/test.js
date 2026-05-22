@@ -816,7 +816,7 @@ async function checkG_Stability(baseUrl, apiKey, model, interfaceType, signal, t
   else if (avgLat <= 1000) avgLatencyScore = 7;
   else if (avgLat <= 1500) avgLatencyScore = 6;
   else if (avgLat <= 2000) avgLatencyScore = 5;
-  else if (avgLat <= 3000) avgLatencyScore = 4;
+  else if (avgLat <= 3500) avgLatencyScore = 4;
   else if (avgLat <= 5000) avgLatencyScore = 2;
   else { avgLatencyScore = 0; deductions.push(zh ? `平均延迟过高：${Math.round(avgLat)}ms` : `Avg latency too high: ${Math.round(avgLat)}ms`); }
 
@@ -825,8 +825,9 @@ async function checkG_Stability(baseUrl, apiKey, model, interfaceType, signal, t
   if (latencyRatio <= 1.2) jitterScore = 5;
   else if (latencyRatio <= 1.5) jitterScore = 4;
   else if (latencyRatio <= 2.0) jitterScore = 3;
-  else if (latencyRatio <= 3.0) jitterScore = 1;
-  else { jitterScore = 0; deductions.push(zh ? `延迟波动严重：${jitter}ms` : `Severe latency jitter: ${jitter}ms`); details.push(zh ? `最大/中位延迟比：${latencyRatio.toFixed(2)}x` : `Max/median ratio: ${latencyRatio.toFixed(2)}x`); }
+  else if (latencyRatio <= 3.0) jitterScore = 2;
+  else if (latencyRatio <= 4.0) jitterScore = 1;
+  else { jitterScore = 0; deductions.push(zh ? `延迟波动严重：${latencyRatio.toFixed(2)}x` : `Severe latency jitter: ${latencyRatio.toFixed(2)}x`); details.push(zh ? `最大/中位延迟比：${latencyRatio.toFixed(2)}x` : `Max/median ratio: ${latencyRatio.toFixed(2)}x`); }
 
   const score = clampScore(successScore + avgLatencyScore + jitterScore, 25);
   evidence.stabilitySuccessScore = successScore;
@@ -3408,8 +3409,9 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
     const label = checkData.label?.[zh ? 'zh' : 'en'] || checkData.label || checkKey;
     const maxScore = checkData.maxScore || 0;
     const actualScore = checkData.score || 0;
-    const status = checkData.status || 'failed';
-    const cfg = statusColor(status);
+    // Use riskLevel for color if available, otherwise fallback to status
+    const risk = riskLevel || 'medium';
+    const cfg = riskColors[risk] || { color: '#6b7280', bg: '#f3f4f6' };
     const rowId = 'rc-row-' + checkKey + '-' + reportId;
     const contentId = 'rc-content-' + checkKey + '-' + reportId;
 
@@ -3817,15 +3819,15 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
       return decisionText ? `<div style="background:${dc.bg};border-radius:8px;padding:6px 12px;margin-bottom:8px;font-size:11px;color:${dc.color};line-height:1.4"><b>${zh ? '使用建议：' : 'Recommendation: '}</b>${escH(decisionText)}</div>` : '';
     })()}
 
-    <!-- 5 module sections -->
+    <!-- 5 module sections - use breakdown for normalized scores -->
     <div style="background:#fff;border-radius:16px;padding:12px 16px;margin-bottom:10px">
       <div style="font-size:11px;font-weight:700;color:#0f172a;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #f1f5f9">${zh ? '6项检测（点击展开详情）' : '6 Modules (tap to expand)'}</div>
-      ${moduleSection('costTransparency', checks.costTransparency, costRisk)}
-      ${moduleSection('cacheHitCheck', checks.cacheHitCheck)}
-      ${moduleSection('modelIntegrity', checks.modelIntegrity, modelRisk)}
-      ${moduleSection('stability', checks.stability, stabilityRisk)}
-      ${moduleSection('basicCompatibility', checks.basicCompatibility)}
-      ${moduleSection('clientConfig', checks.clientConfig)}
+      ${moduleSection('usageTransparency', { ...checks.costTransparency, score: breakdown?.usageTransparency?.score ?? checks.costTransparency?.score, maxScore: breakdown?.usageTransparency?.max ?? 25 }, breakdown?.usageTransparency?.risk)}
+      ${moduleSection('cacheSignal', { ...checks.cacheHitCheck, score: breakdown?.cacheSignal?.score ?? checks.cacheHitCheck?.score, maxScore: breakdown?.cacheSignal?.max ?? 5 }, breakdown?.cacheSignal?.risk)}
+      ${moduleSection('modelIdentity', { ...checks.modelIntegrity, score: breakdown?.modelIdentity?.score ?? checks.modelIntegrity?.score, maxScore: breakdown?.modelIdentity?.max ?? 15 }, breakdown?.modelIdentity?.risk)}
+      ${moduleSection('stabilityLatency', { ...checks.stability, score: breakdown?.stabilityLatency?.score ?? checks.stability?.score, maxScore: breakdown?.stabilityLatency?.max ?? 25 }, breakdown?.stabilityLatency?.risk)}
+      ${moduleSection('coreCompatibility', { ...checks.basicCompatibility, score: breakdown?.coreCompatibility?.score ?? checks.basicCompatibility?.score, maxScore: breakdown?.coreCompatibility?.max ?? 25 }, breakdown?.coreCompatibility?.risk)}
+      ${moduleSection('clientConfig', { ...checks.clientConfig, score: breakdown?.clientConfig?.score ?? checks.clientConfig?.score, maxScore: breakdown?.clientConfig?.max ?? 5 }, breakdown?.clientConfig?.risk)}
     </div>
 
     ${toolCallingHtml}

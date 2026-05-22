@@ -1,13 +1,10 @@
-v1.7 score normalization fix
+UI normalization and stability formula fix
 
-- calcFinalScore now returns totalScore as sum of breakdown scores
-- Add normalizeScore() to scale old 7pt to 25pt (basicCompat) and 3pt to 5pt (clientConfig)
-- Add risk calculation based on score ratios (usage 25/25=low, family_match=medium)
-- Add scoreConsistencyCheck, breakdownTotalRaw, gradeScore for debug
-- Fix getScoreGrade to use gradeScore (normalized) for correct letter grade
-- Fix main risk text: coreCompatibility passing wont show format error
-- Add MODEL_IDENTITY_REVIEW reason for family_match (medium, not high)
-- Downgrade max_tokens warning to config reminder
-- Update verify-scoring-v17.js with Case 15 (score_consistency_from_screenshot)
-- Update run-tests.js with new calcFinalScore signature
-- Cache bust version: v=20260522-rc17e
+- Fix breakdown UI to use normalized scores from breakdown object
+- Use breakdown.coreCompatibility.score instead of checks.basicCompatibility.score
+- Use breakdown.clientConfig.score instead of checks.clientConfig.score
+- Use breakdown risk for moduleSection color, not check status
+- Fix stability avgLatencyScore threshold: 3500ms = 4/8
+- Fix stability jitterScore: ratio 3.0-4.0 = 2/5, ratio 4.0-5.0 = 1/5
+- Add Case 16: screenshot_stability_and_normalization test
+- Cache bust: v=20260522-rc17f
