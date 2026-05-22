@@ -824,7 +824,7 @@ async function checkG_Stability(baseUrl, apiKey, model, interfaceType, signal, t
   else if (score < 12) status = 'warning';
 
   const summary = status === 'excellent' ? (zh ? '完全稳定' : 'Fully stable') : status === 'good' ? `${okCount}/5 成功，平均 ${Math.round(avgLat)}ms` : status === 'warning' ? (zh ? '稳定性波动' : 'Stability fluctuating') : (zh ? '稳定性差' : 'Poor stability');
-  return mkCheck({ id: 'stability', label: { zh: '稳定性采样', en: 'Stability Sampling' }, maxScore: 15, score, status, summary, details, deductions, evidence });
+  return mkCheck({ id: 'stability', label: { zh: '稳定性采样', en: 'Stability Sampling' }, maxScore: 25, score, status, summary, details, deductions, evidence });
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -883,7 +883,7 @@ function checkI_ClientConfig(baseUrl, apiKey, model, modelListResult, targetCall
   if (score < 1.5) status = 'warning';
   if (score < 0.5) status = 'failed';
   const summary = status === 'excellent' ? (zh ? '配置完整可导出' : 'Config complete and exportable') : status === 'warning' ? (zh ? '配置部分可用' : 'Config partially available') : (zh ? '配置不可用' : 'Config not available');
-  return mkCheck({ id: 'clientConfig', label: { zh: '客户端配置', en: 'Client Config' }, maxScore: 3, score, status, summary, details, deductions, evidence });
+  return mkCheck({ id: 'clientConfig', label: { zh: '客户端配置', en: 'Client Config' }, maxScore: 5, score, status, summary, details, deductions, evidence });
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -1206,7 +1206,7 @@ async function checkJ_CostTransparency(baseUrl, apiKey, model, interfaceType, si
     : status === 'good' ? (zh ? 'usage 基本完整' : 'usage mostly complete')
     : status === 'warning' ? (zh ? 'usage 部分缺失' : 'usage partially missing')
     : (zh ? 'usage 明细不完整' : 'usage details incomplete');
-  return mkCheck({ id: 'costTransparency', label: { zh: '扣费透明度', en: 'Cost Transparency' }, maxScore: 30, score: totalScore, status, summary, details, deductions, evidence: { ...evidence, subScores, baseOverhead, deltaRatio } });
+  return mkCheck({ id: 'costTransparency', label: { zh: '扣费透明度', en: 'Cost Transparency' }, maxScore: 25, score: totalScore, status, summary, details, deductions, evidence: { ...evidence, subScores, baseOverhead, deltaRatio } });
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -2394,7 +2394,7 @@ async function checkK_ModelIntegrity(baseUrl, apiKey, model, interfaceType, sign
     : status === 'warning'
     ? (zh ? '部分能力测试未完全通过，存在兼容差异、来源不透明或降配疑似风险' : 'Some capability tests did not fully pass — possible compatibility issues, source transparency or downgrade risk')
     : (zh ? '多项能力信号异常，建议谨慎用于高成本任务' : 'Multiple capability signals abnormal — use with caution for high-cost tasks');
-  return mkCheck({ id: 'modelIntegrity', label: { zh: '模型可信度', en: 'Model Integrity' }, maxScore: 40, score: totalScore, status, summary, details, deductions, evidence: { ...evidence, subScores, deepMode: !!deepMode, coreAbilityFailures } });
+  return mkCheck({ id: 'modelIntegrity', label: { zh: '模型可信度', en: 'Model Integrity' }, maxScore: 15, score: totalScore, status, summary, details, deductions, evidence: { ...evidence, subScores, deepMode: !!deepMode, coreAbilityFailures } });
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -2420,7 +2420,7 @@ function checkL_BasicCompatibility(reachResult, authResult, modelListResult, tar
   if (authCompat < 1) deductions.push(zh ? '核心调用鉴权失败' : 'Core call authentication failed');
   if (mlCompat < 0.5) details.push(zh ? '模型列表不可用或为空' : 'Model list unavailable or empty');
   if (tcCall < 1) deductions.push(zh ? '目标模型无法调用' : 'Target model cannot be called');
-  return mkCheck({ id: 'basicCompatibility', label: { zh: '基础兼容性', en: 'Basic Compatibility' }, maxScore: 7, score: totalScore, status, summary, details, deductions, evidence: {
+  return mkCheck({ id: 'basicCompatibility', label: { zh: '基础兼容性', en: 'Basic Compatibility' }, maxScore: 25, score: totalScore, status, summary, details, deductions, evidence: {
     reachCompat: Math.round(reachCompat * 10) / 10,
     authCompat: Math.round(authCompat * 10) / 10,
     mlCompat: Math.round(mlCompat * 10) / 10,

@@ -399,6 +399,45 @@ const TEST_CASES = [
       capReason: 'stability_failed',
     }
   },
+  {
+    name: 'Case 13: Screenshot Latency v17 (latencies=[1632,2062,2052,3569,1561], 5/5 success)',
+    checks: makeChecks({
+      costTransparency: { score: 25, status: 'excellent', evidence: { usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 } } },
+      cacheHitCheck: { score: 2, status: 'warning', evidence: {} }, // no cache field
+      modelIntegrity: { 
+        score: 12, 
+        status: 'good', 
+        evidence: { 
+          modelIdentityLevel: 'family_match', 
+          modelIdentityScore: 6, 
+          coreAbilityFailures: 0 
+        } 
+      },
+      stability: {
+        score: 24,
+        status: 'excellent',
+        evidence: {
+          avgLatency: 2175, // (1632+2062+2052+3569+1561)/5
+          medianLatency: 2052,
+          maxLatency: 3569,
+          latencyJitter: 2417,
+          samples: [
+            {ok: true, status: 200, latency: 1632, hasContent: true},
+            {ok: true, status: 200, latency: 2062, hasContent: true},
+            {ok: true, status: 200, latency: 2052, hasContent: true},
+            {ok: true, status: 200, latency: 3569, hasContent: true},
+            {ok: true, status: 200, latency: 1561, hasContent: true},
+          ]
+        }
+      }
+    }),
+    expected: {
+      minScore: 80,
+      noCap: true,
+      stabilityScore: 24,
+      identityScore: 12,
+    }
+  },
 ];
 
 // ─── Run Tests ───────────────────────────────────────────────────
