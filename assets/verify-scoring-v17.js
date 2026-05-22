@@ -24,6 +24,14 @@ function clampScore(score, max) {
   return Math.max(0, Math.min(max, n));
 }
 
+function normalizeScore(rawScore, oldMax, newMax) {
+  const n = Number(rawScore);
+  if (!Number.isFinite(n)) return 0;
+  // Always normalize based on the incoming max
+  if (oldMax === newMax) return n;
+  return ((n / oldMax) * newMax);
+}
+
 function extractCappedScore(capResult) {
   if (typeof capResult === 'number') return capResult;
   if (capResult && typeof capResult.capped === 'number') return capResult.capped;
@@ -33,12 +41,33 @@ function extractCappedScore(capResult) {
 // ─── v1.7 calcFinalScore (copy from test.js) ────────────────────────
 
 function calcFinalScore(checks) {
-  const coreCompatScore = clampScore((checks.basicCompatibility?.score || 0) + (checks.targetCall?.score || 0), 25);
+  // Normalize scores based on their maxScore to v1.7 values:
+  // basicCompatibility: old max 7 → new max 25
+  // clientConfig: old max 3 → new max 5
+  // stability: old max 15 → new max 25
+  // modelIntegrity: old max 40 → new max 15
+  // costTransparency: old max 30 → new max 25
+
+  // basicCompatibility
+  const rawBasicCompat = checks.basicCompatibility?.score || 0;
+  const basicCompatMax = checks.basicCompatibility?.maxScore || 25;
+  const basicCompatScore = clampScore(normalizeScore(rawBasicCompat, basicCompatMax, 25), 25);
+
+  // clientConfig
+  const rawClientConfig = checks.clientConfig?.score || 0;
+  const clientMax = checks.clientConfig?.maxScore || 5;
+  const clientScore = clampScore(normalizeScore(rawClientConfig, clientMax, 5), 5);
+
+  // Other scores should already be v1.7 normalized
+  const coreCompatScore = clampScore(basicCompatScore + (checks.targetCall?.score || 0), 25);
   const usageScore = clampScore(checks.costTransparency?.score || 0, 25);
   const stabilityScore = clampScore(checks.stability?.score || 0, 25);
   const identityScore = clampScore(checks.modelIntegrity?.score || 0, 15);
   const cacheScore = clampScore(checks.cacheHitCheck?.score || 0, 5);
-  const clientScore = clampScore(checks.clientConfig?.score || 0, 5);
+
+  // totalScore = sum of breakdown scores (v1.7 max: 25+25+25+15+5+5=100)
+  const breakdownTotalRaw = coreCompatScore + usageScore + stabilityScore + identityScore + cacheScore + clientScore;
+  const totalScore = Math.round(breakdownTotalRaw * 10) / 10;
 
   const coreNorm = (coreCompatScore / 25) * 100;
   const usageNorm = (usageScore / 25) * 100;
@@ -47,7 +76,8 @@ function calcFinalScore(checks) {
   const cacheNorm = (cacheScore / 5) * 100;
   const clientNorm = (clientScore / 5) * 100;
 
-  const final = Math.min(98,
+  // v1.7 weighted formula for grade
+  const gradeScore = Math.min(98,
     coreNorm * 0.25 +
     usageNorm * 0.25 +
     stabilityNorm * 0.25 +
@@ -56,15 +86,35 @@ function calcFinalScore(checks) {
     clientNorm * 0.05
   );
 
+  const scoreConsistencyCheck = Math.abs(breakdownTotalRaw - totalScore) < 0.1;
+
+  // Get identity category for risk calculation
+  const identityCategory = checks.modelIntegrity?.evidence?.modelIdentityLevel || 'exact_match';
+
+  // Calculate risk levels
+  const coreRisk = coreCompatScore >= 22 ? 'low' : coreCompatScore >= 15 ? 'medium' : 'high';
+  const usageRisk = usageScore >= 21 ? 'low' : usageScore >= 16 ? 'medium' : 'high';
+  const stabilityRisk = stabilityScore >= 21 ? 'low' : stabilityScore >= 15 ? 'medium' : 'high';
+  const identityRisk = identityCategory === 'exact_match' ? 'low' :
+                     identityCategory === 'family_match' ? 'medium' :
+                     identityCategory === 'platform_or_proxy_identity' ? 'medium' :
+                     identityCategory === 'variant_mismatch' || identityCategory === 'version_mismatch' ? 'medium' :
+                     identityCategory === 'ambiguous' ? 'medium' : 'high';
+  const cacheRisk = cacheScore >= 4 ? 'low' : cacheScore >= 2 ? 'medium' : 'high';
+  const clientRisk = clientScore >= 4 ? 'low' : clientScore >= 2 ? 'medium' : 'high';
+
   return {
-    totalScore: Math.round(final * 10) / 10,
+    totalScore,
+    gradeScore: Math.round(gradeScore * 10) / 10,
+    breakdownTotalRaw: Math.round(breakdownTotalRaw * 10) / 10,
+    scoreConsistencyCheck,
     breakdown: {
-      coreCompatibility: { score: coreCompatScore, max: 25, norm: coreNorm, label: '基础兼容性', labelEn: 'Core Compatibility' },
-      usageTransparency: { score: usageScore, max: 25, norm: usageNorm, label: '扣费透明度', labelEn: 'Usage Transparency' },
-      stabilityLatency: { score: stabilityScore, max: 25, norm: stabilityNorm, label: '稳定性与延迟', labelEn: 'Stability & Latency' },
-      modelIdentity: { score: identityScore, max: 15, norm: identityNorm, label: '模型身份', labelEn: 'Model Identity' },
-      cacheSignal: { score: cacheScore, max: 5, norm: cacheNorm, label: '缓存命中信号', labelEn: 'Cache Signal' },
-      clientConfig: { score: clientScore, max: 5, norm: clientNorm, label: '客户端配置', labelEn: 'Client Config' },
+      coreCompatibility: { score: coreCompatScore, max: 25, norm: coreNorm, risk: coreRisk, label: '基础兼容性', labelEn: 'Core Compatibility' },
+      usageTransparency: { score: usageScore, max: 25, norm: usageNorm, risk: usageRisk, label: '扣费透明度', labelEn: 'Usage Transparency' },
+      stabilityLatency: { score: stabilityScore, max: 25, norm: stabilityNorm, risk: stabilityRisk, label: '稳定性与延迟', labelEn: 'Stability & Latency' },
+      modelIdentity: { score: identityScore, max: 15, norm: identityNorm, risk: identityRisk, label: '模型身份', labelEn: 'Model Identity' },
+      cacheSignal: { score: cacheScore, max: 5, norm: cacheNorm, risk: cacheRisk, label: '缓存命中信号', labelEn: 'Cache Signal' },
+      clientConfig: { score: clientScore, max: 5, norm: clientNorm, risk: clientRisk, label: '客户端配置', labelEn: 'Client Config' },
     }
   };
 }
@@ -511,6 +561,65 @@ const TEST_CASES = [
       identityMax: 15,
     }
   },
+  {
+    name: 'Case 15: score_consistency_from_screenshot',
+    checks: makeChecks({
+      basicCompatibility: { score: 6.6, maxScore: 7, status: 'excellent', evidence: {} }, // Old 6.6/7 → normalized to ~23.6/25
+      clientConfig: { score: 3, maxScore: 3, status: 'excellent', evidence: {} }, // Old 3/3 → normalized to 5/5
+      targetCall: { score: 0, maxScore: 22, status: 'excellent', httpStatus: 200, responseParsed: true, output: 'OK' }, // Override to 0 so basicCompat normalizes correctly
+      costTransparency: { score: 25, maxScore: 25, status: 'excellent', evidence: { usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 } } },
+      cacheHitCheck: { score: 3.7, maxScore: 5, status: 'warning', evidence: { sourceField: null, probeTokenSufficient: false } },
+      modelIntegrity: {
+        score: 11,
+        maxScore: 15,
+        status: 'good',
+        evidence: {
+          modelIdentityLevel: 'family_match',
+          modelIdentityScore: 11,
+          coreAbilityFailures: 0
+        }
+      },
+      stability: {
+        score: 23,
+        maxScore: 25,
+        status: 'excellent',
+        evidence: {
+          avgLatency: 2276,
+          medianLatency: 1775,
+          maxLatency: 3440,
+          latencyRatio: 1.94,
+          stabilitySuccessScore: 12,
+          stabilityAverageLatencyScore: 7,
+          stabilityJitterScore: 4,
+          samples: [
+            {ok: true, status: 200, latency: 2776, hasContent: true},
+            {ok: true, status: 200, latency: 1651, hasContent: true},
+            {ok: true, status: 200, latency: 1739, hasContent: true},
+            {ok: true, status: 200, latency: 1775, hasContent: true},
+            {ok: true, status: 200, latency: 3440, hasContent: true},
+          ]
+        }
+      },
+    }),
+    expected: {
+      minTotalScore: 85, // 23.6 + 0 + 25 + 23 + 11 + 3.7 + 5 = 91.3
+      maxTotalScore: 95,
+      noCap: true,
+      capApplied: false,
+      capReason: null,
+      coreCompatScore: 23.6, // 6.6/7 → 23.6/25 (with targetCall=0)
+      coreCompatMax: 25,
+      clientScore: 5, // 3/3 → 5/5
+      clientMax: 5,
+      stabilityScore: 23,
+      stabilityMax: 25,
+      identityScore: 11,
+      identityMax: 15,
+      usageRisk: 'low', // 25/25
+      identityRisk: 'medium', // family_match
+      scoreConsistencyCheck: true,
+    }
+  },
 ];
 
 // ─── Run Tests ───────────────────────────────────────────────────
@@ -522,15 +631,28 @@ console.log('══════════════════════�
 let allPass = true;
 
 for (const tc of TEST_CASES) {
-  const { totalScore, breakdown } = calcFinalScore(tc.checks);
-  const capResult = applyCaps(totalScore, tc.checks, {});
-  const capped = extractCappedScore(capResult);
+  const { totalScore, gradeScore, breakdown, breakdownTotalRaw, scoreConsistencyCheck } = calcFinalScore(tc.checks);
+  const capResult = applyCaps(gradeScore, tc.checks, {});
+  const cappedGrade = extractCappedScore(capResult);
   const { capReason, capApplied } = capResult;
+  // Convert capped grade score back to sum-based
+  const capped = capApplied ? Math.round((cappedGrade / 100) * totalScore * 10) / 10 : totalScore;
 
   let casePass = true;
   const reasons = [];
 
-  // Check score range
+  // Check totalScore range
+  if (tc.expected.minTotalScore !== undefined && totalScore < tc.expected.minTotalScore) {
+    casePass = false;
+    reasons.push(`FAIL: totalScore ${totalScore} < minTotalScore ${tc.expected.minTotalScore}`);
+  }
+
+  if (tc.expected.maxTotalScore !== undefined && totalScore > tc.expected.maxTotalScore) {
+    casePass = false;
+    reasons.push(`FAIL: totalScore ${totalScore} > maxTotalScore ${tc.expected.maxTotalScore}`);
+  }
+
+  // Check gradeScore range (backward compatibility)
   if (tc.expected.minScore !== undefined && capped < tc.expected.minScore) {
     casePass = false;
     reasons.push(`FAIL: score ${capped} < minScore ${tc.expected.minScore}`);
@@ -564,37 +686,83 @@ for (const tc of TEST_CASES) {
     reasons.push(`FAIL: capApplied=${capApplied} (expected: ${tc.expected.capApplied})`);
   }
 
-  // Check specific scores
-  if (tc.expected.stabilityScore !== undefined) {
-    const stabilityScore = tc.checks.stability?.score || 0;
-    if (stabilityScore !== tc.expected.stabilityScore) {
+  // Check specific scores from breakdown
+  if (tc.expected.stabilityScore !== undefined && breakdown?.stabilityLatency) {
+    if (breakdown.stabilityLatency.score !== tc.expected.stabilityScore) {
       casePass = false;
-      reasons.push(`FAIL: stabilityScore=${stabilityScore} (expected: ${tc.expected.stabilityScore})`);
+      reasons.push(`FAIL: stabilityLatency.score=${breakdown.stabilityLatency.score} (expected: ${tc.expected.stabilityScore})`);
     }
   }
 
-  if (tc.expected.stabilityMax !== undefined) {
-    const stabilityMax = tc.checks.stability?.maxScore || 0;
-    if (stabilityMax !== tc.expected.stabilityMax) {
+  if (tc.expected.stabilityMax !== undefined && breakdown?.stabilityLatency) {
+    if (breakdown.stabilityLatency.max !== tc.expected.stabilityMax) {
       casePass = false;
-      reasons.push(`FAIL: stabilityMax=${stabilityMax} (expected: ${tc.expected.stabilityMax})`);
+      reasons.push(`FAIL: stabilityLatency.max=${breakdown.stabilityLatency.max} (expected: ${tc.expected.stabilityMax})`);
     }
   }
 
-  if (tc.expected.identityScore !== undefined) {
-    const identityScore = tc.checks.modelIntegrity?.score || 0;
-    if (identityScore !== tc.expected.identityScore) {
+  if (tc.expected.identityScore !== undefined && breakdown?.modelIdentity) {
+    if (breakdown.modelIdentity.score !== tc.expected.identityScore) {
       casePass = false;
-      reasons.push(`FAIL: identityScore=${identityScore} (expected: ${tc.expected.identityScore})`);
+      reasons.push(`FAIL: modelIdentity.score=${breakdown.modelIdentity.score} (expected: ${tc.expected.identityScore})`);
     }
   }
 
-  if (tc.expected.identityMax !== undefined) {
-    const identityMax = tc.checks.modelIntegrity?.maxScore || 0;
-    if (identityMax !== tc.expected.identityMax) {
+  if (tc.expected.identityMax !== undefined && breakdown?.modelIdentity) {
+    if (breakdown.modelIdentity.max !== tc.expected.identityMax) {
       casePass = false;
-      reasons.push(`FAIL: identityMax=${identityMax} (expected: ${tc.expected.identityMax})`);
+      reasons.push(`FAIL: modelIdentity.max=${breakdown.modelIdentity.max} (expected: ${tc.expected.identityMax})`);
     }
+  }
+
+  // Check new expected fields
+  if (tc.expected.coreCompatScore !== undefined && breakdown?.coreCompatibility) {
+    if (Math.abs(breakdown.coreCompatibility.score - tc.expected.coreCompatScore) > 0.5) {
+      casePass = false;
+      reasons.push(`FAIL: coreCompatScore=${breakdown.coreCompatibility.score} (expected: ${tc.expected.coreCompatScore})`);
+    }
+  }
+
+  if (tc.expected.coreCompatMax !== undefined && breakdown?.coreCompatibility) {
+    if (breakdown.coreCompatibility.max !== tc.expected.coreCompatMax) {
+      casePass = false;
+      reasons.push(`FAIL: coreCompatMax=${breakdown.coreCompatibility.max} (expected: ${tc.expected.coreCompatMax})`);
+    }
+  }
+
+  if (tc.expected.clientScore !== undefined && breakdown?.clientConfig) {
+    if (breakdown.clientConfig.score !== tc.expected.clientScore) {
+      casePass = false;
+      reasons.push(`FAIL: clientScore=${breakdown.clientConfig.score} (expected: ${tc.expected.clientScore})`);
+    }
+  }
+
+  if (tc.expected.clientMax !== undefined && breakdown?.clientConfig) {
+    if (breakdown.clientConfig.max !== tc.expected.clientMax) {
+      casePass = false;
+      reasons.push(`FAIL: clientMax=${breakdown.clientConfig.max} (expected: ${tc.expected.clientMax})`);
+    }
+  }
+
+  // Check risk levels
+  if (tc.expected.usageRisk !== undefined && breakdown?.usageTransparency) {
+    if (breakdown.usageTransparency.risk !== tc.expected.usageRisk) {
+      casePass = false;
+      reasons.push(`FAIL: usageRisk=${breakdown.usageTransparency.risk} (expected: ${tc.expected.usageRisk})`);
+    }
+  }
+
+  if (tc.expected.identityRisk !== undefined && breakdown?.modelIdentity) {
+    if (breakdown.modelIdentity.risk !== tc.expected.identityRisk) {
+      casePass = false;
+      reasons.push(`FAIL: identityRisk=${breakdown.modelIdentity.risk} (expected: ${tc.expected.identityRisk})`);
+    }
+  }
+
+  // Check scoreConsistencyCheck
+  if (tc.expected.scoreConsistencyCheck !== undefined && scoreConsistencyCheck !== tc.expected.scoreConsistencyCheck) {
+    casePass = false;
+    reasons.push(`FAIL: scoreConsistencyCheck=${scoreConsistencyCheck} (expected: ${tc.expected.scoreConsistencyCheck})`);
   }
 
   // Check totalScore is a number (not object)
@@ -615,7 +783,12 @@ for (const tc of TEST_CASES) {
 
   const status = casePass ? 'PASS ✓' : 'FAIL ✗';
   console.log(`${status}  ${tc.name}`);
-  console.log(`       totalScore=${totalScore}  capped=${capped}  capApplied=${capApplied}  capReason=${capReason}`);
+  console.log(`       totalScore=${totalScore}  gradeScore=${gradeScore}  capped=${capped}  capApplied=${capApplied}`);
+  if (breakdown) {
+    console.log(`       breakdown: usage=${breakdown.usageTransparency?.score}/${breakdown.usageTransparency?.max}(${breakdown.usageTransparency?.risk}) stability=${breakdown.stabilityLatency?.score}/${breakdown.stabilityLatency?.max}(${breakdown.stabilityLatency?.risk}) identity=${breakdown.modelIdentity?.score}/${breakdown.modelIdentity?.max}(${breakdown.modelIdentity?.risk})`);
+    console.log(`       breakdown: core=${breakdown.coreCompatibility?.score}/${breakdown.coreCompatibility?.max}(${breakdown.coreCompatibility?.risk}) cache=${breakdown.cacheSignal?.score}/${breakdown.cacheSignal?.max}(${breakdown.cacheSignal?.risk}) client=${breakdown.clientConfig?.score}/${breakdown.clientConfig?.max}(${breakdown.clientConfig?.risk})`);
+  }
+  console.log(`       scoreConsistencyCheck=${scoreConsistencyCheck}  breakdownTotalRaw=${breakdownTotalRaw}`);
   if (!casePass) {
     allPass = false;
     for (const r of reasons) console.log(`       ${r}`);
