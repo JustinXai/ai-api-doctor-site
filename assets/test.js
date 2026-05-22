@@ -3121,7 +3121,10 @@ function applyCaps(rawScore, checks, modelIdInfo) {
   // 5. Current Model ID explicitly unavailable (404 / model not found)
   // Even if targetCall score is high, 404 means the model is unavailable
   const targetHttpStatus = checks.targetCall?.evidence?.httpStatus;
-  const targetOutput = (checks.targetCall?.evidence?.output || '').toLowerCase();
+  const targetOutputText = typeof checks.targetCall?.evidence?.output === 'string'
+    ? checks.targetCall.evidence.output
+    : checks.targetCall?.evidence?.output?.text || '';
+  const targetOutput = targetOutputText.toLowerCase();
   const hasModelNotFound = targetHttpStatus === 404 ||
     targetOutput.includes('model not found') ||
     targetOutput.includes('no available model') ||
