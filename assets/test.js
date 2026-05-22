@@ -4257,13 +4257,13 @@ window.MockCases = {
       modelList: mkCheck({ id: 'modelList', label: {zh:'模型列表',en:'Model List'}, maxScore: 12, score: 9, status: 'good', evidence: { models: ['gpt-4','gpt-3.5'], modelCount: 2 } }),
       autoModel: mkCheck({ id: 'autoModel', label: {zh:'模型识别',en:'Auto Model'}, maxScore: 10, score: 8, status: 'good', evidence: {} }),
       targetCall: mkCheck({ id: 'targetCall', label: {zh:'目标模型调用',en:'Target Model Call'}, maxScore: 22, score: 20, status: 'good', evidence: tce }),
-      stability: mkCheck({ id: 'stability', label: {zh:'稳定性',en:'Stability'}, maxScore: 15, score: 15, status: 'excellent', evidence: se }),
+      stability: mkCheck({ id: 'stability', label: {zh:'稳定性',en:'Stability'}, maxScore: 25, score: 25, status: 'excellent', evidence: se }),
       usageAudit: mkCheck({ id: 'usageAudit', label: {zh:'用量审计',en:'Usage Audit'}, maxScore: 6, score: 5.5, status: 'excellent', evidence: { usage: {prompt_tokens:5,completion_tokens:3,total_tokens:8} } }),
-      costTransparency: mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 30, score: 30, status: 'excellent', evidence: ctEvidence }),
+      costTransparency: mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 25, score: 25, status: 'excellent', evidence: ctEvidence }),
       cacheHitCheck: mkCheck({ id: 'cacheHitCheck', label: {zh:'缓存命中检测',en:'Cache Hit Check'}, maxScore: 5, score: 5, status: 'excellent', summary: '缓存命中信号很强', evidence: { fieldFound: true, cacheHitRate: 0.98, firstRequest: { promptTokens: 1300, cachedTokens: null }, secondRequest: { promptTokens: 1300, cachedTokens: 1280 } } }),
-      modelIntegrity: mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 40, status: 'excellent', evidence: miEvidence }),
-      basicCompatibility: mkCheck({ id: 'basicCompatibility', label: {zh:'基础兼容性',en:'Basic Compatibility'}, maxScore: 7, score: 6.5, status: 'excellent', evidence: {} }),
-      clientConfig: mkCheck({ id: 'clientConfig', label: {zh:'客户端配置',en:'Client Config'}, maxScore: 3, score: 3, status: 'excellent', evidence: { baseUrlOrigin: 'https://api.example.com', keyMasked: 'sk-****', modelId: 'gpt-4', clineReady: true, continueReady: true, httpStatus: 200 } }),
+      modelIntegrity: mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 15, status: 'excellent', evidence: miEvidence }),
+      basicCompatibility: mkCheck({ id: 'basicCompatibility', label: {zh:'基础兼容性',en:'Basic Compatibility'}, maxScore: 25, score: 25, status: 'excellent', evidence: {} }),
+      clientConfig: mkCheck({ id: 'clientConfig', label: {zh:'客户端配置',en:'Client Config'}, maxScore: 5, score: 5, status: 'excellent', evidence: { baseUrlOrigin: 'https://api.example.com', keyMasked: 'sk-****', modelId: 'gpt-4', clineReady: true, continueReady: true, httpStatus: 200 } }),
     };
     if (overrides.costTransparency) Object.assign(checks.costTransparency, overrides.costTransparency);
     if (overrides.modelIntegrity) Object.assign(checks.modelIntegrity, overrides.modelIntegrity);
@@ -4273,11 +4273,11 @@ window.MockCases = {
 
   caseA() {
     const checks = this._makeBaseChecks({ reachability: 0, auth: 0, modelList: 0, autoModel: 0, targetCall: 0 });
-    checks.stability = mkCheck({ id: 'stability', label: {zh:'稳定性',en:'Stability'}, maxScore: 15, score: 0, status: 'skipped', evidence: { samples: [] } });
-    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 30, score: 0, status: 'skipped', evidence: {} });
-    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 0, status: 'skipped', evidence: {} });
-    checks.basicCompatibility = mkCheck({ id: 'basicCompatibility', label: {zh:'基础兼容性',en:'Basic Compatibility'}, maxScore: 7, score: 0, status: 'failed', evidence: {} });
-    checks.clientConfig = mkCheck({ id: 'clientConfig', label: {zh:'客户端配置',en:'Client Config'}, maxScore: 3, score: 0, status: 'failed', evidence: {} });
+    checks.stability = mkCheck({ id: 'stability', label: {zh:'稳定性',en:'Stability'}, maxScore: 25, score: 0, status: 'skipped', evidence: { samples: [] } });
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 25, score: 0, status: 'skipped', evidence: {} });
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 0, status: 'skipped', evidence: {} });
+    checks.basicCompatibility = mkCheck({ id: 'basicCompatibility', label: {zh:'基础兼容性',en:'Basic Compatibility'}, maxScore: 25, score: 0, status: 'failed', evidence: {} });
+    checks.clientConfig = mkCheck({ id: 'clientConfig', label: {zh:'客户端配置',en:'Client Config'}, maxScore: 5, score: 0, status: 'failed', evidence: {} });
     const { final } = calcFinalScore(checks);
     const capped = applyCaps(final, checks, {});
     return { raw: final, capped, grade: getGrade(capped), desc: `Case A: Base URL unreachable → capped=${capped} (expected ≤25)` };
@@ -4285,11 +4285,11 @@ window.MockCases = {
 
   caseB() {
     const checks = this._makeBaseChecks({ reachability: 11, auth: 6, modelList: 0, autoModel: 0, targetCall: 0 });
-    checks.stability = mkCheck({ id: 'stability', label: {zh:'稳定性',en:'Stability'}, maxScore: 15, score: 0, status: 'skipped', evidence: { samples: [] } });
-    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 30, score: 0, status: 'skipped', evidence: {} });
-    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 0, status: 'skipped', evidence: {} });
-    checks.basicCompatibility = mkCheck({ id: 'basicCompatibility', label: {zh:'基础兼容性',en:'Basic Compatibility'}, maxScore: 7, score: 2, status: 'warning', evidence: {} });
-    checks.clientConfig = mkCheck({ id: 'clientConfig', label: {zh:'客户端配置',en:'Client Config'}, maxScore: 3, score: 3, status: 'excellent', evidence: { baseUrlOrigin: 'https://api.example.com', modelId: 'gpt-4', clineReady: true, continueReady: true, httpStatus: 200 } });
+    checks.stability = mkCheck({ id: 'stability', label: {zh:'稳定性',en:'Stability'}, maxScore: 25, score: 0, status: 'skipped', evidence: { samples: [] } });
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 25, score: 0, status: 'skipped', evidence: {} });
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 0, status: 'skipped', evidence: {} });
+    checks.basicCompatibility = mkCheck({ id: 'basicCompatibility', label: {zh:'基础兼容性',en:'Basic Compatibility'}, maxScore: 25, score: 2, status: 'warning', evidence: {} });
+    checks.clientConfig = mkCheck({ id: 'clientConfig', label: {zh:'客户端配置',en:'Client Config'}, maxScore: 5, score: 5, status: 'excellent', evidence: { baseUrlOrigin: 'https://api.example.com', modelId: 'gpt-4', clineReady: true, continueReady: true, httpStatus: 200 } });
     const { final } = calcFinalScore(checks);
     const capped = applyCaps(final, checks, {});
     return { raw: final, capped, grade: getGrade(capped), desc: `Case B: 401 → capped=${capped} (expected ≤40)` };
@@ -4298,7 +4298,7 @@ window.MockCases = {
   // Case K: No usage (tightened cap)
   caseK() {
     const checks = this._makeNormalChecks();
-    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 30, score: 6, status: 'failed',
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 25, score: 6, status: 'failed',
       deductions: ['usage 字段完全缺失，无法审计消耗'],
       evidence: { usageTest: {hasUsage: false}, shortReplyTest: {ok: true, completionTokens: 3, reasoningTokens: 0}, subScores: {} } });
     const { final } = calcFinalScore(checks);
@@ -4309,7 +4309,7 @@ window.MockCases = {
   // Case L: Short reply OK but completion_tokens=80, no reasoning_tokens
   caseL() {
     const checks = this._makeNormalChecks();
-    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 30, score: 13.5, status: 'failed',
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 25, score: 13.5, status: 'failed',
       deductions: ['极短回复 OK 但 completion_tokens(80) 严重偏高，无 reasoning_tokens 解释'],
       evidence: { usageTest: {hasUsage:true,usageComplete:true,prompt_tokens:5,completion_tokens:3,total_tokens:8}, shortReplyTest: {ok:true,completionTokens:80,reasoningTokens:0,totalTokens:85}, maxTokensTest:{completionTokens:3}, usageStability:[{total_tokens:15},{total_tokens:15}], promptTokenEstTest:{shortPrompt:'Say hello.',estimatedTokens:4,apiPromptTokens:4}, subScores:{} } });
     const { final } = calcFinalScore(checks);
@@ -4320,7 +4320,7 @@ window.MockCases = {
   // Case M: total_tokens inconsistent (30% diff)
   caseM() {
     const checks = this._makeNormalChecks();
-    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 30, score: 24, status: 'warning',
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 25, score: 24, status: 'warning',
       details: ['total_tokens(30) 与 prompt+completion=8 差异 275%'],
       evidence: { usageTest: {hasUsage:true,usageComplete:true,prompt_tokens:5,completion_tokens:3,total_tokens:30}, shortReplyTest: {ok:true,completionTokens:3,reasoningTokens:0,totalTokens:30}, subScores: {} } });
     const { final } = calcFinalScore(checks);
@@ -4331,7 +4331,7 @@ window.MockCases = {
   // Case N: JSON+instruction+code failed
   caseN() {
     const checks = this._makeNormalChecks();
-    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 8, status: 'failed',
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 8, status: 'failed',
       deductions: ['JSON 严格输出测试失败：输出不是合法 JSON','严格指令遵循测试未通过','轻量代码修复测试未通过'],
       evidence: { modelIdentityScore:6, coreAbilityFailures:3, jsonTest:{output:'NOT JSON'}, instructionTest:{output:'wrong'}, codeRepair:{output:'wrong'} } });
     const { final } = calcFinalScore(checks);
@@ -4342,7 +4342,7 @@ window.MockCases = {
   // Case O: Hidden model, all tests pass
   caseO() {
     const checks = this._makeNormalChecks();
-    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'good',
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 15, status: 'good',
       details: ['当前模型未出现在 /models 列表中，但实际调用已通过'],
       evidence: { modelIdentityScore:6, modelIdentityLevel:'exact_match', coreAbilityFailures:0, modelVisibility:'hidden_but_works', subScores: {modelIdentity:6,modelVisibility:2,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2} } });
     const { final } = calcFinalScore(checks);
@@ -4353,7 +4353,7 @@ window.MockCases = {
   // Case P: Stability 3/5 but avgLat=900ms
   caseP() {
     const checks = this._makeNormalChecks();
-    checks.stability = mkCheck({ id: 'stability', label: {zh:'稳定性',en:'Stability'}, maxScore: 15, score: 10, status: 'warning',
+    checks.stability = mkCheck({ id: 'stability', label: {zh:'稳定性',en:'Stability'}, maxScore: 25, score: 10, status: 'warning',
       details: ['平均延迟过高：900ms'],
       evidence: { avgLatency:900, latencyJitter:80, maxLatency:980, rateLimitDetected:false,
         samples: [{ok:true,status:200,latency:850,hasContent:true,responseText:'OK'},{ok:true,status:200,latency:900,hasContent:true,responseText:'OK'},{ok:true,status:200,latency:920,hasContent:true,responseText:'OK'},{ok:true,status:200,latency:880,hasContent:true,responseText:'OK'},{ok:true,status:200,latency:950,hasContent:true,responseText:'OK'}],
@@ -4375,7 +4375,7 @@ window.MockCases = {
   // Case V: avgLat=900ms, 5/5 success → stability not low risk, no A
   caseV() {
     const checks = this._makeNormalChecks();
-    checks.stability = mkCheck({ id: 'stability', label: {zh:'稳定性',en:'Stability'}, maxScore: 15, score: 7, status: 'warning',
+    checks.stability = mkCheck({ id: 'stability', label: {zh:'稳定性',en:'Stability'}, maxScore: 25, score: 7, status: 'warning',
       deductions: ['平均延迟过高：900ms','最大延迟过高：980ms'],
       evidence: { avgLatency:900, latencyJitter:80, maxLatency:980, rateLimitDetected:false,
         samples: [{ok:true,status:200,latency:850},{ok:true,status:200,latency:900},{ok:true,status:200,latency:920},{ok:true,status:200,latency:880},{ok:true,status:200,latency:950}],
@@ -4388,7 +4388,7 @@ window.MockCases = {
   // Case W: Latency jitter 1200ms → jitter item 0, stability medium
   caseW() {
     const checks = this._makeNormalChecks();
-    checks.stability = mkCheck({ id: 'stability', label: {zh:'稳定性',en:'Stability'}, maxScore: 15, score: 9, status: 'warning',
+    checks.stability = mkCheck({ id: 'stability', label: {zh:'稳定性',en:'Stability'}, maxScore: 25, score: 9, status: 'warning',
       details: ['延迟波动严重：1200ms'],
       evidence: { avgLatency:300, latencyJitter:1200, maxLatency:900, rateLimitDetected:false,
         samples: [{ok:true,status:200,latency:100},{ok:true,status:200,latency:300},{ok:true,status:200,latency:500},{ok:true,status:200,latency:800},{ok:true,status:200,latency:1300}],
@@ -4401,7 +4401,7 @@ window.MockCases = {
   // Case X: Test claude-opus-4.6-thinking, model says GPT-3.5 → identity 0
   caseX() {
     const checks = this._makeNormalChecks();
-    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 12, status: 'failed',
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 12, status: 'failed',
       deductions: ['模型自报身份与目标 Model ID 不一致，存在明显模型降配疑似风险'],
       evidence: { modelIdentityScore:0, modelIdentityLevel:'wrong_family', coreAbilityFailures:3,
         modelVisibility:'in_list', subScores:{modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:0,instructionTest:0,codeRepair:0,reasoning:2,needle:2,consistency:0} } });
@@ -4413,7 +4413,7 @@ window.MockCases = {
   // Case Y: Test gpt-5.5, model says unknown → identity 1
   caseY() {
     const checks = this._makeNormalChecks();
-    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 30, status: 'warning',
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 14, status: 'warning',
       details: ['模型未能明确自报当前模型身份'],
       evidence: { modelIdentityScore:1, modelIdentityLevel:'ambiguous', coreAbilityFailures:0,
         modelVisibility:'in_list', subScores:{modelIdentity:1,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2} } });
@@ -4425,7 +4425,7 @@ window.MockCases = {
   // Case Z: usage complete but total_tokens diff 30%
   caseZ() {
     const checks = this._makeNormalChecks();
-    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 30, score: 24, status: 'warning',
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 25, score: 24, status: 'warning',
       details: ['total_tokens(50) 与 prompt+completion=20 差异 150%'],
       evidence: { usageTest: {hasUsage:true,usageComplete:true,prompt_tokens:10,completion_tokens:10,total_tokens:50}, shortReplyTest: {ok:true,completionTokens:3,reasoningTokens:0}, subScores:{} } });
     const { final } = calcFinalScore(checks);
@@ -4436,7 +4436,7 @@ window.MockCases = {
   // Case AA: max_tokens=5 but returns very long
   caseAA() {
     const checks = this._makeNormalChecks();
-    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 30, score: 26, status: 'warning',
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 25, score: 26, status: 'warning',
       details: ['max_tokens 限制未完全生效'],
       evidence: { usageTest: {hasUsage:true,usageComplete:true,prompt_tokens:5,completion_tokens:3,total_tokens:8}, shortReplyTest: {ok:true,completionTokens:3,reasoningTokens:0}, maxTokensTest: {completionTokens:50}, subScores:{} } });
     const { final } = calcFinalScore(checks);
@@ -4447,7 +4447,7 @@ window.MockCases = {
   // Case AB: Short reply OK, completion_tokens=60, no reasoning_tokens
   caseAB() {
     const checks = this._makeNormalChecks();
-    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 30, score: 15.5, status: 'failed',
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 25, score: 15.5, status: 'failed',
       deductions: ['极短回复 OK 但 completion_tokens(60) 严重偏高，无 reasoning_tokens 解释'],
       evidence: { usageTest: {hasUsage:true,usageComplete:true,prompt_tokens:5,completion_tokens:3,total_tokens:8}, shortReplyTest: {ok:true,completionTokens:60,reasoningTokens:0,totalTokens:65}, subScores:{} } });
     const { final } = calcFinalScore(checks);
@@ -4458,7 +4458,7 @@ window.MockCases = {
   // Case AC: Short reply OK, completion_tokens=60, reasoning_tokens=55
   caseAC() {
     const checks = this._makeNormalChecks();
-    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 30, score: 25, status: 'warning',
+    checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 25, score: 25, status: 'warning',
       details: ['短回复 token 偏高(60)，reasoning_tokens(55) 部分解释'],
       evidence: { usageTest: {hasUsage:true,usageComplete:true,prompt_tokens:5,completion_tokens:3,total_tokens:8}, shortReplyTest: {ok:true,completionTokens:60,reasoningTokens:55,totalTokens:65}, subScores:{} } });
     const { final } = calcFinalScore(checks);
@@ -4469,7 +4469,7 @@ window.MockCases = {
   // Case AD: JSON + instruction + code three failures
   caseAD() {
     const checks = this._makeNormalChecks();
-    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 8, status: 'failed',
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 8, status: 'failed',
       deductions: ['JSON 严格输出测试失败：输出不是合法 JSON','严格指令遵循测试未通过','轻量代码修复测试未通过'],
       evidence: { modelIdentityScore:6, coreAbilityFailures:3, jsonTest:{output:'xxx'}, instructionTest:{output:'xxx'}, codeRepair:{output:'xxx'} } });
     const { final } = calcFinalScore(checks);
@@ -4480,7 +4480,7 @@ window.MockCases = {
   // Case AE: Identity=0 but all ability tests pass
   caseAE() {
     const checks = this._makeNormalChecks();
-    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 31, status: 'warning',
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 14, status: 'warning',
       details: ['模型能力测试表现尚可，但自报身份与目标模型不一致'],
       evidence: { modelIdentityScore:0, modelIdentityLevel:'wrong_family', coreAbilityFailures:0,
         subScores:{modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2} } });
@@ -4529,7 +4529,7 @@ window.MockCases = {
   },
   caseAH_2() { // identity mismatch
     const checks = this._makeNormalChecks();
-    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 30, status: 'warning',
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 30, status: 'warning',
       deductions: ['模型自报身份与目标 Model ID 不一致'],
       evidence: { modelIdentityScore:0, modelIdentityLevel:'wrong_family', coreAbilityFailures:0,
         subScores:{modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2} } });
@@ -4584,7 +4584,7 @@ window.MockCases = {
   // New rules: cap 86, grade max C, Model Integrity at most medium risk
   caseAK() {
     const checks = this._makeNormalChecks();
-    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 31, status: 'warning',
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 31, status: 'warning',
       details: ['模型能力测试表现尚可，但自报身份与目标模型不一致'],
       evidence: { modelIdentityScore:0, modelIdentityLevel:'wrong_family', coreAbilityFailures:0,
         subScores:{modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2} } });
@@ -4624,7 +4624,7 @@ window.MockCases = {
   // identityScore=0 + 1 failure → cap 75 (model high risk)
   caseAN() {
     const checks = this._makeNormalChecks();
-    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 30.5, status: 'warning',
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 30.5, status: 'warning',
       details: ['JSON 输出被 markdown 代码块包裹'],
       evidence: { modelIdentityScore:0, modelIdentityLevel:'wrong_family', coreAbilityFailures:1,
         subScores:{modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:1.5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2} } });
@@ -4638,7 +4638,7 @@ window.MockCases = {
   // identityScore=0 + 1 failure → cap 75 (model high risk)
   caseAO() {
     const checks = this._makeNormalChecks();
-    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 29, status: 'warning',
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 29, status: 'warning',
       deductions: ['JSON 抗糊弄测试失败：输出不是合法 JSON'],
       evidence: { modelIdentityScore:0, modelIdentityLevel:'wrong_family', coreAbilityFailures:1,
         subScores:{modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:0,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2} } });
@@ -4691,7 +4691,7 @@ window.MockCases = {
   // Case AR: "OpenAI API-compatible model"
   caseAR() {
     const checks = this._makeNormalChecks();
-    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 35, status: 'warning',
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 35, status: 'warning',
       details: ['检测到平台代理层身份暴露'],
       evidence: {
         modelIdentityScore:3, modelIdentityLevel:'proxy_route_identity', coreAbilityFailures:0,
@@ -4705,7 +4705,7 @@ window.MockCases = {
   // Case AS: "Kiro 开发环境" + everything else normal
   caseAS() {
     const checks = this._makeNormalChecks();
-    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 35, status: 'warning',
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 35, status: 'warning',
       details: ['检测到平台代理层身份暴露'],
       evidence: {
         modelIdentityScore:3, modelIdentityLevel:'proxy_route_identity', coreAbilityFailures:0,
@@ -4730,7 +4730,7 @@ window.MockCases = {
         baseOverhead:5059, deltaRatio:null,
         subScores:{}
       } });
-    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 35, status: 'warning',
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 35, status: 'warning',
       details: ['检测到平台代理层身份暴露'],
       evidence: {
         modelIdentityScore:3, modelIdentityLevel:'proxy_route_identity', coreAbilityFailures:0,
@@ -4744,7 +4744,7 @@ window.MockCases = {
   // Case AU: target gpt-5.2-pro, says "Claude"
   caseAU() {
     const checks = this._makeNormalChecks();
-    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 31, status: 'warning',
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 31, status: 'warning',
       deductions: ['模型自报家族与目标 Model ID 明显不一致，存在模型降配或路由错误疑似风险'],
       evidence: {
         modelIdentityScore:0, modelIdentityLevel:'wrong_family', coreAbilityFailures:0,
@@ -4768,7 +4768,7 @@ window.MockCases = {
         baseOverhead:5059, deltaRatio:null,
         subScores:{}
       } });
-    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 31, status: 'warning',
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 31, status: 'warning',
       deductions: ['模型回答中出现开发环境、工具人格或系统提示污染信号'],
       evidence: {
         modelIdentityScore:0, modelIdentityLevel:'hard_contamination', coreAbilityFailures:0,
@@ -4782,7 +4782,7 @@ window.MockCases = {
   // Case AW: Vertex AI + everything else normal
   caseAW() {
     const checks = this._makeNormalChecks();
-    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 35, status: 'warning',
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 35, status: 'warning',
       details: ['检测到平台代理层身份暴露'],
       evidence: {
         modelIdentityScore:3, modelIdentityLevel:'proxy_route_identity', coreAbilityFailures:0,
@@ -4829,7 +4829,7 @@ window.MockCases = {
   },
   caseAZ_2() { // proxy_route_identity site
     const checks = this._makeNormalChecks();
-    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 35, status: 'warning',
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 35, status: 'warning',
       details: ['检测到平台代理层身份暴露'],
       evidence: {
         modelIdentityScore:3, modelIdentityLevel:'proxy_route_identity', coreAbilityFailures:0,
@@ -4843,7 +4843,7 @@ window.MockCases = {
   // Case BA-1: both proxy_route_identity, Site 1 normal, Site 2 has token anomaly
   caseBA_1() { // proxy_route normal
     const checks = this._makeNormalChecks();
-    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 35, status: 'warning',
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 35, status: 'warning',
       details: ['检测到平台代理层身份暴露'],
       evidence: {
         modelIdentityScore:3, modelIdentityLevel:'proxy_route_identity', coreAbilityFailures:0,
@@ -4866,7 +4866,7 @@ window.MockCases = {
         baseOverhead:5059, deltaRatio:null,
         subScores:{}
       } });
-    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 35, status: 'warning',
+    checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 35, status: 'warning',
       details: ['检测到平台代理层身份暴露'],
       evidence: {
         modelIdentityScore:3, modelIdentityLevel:'proxy_route_identity', coreAbilityFailures:0,
@@ -4884,7 +4884,7 @@ window.MockCases = {
   caseBB() {
     const checks = this._makeNormalChecks();
     checks.modelIntegrity = mkCheck({
-      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 36, status: 'warning',
       details: ['检测到平台代理层身份暴露（aws bedrock）'],
       evidence: {
         modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
@@ -4903,7 +4903,7 @@ window.MockCases = {
   caseBC() {
     const checks = this._makeNormalChecks();
     checks.modelIntegrity = mkCheck({
-      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 36, status: 'warning',
       details: ['检测到平台代理层身份暴露（amazon q developer）'],
       evidence: {
         modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
@@ -4922,7 +4922,7 @@ window.MockCases = {
   caseBD() {
     const checks = this._makeNormalChecks();
     checks.modelIntegrity = mkCheck({
-      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 36, status: 'warning',
       evidence: {
         modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
         sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'cursor agent', evidenceText: 'Cursor Agent', explanation: '该模型自报为平台代理层身份（cursor agent）。不等于模型不可用，但来源透明度较低。' },
@@ -4940,7 +4940,7 @@ window.MockCases = {
   caseBE() {
     const checks = this._makeNormalChecks();
     checks.modelIntegrity = mkCheck({
-      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 36, status: 'warning',
       evidence: {
         modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
         sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'cline', evidenceText: 'Cline', explanation: '该模型自报为平台代理层身份（cline）。不等于模型不可用，但来源透明度较低。' },
@@ -4958,7 +4958,7 @@ window.MockCases = {
   caseBF() {
     const checks = this._makeNormalChecks();
     checks.modelIntegrity = mkCheck({
-      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 36, status: 'warning',
       evidence: {
         modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
         sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'windsurf editor', evidenceText: 'Windsurf Editor', explanation: '该模型自报为平台代理层身份（windsurf editor）。不等于模型不可用，但来源透明度较低。' },
@@ -4976,7 +4976,7 @@ window.MockCases = {
   caseBG() {
     const checks = this._makeNormalChecks();
     checks.modelIntegrity = mkCheck({
-      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 36, status: 'warning',
       evidence: {
         modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
         sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'continue.dev', evidenceText: 'Continue.dev', explanation: '该模型自报为平台代理层身份（continue.dev）。不等于模型不可用，但来源透明度较低。' },
@@ -4994,7 +4994,7 @@ window.MockCases = {
   caseBH() {
     const checks = this._makeNormalChecks();
     checks.modelIntegrity = mkCheck({
-      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 36, status: 'warning',
       evidence: {
         modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
         sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'github copilot', evidenceText: 'GitHub Copilot', explanation: '该模型自报为平台代理层身份（github copilot）。不等于模型不可用，但来源透明度较低。' },
@@ -5012,7 +5012,7 @@ window.MockCases = {
   caseBI() {
     const checks = this._makeNormalChecks();
     checks.modelIntegrity = mkCheck({
-      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 36, status: 'warning',
       evidence: {
         modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
         sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'azure ai foundry', evidenceText: 'Azure AI Foundry', explanation: '该模型自报为平台代理层身份（azure ai foundry）。不等于模型不可用，但来源透明度较低。' },
@@ -5030,7 +5030,7 @@ window.MockCases = {
   caseBJ() {
     const checks = this._makeNormalChecks();
     checks.modelIntegrity = mkCheck({
-      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 36, status: 'warning',
       evidence: {
         modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
         sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'microsoft foundry', evidenceText: 'Microsoft Foundry Models', explanation: '该模型自报为平台代理层身份（microsoft foundry）。不等于模型不可用，但来源透明度较低。' },
@@ -5048,7 +5048,7 @@ window.MockCases = {
   caseBK() {
     const checks = this._makeNormalChecks();
     checks.modelIntegrity = mkCheck({
-      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 36, status: 'warning',
       evidence: {
         modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
         sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'google vertex', evidenceText: 'Google Vertex AI', explanation: '该模型自报为平台代理层身份（google vertex）。不等于模型不可用，但来源透明度较低。' },
@@ -5067,7 +5067,7 @@ window.MockCases = {
   caseBL() {
     const checks = this._makeNormalChecks();
     checks.modelIntegrity = mkCheck({
-      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 36, status: 'warning',
       evidence: {
         modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
         sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'openai-compatible gateway', evidenceText: 'OpenAI-compatible gateway', explanation: '该模型自报为平台代理层身份（openai-compatible gateway）。不等于模型不可用，但来源透明度较低。' },
@@ -5085,7 +5085,7 @@ window.MockCases = {
   caseBM() {
     const checks = this._makeNormalChecks();
     checks.modelIntegrity = mkCheck({
-      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 27, status: 'failed',
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 27, status: 'failed',
       deductions: ['模型回答中出现开发环境、工具人格或系统提示污染信号'],
       evidence: {
         modelIdentityScore: 0, modelIdentityLevel: 'hard_contamination',
@@ -5104,7 +5104,7 @@ window.MockCases = {
   caseBN() {
     const checks = this._makeNormalChecks();
     checks.modelIntegrity = mkCheck({
-      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 27, status: 'failed',
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 27, status: 'failed',
       deductions: ['模型回答中出现开发环境、工具人格或系统提示污染信号'],
       evidence: {
         modelIdentityScore: 0, modelIdentityLevel: 'hard_contamination',
@@ -5137,7 +5137,7 @@ window.MockCases = {
       }
     });
     checks.modelIntegrity = mkCheck({
-      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 36, status: 'warning',
       evidence: {
         modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
         sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'aws bedrock', evidenceText: 'AWS Bedrock', explanation: '该模型自报为平台代理层身份（aws bedrock）。不等于模型不可用，但来源透明度较低。' },
@@ -5157,7 +5157,7 @@ window.MockCases = {
   caseBU() {
     const checks = this._makeNormalChecks();
     checks.modelIntegrity = mkCheck({
-      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 36, status: 'warning',
       evidence: {
         modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
         sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'windsurf', evidenceText: 'Windsurf', explanation: '检测到平台代理层身份暴露（windsurf）。' },
@@ -5175,7 +5175,7 @@ window.MockCases = {
   caseBV() {
     const checks = this._makeNormalChecks();
     checks.modelIntegrity = mkCheck({
-      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 36, status: 'warning',
       evidence: {
         modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
         sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'windsurf cascade', evidenceText: 'Windsurf Cascade', explanation: '检测到平台代理层身份暴露（windsurf cascade）。' },
@@ -5193,7 +5193,7 @@ window.MockCases = {
   caseBW() {
     const checks = this._makeNormalChecks();
     checks.modelIntegrity = mkCheck({
-      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 27, status: 'failed',
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 27, status: 'failed',
       deductions: ['模型回答中出现开发环境、工具人格或系统提示污染信号'],
       evidence: {
         modelIdentityScore: 0, modelIdentityLevel: 'hard_contamination',
@@ -5212,7 +5212,7 @@ window.MockCases = {
   caseBX() {
     const checks = this._makeNormalChecks();
     checks.modelIntegrity = mkCheck({
-      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 36, status: 'warning',
       evidence: {
         modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
         sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'cursor', evidenceText: 'Cursor Agent', explanation: '检测到平台代理层身份暴露（cursor）。' },
@@ -5230,7 +5230,7 @@ window.MockCases = {
   caseBY() {
     const checks = this._makeNormalChecks();
     checks.modelIntegrity = mkCheck({
-      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 27, status: 'failed',
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 27, status: 'failed',
       deductions: ['模型回答中出现开发环境、工具人格或系统提示污染信号'],
       evidence: {
         modelIdentityScore: 0, modelIdentityLevel: 'hard_contamination',
@@ -5249,7 +5249,7 @@ window.MockCases = {
   caseBZ() {
     const checks = this._makeNormalChecks();
     checks.modelIntegrity = mkCheck({
-      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 36, status: 'warning',
       evidence: {
         modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
         sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'aws bedrock', evidenceText: 'AWS Bedrock', explanation: '检测到平台代理层身份暴露（aws bedrock）。' },
@@ -5267,7 +5267,7 @@ window.MockCases = {
   caseCA() {
     const checks = this._makeNormalChecks();
     checks.modelIntegrity = mkCheck({
-      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 36, status: 'warning',
       evidence: {
         modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
         sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'azure ai foundry', evidenceText: 'Azure AI Foundry', explanation: '检测到平台代理层身份暴露（azure ai foundry）。' },
@@ -5286,7 +5286,7 @@ window.MockCases = {
   caseCB() {
     const checks = this._makeNormalChecks();
     checks.modelIntegrity = mkCheck({
-      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 36, status: 'warning',
       evidence: {
         modelIdentityScore: 1.5, modelIdentityLevel: 'ambiguous',
         sourceTransparency: { category: 'ambiguous', label: '身份未确认', riskLevel: 'medium', detectedSource: null, evidenceText: "I don't have access to the exact model name, model family, or serving platform I'm running on.", explanation: '模型身份未确认（"serving platform"出现在否定句中，不归为平台代理层身份）。' },
@@ -5306,7 +5306,7 @@ window.MockCases = {
   caseCC() {
     const checks = this._makeNormalChecks();
     checks.modelIntegrity = mkCheck({
-      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 36, status: 'warning',
       evidence: {
         modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
         sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: null, evidenceText: 'served through OpenAI-compatible gateway', explanation: '检测到平台代理层身份暴露。' },
@@ -5326,7 +5326,7 @@ window.MockCases = {
   caseCD() {
     const checks = this._makeNormalChecks();
     checks.modelIntegrity = mkCheck({
-      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 36, status: 'warning',
       evidence: {
         modelIdentityScore: 1.5, modelIdentityLevel: 'ambiguous',
         sourceTransparency: { category: 'ambiguous', label: '身份未确认', riskLevel: 'medium', detectedSource: null, evidenceText: "I don't have access to the exact model name/family or serving platform I'm running on.", explanation: '模型身份未确认（"serving platform"出现在否定句中，不归为平台代理层身份）。' },
@@ -5344,7 +5344,7 @@ window.MockCases = {
   caseCE() {
     const checks = this._makeNormalChecks();
     checks.modelIntegrity = mkCheck({
-      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 36, status: 'warning',
       evidence: {
         modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
         sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'windsurf', evidenceText: 'Windsurf', explanation: '检测到平台代理层身份暴露（windsurf）。来源透明度降低，但不等同于模型高风险。' },
@@ -5362,7 +5362,7 @@ window.MockCases = {
   caseCF() {
     const checks = this._makeNormalChecks();
     checks.modelIntegrity = mkCheck({
-      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 36, status: 'warning',
       evidence: {
         modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
         sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'aws bedrock', evidenceText: 'AWS Bedrock', explanation: '检测到平台代理层身份暴露（aws bedrock）。' },
@@ -5380,7 +5380,7 @@ window.MockCases = {
   caseCG() {
     const checks = this._makeNormalChecks();
     checks.modelIntegrity = mkCheck({
-      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 36, status: 'warning',
       evidence: {
         modelIdentityScore: 3, modelIdentityLevel: 'platform_or_proxy_identity',
         sourceTransparency: { category: 'platform_or_proxy_identity', label: '平台代理层暴露', riskLevel: 'medium', detectedSource: 'cursor', evidenceText: 'Cursor Agent', explanation: '检测到平台代理层身份暴露（cursor）。单独出现时为来源透明度降低，不等于模型高风险。' },
@@ -5398,7 +5398,7 @@ window.MockCases = {
   caseCH() {
     const checks = this._makeNormalChecks();
     checks.modelIntegrity = mkCheck({
-      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 27, status: 'failed',
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 27, status: 'failed',
       deductions: ['模型回答中出现开发环境、工具人格或系统提示污染信号'],
       evidence: {
         modelIdentityScore: 0, modelIdentityLevel: 'hard_contamination',
@@ -5492,7 +5492,7 @@ window.MockCases = {
   caseCN() {
     const checks = this._makeNormalChecks();
     checks.modelIntegrity = mkCheck({
-      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 36, status: 'warning',
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 36, status: 'warning',
       evidence: {
         modelIdentityScore: 1.5, modelIdentityLevel: 'ambiguous',
         sourceTransparency: { category: 'ambiguous', label: '身份未确认', riskLevel: 'medium', detectedSource: null,
@@ -5946,7 +5946,7 @@ window.MockCases = {
   caseMI_FAMILY_1() {
     const checks = this._makeNormalChecks();
     checks.modelIntegrity = mkCheck({
-      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 23, status: 'excellent',
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 23, status: 'excellent',
       evidence: {
         modelIdentityScore: 4, modelIdentityLevel: 'family_match',
         sourceTransparency: { category: 'family_match', label: '家族匹配', riskLevel: 'low', detectedSource: null, evidenceText: 'ChatGPT', explanation: '模型自报与目标模型属于同一大模型家族，但未能精确确认具体版本。' },
@@ -6060,7 +6060,7 @@ window.MockCases = {
   caseMI_AMBIGUOUS_1() {
     const checks = this._makeNormalChecks();
     checks.modelIntegrity = mkCheck({
-      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 40, score: 23, status: 'excellent',
+      id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 23, status: 'excellent',
       evidence: {
         modelIdentityScore: 1.5, modelIdentityLevel: 'ambiguous',
         sourceTransparency: { category: 'ambiguous', label: '身份未确认', riskLevel: 'medium', detectedSource: null, evidenceText: "I don't have access to the exact model name", explanation: '模型身份未能明确确认，结论置信度降低。' },
