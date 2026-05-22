@@ -2987,12 +2987,6 @@ function buildDebugScoring(rawScore, cappedScore, checks) {
     // Official baseline (planned feature)
     officialBaselineEnabled: false,
     officialBaselineStatus: 'planned_not_enabled',
-    // Model discovery (connectivity probe - does NOT affect scoring)
-    modelDiscoveryEnabled: false,
-    modelDiscoveryCandidateCount: null,
-    modelDiscoverySuccessCount: null,
-    modelDiscoverySelectedModel: null,
-    modelDiscoveryAffectsScore: false,
     // Model connectivity summary
     modelConnectivityCount: Array.isArray(checks.modelList?.evidence?.models) ? checks.modelList.evidence.models.length : 0,
     modelConnectivitySuccessCount: null,
@@ -3921,10 +3915,13 @@ window.Doctor = {
         if (modelEl) modelEl.value = models[0];
         this._autoDetectedModelId = models[0];
         this._autoDetectedOrigin = 'models_list';
-        showToast(zh ? `已填入：${models[0]}` : `Filled: ${models[0]}`);
+        showToast(zh ? `已识别模型：${models[0]}。你可以手动修改后再检测。` : `Detected: ${models[0]}. You can edit before testing.`);
         setTimeout(() => { this._isProgrammaticModelUpdate = false; }, 50);
-      } else showToast(zh ? '无法自动识别，请手动填写模型 ID' : 'Cannot auto-detect; fill in Model ID manually');
-    } catch (_) { showToast(zh ? '无法自动识别，请手动填写模型 ID' : 'Cannot auto-detect; fill in Model ID manually'); }
+      } else {
+        // Do NOT clear user's existing Model ID
+        showToast(zh ? '未能自动识别模型，请手动填写 Model ID。' : 'Could not auto-detect. Please fill in Model ID manually.');
+      }
+    } catch (_) { showToast(zh ? '未能自动识别模型，请手动填写 Model ID。' : 'Could not auto-detect. Please fill in Model ID manually.'); }
     finally { if (btn) { btn.disabled = false; btn.textContent = zh ? '自动识别模型' : 'Auto-detect model'; } }
   },
 
