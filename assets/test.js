@@ -1460,8 +1460,19 @@ async function checkN_CacheHitCheck(baseUrl, apiKey, model, interfaceType, signa
 
   const totalScore = Math.round((scoreA + scoreB + scoreC + scoreD + scoreE) * 10) / 10;
 
-  // Token insufficient → unknown
+  // Token insufficient + cache field WAS exposed → field_found (amber, positive signal)
   if (actualPromptTokens < 1024) {
+    const fieldExposed = cache2.fieldFound;
+    if (fieldExposed) {
+      const summary = zh ? '缓存字段已暴露，但探测长度不足，无法验证缓存命中强度' : 'Cache field exposed but probe length insufficient — cannot verify cache hit strength';
+      details.push(zh ? `缓存字段已暴露（${cache2.sourceField || 'unknown'}），说明该接口支持缓存。探测长度不足（${actualPromptTokens} tokens < 1024），需更长 prompt 才能验证命中强度。` : `Cache field exposed (${cache2.sourceField || 'unknown'}) — API supports caching. Probe too short (${actualPromptTokens} tokens < 1024) — longer prompt needed to verify hit rate.`);
+      return mkCheck({
+        id: 'cacheHitCheck', label: { zh: '缓存命中检测', en: 'Cache Hit Check' },
+        maxScore: 5, score: 2.5, status: 'field_found', summary, details, deductions: [],
+        evidence: { ...evidence, statusColor: { color: '#d97706', bg: '#fef9c3' } }
+      });
+    }
+    // field NOT exposed + probe insufficient → truly unknown
     const summary = zh ? '探测长度不足，无法验证缓存宣传' : 'Probe length insufficient — cannot verify cache claims';
     details.push(zh ? `本次缓存探测的 prompt_tokens 低于 1024，无法有效验证缓存命中。未验证不等于没有缓存。当前实际：${actualPromptTokens} tokens` : `Probe prompt_tokens below 1024 — cannot effectively verify cache hit. Actual: ${actualPromptTokens} tokens. Unverified does not mean unavailable.`);
     return mkCheck({
@@ -1493,6 +1504,7 @@ async function checkN_CacheHitCheck(baseUrl, apiKey, model, interfaceType, signa
     excellent: { color: '#16a34a', bg: '#dcfce7' }, good: { color: '#16a34a', bg: '#dcfce7' },
     partial: { color: '#d97706', bg: '#fef9c3' }, weak: { color: '#d97706', bg: '#fef9c3' },
     none: { color: '#dc2626', bg: '#fee2e2' }, unknown: { color: '#94a3b8', bg: '#f1f5f9' },
+    field_found: { color: '#d97706', bg: '#fef9c3' },
     error: { color: '#f59e0b', bg: '#fef9c3' }, skipped: { color: '#94a3b8', bg: '#f1f5f9' },
   };
 
@@ -3341,7 +3353,11 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
           <div style="color:#92400e"><span style="color:#94a3b8">${zh ? '总超时上限：' : 'Total timeout: '}</span>${ev.totalTimeoutMs ?? CACHE_PROBE_TOTAL_TIMEOUT_MS}ms</div>
           <div style="color:#92400e;margin-top:4px">${zh ? '说明：缓存检测请求耗时过长，已自动跳过，不影响其他验货项。' : 'Note: Cache probe timed out — auto-skipped, does not block other checks.'}</div>
         </div>` : ''}
-        ${isUnknown ? `<div style="font-size:10px;color:#64748b;line-height:1.5;margin-bottom:4px">${escH(checkData.summary || '')}</div>
+        ${cacheStatus === 'field_found' ? `<div style="margin-top:6px;padding:6px 8px;background:#fef9c3;border-radius:6px;font-size:10px;border:1px solid #f59e0b">
+          <div style="font-weight:600;color:#92400e;margin-bottom:4px">${zh ? '✅ 缓存字段已暴露（探测不足）' : '✅ Cache Field Exposed (Probe Insufficient)'}</div>
+          <div style="color:#92400e;line-height:1.5">${escH(checkData.summary || '')}</div>
+        </div>` : ''}
+        ${isUnknown && !ev.fieldFound ? `<div style="font-size:10px;color:#64748b;line-height:1.5;margin-bottom:4px">${escH(checkData.summary || '')}</div>
         <div style="font-size:10px;color:#64748b;line-height:1.5;border-top:1px solid #e2e8f0;padding-top:4px">${zh ? '未暴露字段不等于没有缓存。' : 'Missing fields do not necessarily mean caching is unavailable.'}</div>` : `<div style="font-size:10px;color:#64748b;line-height:1.5">${escH(checkData.summary || '')}</div>`}
       </div>`;
     }
