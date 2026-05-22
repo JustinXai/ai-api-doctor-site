@@ -66,6 +66,43 @@ const WEIGHT_V16 = {
 };
 
 /* ═══════════════════════════════════════════════════════
+   v1.7 Helper functions
+   ═══════════════════════════════════════════════════════ */
+
+/**
+ * Clamp a raw score to [0, max]
+ */
+function clampScore(score, max) {
+  const n = Number(score);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(max, n));
+}
+
+/**
+ * Safely extract a numeric score from any value.
+ * Handles: plain number, {score}, {totalScore}, {final}, result objects.
+ */
+function asNumberScore(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (value && typeof value === 'object') {
+    if (typeof value.totalScore === 'number') return value.totalScore;
+    if (typeof value.score === 'number') return value.score;
+    if (typeof value.final === 'number') return value.final;
+    if (typeof value.capped === 'number') return value.capped;
+  }
+  return 0;
+}
+
+/**
+ * Extract capped score from applyCaps result object.
+ */
+function extractCappedScore(capResult) {
+  if (typeof capResult === 'number') return capResult;
+  if (capResult && typeof capResult.capped === 'number') return capResult.capped;
+  return 0;
+}
+
+/* ═══════════════════════════════════════════════════════
    Grade table (6 levels) — unified for all components
   Score range: 100=A, 90-99=B, 70-89=C, 60-69=D, 40-59=E, 0-39=F
   Max score is 98 — this is a CONFIGURATION risk score, not a model intelligence score.
@@ -703,9 +740,8 @@ async function checkE_TargetCall(baseUrl, apiKey, model, interfaceType, signal) 
 }
 
 /* ═══════════════════════════════════════════════════════
-   STEP 6: Stability Sampling — 15 pts (7 sub-items, 5 pings)
-   SHORT-PROMPT test: "Reply with exactly: OK" (2 words).
-   Latency thresholds are STRICT for short-prompt responses.
+   STEP 6: Stability & Latency — v1.7 scoring (25 pts)
+   Components: successScore (12/12) + avgLatencyScore (8/8) + jitterScore (5/5)
    ═══════════════════════════════════════════════════════ */
 async function checkG_Stability(baseUrl, apiKey, model, interfaceType, signal, targetCallResult) {
   const deductions = [];
@@ -739,92 +775,68 @@ async function checkG_Stability(baseUrl, apiKey, model, interfaceType, signal, t
   }
   evidence.samples = samples;
   const okCount = samples.filter(s => s.ok && s.hasContent).length;
+  const totalSamples = samples.length;
   const latencies = samples.map(s => s.latency || 0).filter(l => l > 0);
+  const sortedLat = [...latencies].sort((a, b) => a - b);
   const avgLat = latencies.length > 0 ? latencies.reduce((a, b) => a + b, 0) / latencies.length : 0;
   const minLat = latencies.length > 0 ? Math.min(...latencies) : 0;
   const maxLat = latencies.length > 0 ? Math.max(...latencies) : 0;
+  const medianLat = sortedLat.length > 0 ? sortedLat[Math.floor(sortedLat.length / 2)] : 0;
   const jitter = maxLat - minLat;
+  const latencyRatio = medianLat > 0 ? maxLat / medianLat : 0;
   evidence.avgLatency = avgLat;
-  evidence.latencyJitter = jitter;
-  evidence.minLatency = minLat;
+  evidence.medianLatency = medianLat;
   evidence.maxLatency = maxLat;
-  let s1 = 0, s2 = 0, s3 = 0, s4 = 0, s5 = 0, s6 = 0, s7 = 0;
+  evidence.latencyJitter = jitter;
+  evidence.latencyRatio = latencyRatio;
+  evidence.minLatency = minLat;
   let status = 'excellent';
 
-  // S1: Success rate (4 pts)
-  if (okCount === 5) s1 = 4;
-  else if (okCount === 4) s1 = 3;
-  else if (okCount === 3) s1 = 2;
-  else if (okCount === 2) s1 = 1;
-  else if (okCount === 1) s1 = 0.5;
-  else { s1 = 0; deductions.push(zh ? '稳定性采样全部失败' : 'All stability sampling failed'); status = 'failed'; }
+  // v1.7: stabilityLatencyScore = successScore (12) + avgLatencyScore (8) + jitterScore (5)
+  // ── Component 1: successScore (0-12) ──
+  let successScore = 0;
+  if (okCount === 5) successScore = 12;
+  else if (okCount === 4) successScore = 10;
+  else if (okCount === 3) successScore = 6;
+  else if (okCount === 2) successScore = 3;
+  else if (okCount === 1) successScore = 1;
+  else { deductions.push(zh ? '稳定性采样全部失败' : 'All stability sampling failed'); status = 'failed'; }
 
-  // S2: Average latency (3 pts) — 800-1500ms is slow but medium, not automatically high
-  if (avgLat <= 200) s2 = 3;
-  else if (avgLat <= 500) s2 = 2.5;
-  else if (avgLat <= 800) s2 = 2;
-  else if (avgLat <= 1500) s2 = 1.2;
-  else if (avgLat <= 3000) s2 = 0.6;
-  else { s2 = 0; deductions.push(zh ? `平均延迟过高：${Math.round(avgLat)}ms` : `Avg latency too high: ${Math.round(avgLat)}ms`); }
+  // ── Component 2: avgLatencyScore (0-8) ──
+  let avgLatencyScore = 0;
+  if (avgLat <= 500) avgLatencyScore = 8;
+  else if (avgLat <= 1000) avgLatencyScore = 7;
+  else if (avgLat <= 1500) avgLatencyScore = 6;
+  else if (avgLat <= 2000) avgLatencyScore = 5;
+  else if (avgLat <= 3000) avgLatencyScore = 4;
+  else if (avgLat <= 5000) avgLatencyScore = 2;
+  else { avgLatencyScore = 0; deductions.push(zh ? `平均延迟过高：${Math.round(avgLat)}ms` : `Avg latency too high: ${Math.round(avgLat)}ms`); }
 
-  // S3: Max latency (2 pts) — >5000ms alone is high risk, not automatically failing
-  if (maxLat <= 500) s3 = 2;
-  else if (maxLat <= 1500) s3 = 1.2;
-  else if (maxLat <= 5000) s3 = 0.5;
-  else { s3 = 0; deductions.push(zh ? `最大延迟过高：${maxLat}ms` : `Max latency too high: ${maxLat}ms`); }
+  // ── Component 3: jitterScore (0-5) — based on max/median ratio ──
+  let jitterScore = 0;
+  if (latencyRatio <= 1.2) jitterScore = 5;
+  else if (latencyRatio <= 1.5) jitterScore = 4;
+  else if (latencyRatio <= 2.0) jitterScore = 3;
+  else if (latencyRatio <= 3.0) jitterScore = 1;
+  else { jitterScore = 0; deductions.push(zh ? `延迟波动严重：${jitter}ms` : `Severe latency jitter: ${jitter}ms`); details.push(zh ? `最大/中位延迟比：${latencyRatio.toFixed(2)}x` : `Max/median ratio: ${latencyRatio.toFixed(2)}x`); }
 
-  // S4: Latency jitter (2 pts) — >3000ms alone is high risk
-  if (jitter < 100) s4 = 2;
-  else if (jitter < 300) s4 = 1.5;
-  else if (jitter < 800) s4 = 1;
-  else if (jitter < 3000) s4 = 0.5;
-  else { s4 = 0; deductions.push(zh ? `延迟波动严重：${jitter}ms` : `Severe latency jitter: ${jitter}ms`); }
+  const score = clampScore(successScore + avgLatencyScore + jitterScore, 25);
+  evidence.stabilitySuccessScore = successScore;
+  evidence.stabilityAverageLatencyScore = avgLatencyScore;
+  evidence.stabilityJitterScore = jitterScore;
+  evidence.subScores = { success: successScore, avgLatency: avgLatencyScore, jitter: jitterScore };
 
-  // S5: Output consistency (1.5 pts)
-  const okResponses = samples.filter(s => s.ok).map(s => s.responseText.trim());
-  if (okCount === 5 && okResponses.every(r => r === 'OK')) s5 = 1.5;
-  else if (okCount >= 4 && okResponses.length >= 2 && okResponses[0] === okResponses[1]) s5 = 1;
-  else if (okResponses.length >= 2) details.push(zh ? '输出一致性：多次输出不一致' : 'Output consistency: multiple outputs differ');
-
-  // S6: Rate limit / wind control (1.5 pts)
-  if (!evidence.rateLimitDetected) {
-    s6 = 1.5;
-  } else if (okCount >= 4) {
-    s6 = 0.5;
-    details.push(zh ? '检测中触发一次限流' : 'Rate limit triggered once during detection');
-  } else {
-    s6 = 0;
-    deductions.push(zh ? '检测中触发限流' : 'Rate limit triggered during detection');
-    if (status !== 'failed') status = 'warning';
-  }
-
-  // S7: Error explainability (1 pt)
-  const failedSamples = samples.filter(s => !s.ok);
-  if (failedSamples.length === 0) s7 = 1;
-  else s7 = failedSamples.every(s => s.status === 429 || s.status === 403 || s.status === 400 || s.errMsg) ? 1 : 0;
-
-  const score = s1 + s2 + s3 + s4 + s5 + s6 + s7;
-  evidence.subScores = { s1, s2, s3, s4, s5, s6, s7 };
-
-  // Force status overrides — only for truly high-risk situations
-  // avgLat > 3000ms alone: stability status = warning (not failed), cap handled by applyCaps
-  if (avgLat > 3000) { if (status !== 'failed') status = 'warning'; }
-  // maxLat > 10000ms alone: stability high risk
-  if (maxLat > 10000) { if (status !== 'failed') status = 'warning'; }
-  // okCount <= 3/5: stability warning
-  if (okCount <= 3) { if (status !== 'failed') status = 'warning'; }
-  // okCount <= 1: stability failed
-  if (okCount <= 1) status = 'failed';
-  // 0/5 success: stability failed, high risk
+  // Status overrides
   if (okCount === 0) status = 'failed';
-  // Multiple 429 / rate limit: stability warning
-  if (evidence.rateLimitDetected && okCount < 4) { if (status !== 'failed') status = 'warning'; }
-  // Score-based status
-  if (score < 8) status = 'failed';
-  else if (score < 12) status = 'warning';
+  else if (okCount <= 2) status = 'failed';
+  else if (score < 15) status = 'warning';
+  else if (avgLat > 5000 || latencyRatio > 4) status = 'warning';
 
-  const summary = status === 'excellent' ? (zh ? '完全稳定' : 'Fully stable') : status === 'good' ? `${okCount}/5 成功，平均 ${Math.round(avgLat)}ms` : status === 'warning' ? (zh ? '稳定性波动' : 'Stability fluctuating') : (zh ? '稳定性差' : 'Poor stability');
-  return mkCheck({ id: 'stability', label: { zh: '稳定性采样', en: 'Stability Sampling' }, maxScore: 25, score, status, summary, details, deductions, evidence });
+  const summary = status === 'excellent' ? (zh ? '完全稳定' : 'Fully stable') :
+    okCount === 5 ? (zh ? `响应正常` : 'Normal') :
+    okCount >= 4 ? (zh ? `轻微波动` : 'Slight fluctuation') :
+    status === 'warning' ? (zh ? '稳定性波动' : 'Stability fluctuating') : (zh ? '稳定性差' : 'Poor stability');
+  return mkCheck({ id: 'stability', label: { zh: '稳定性与延迟', en: 'Stability & Latency' }, maxScore: 25, score, status, summary, details, deductions, evidence });
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -1991,7 +2003,7 @@ function evaluateModelIdentity(identityText, finalTestModelId) {
     const tc = computeTargetConsistency(t, targetLower);
     return {
       category: 'hard_contamination',
-      score: 0,
+      score: 2, // v1.7: 2/15 for hard contamination
       reason: zh
         ? '模型回答中出现开发环境、工具人格或系统提示污染信号'
         : 'Model response shows development environment, tool persona or system prompt contamination',
@@ -2008,7 +2020,7 @@ function evaluateModelIdentity(identityText, finalTestModelId) {
     const tc = computeTargetConsistency(t, targetLower);
     return {
       category: 'ambiguous',
-      score: 1.5,
+      score: 7, // v1.7: 7/15 for ambiguous
       reason: zh
         ? `模型身份未确认：${rawResponse}`
         : `Model self-reported identity is vague: ${rawResponse}`,
@@ -2036,7 +2048,7 @@ function evaluateModelIdentity(identityText, finalTestModelId) {
     const tc = computeTargetConsistency(t, targetLower);
     return {
       category: 'wrong_family',
-      score: 0,
+      score: 2, // v1.7: 2/15 for wrong family
       reason: zh
         ? '模型自报家族与目标 Model ID 明显不一致，存在模型降配或路由错误疑似风险'
         : 'Model self-reported family conflicts with target Model ID — possible downgrade or routing error',
@@ -2063,7 +2075,7 @@ function evaluateModelIdentity(identityText, finalTestModelId) {
     if (tc.targetConsistency === 'match') {
       return {
         category: 'exact_match',
-        score: 6,
+        score: 15, // v1.7: 15/15 for exact match
         reason: zh ? '模型身份与目标一致' : 'Model identity matches target',
         detectedSource: null,
         targetConsistency: tc.targetConsistency,
@@ -2074,7 +2086,7 @@ function evaluateModelIdentity(identityText, finalTestModelId) {
     } else {
       return {
         category: 'family_match',
-        score: 4,
+        score: 11, // v1.7: 11/15 for family match but version not confirmed
         reason: zh ? '模型属于同一家族但版本不一致' : 'Model in same family but version inconsistent',
         detectedSource: null,
         targetConsistency: tc.targetConsistency,
@@ -2086,15 +2098,13 @@ function evaluateModelIdentity(identityText, finalTestModelId) {
   }
 
   // ── Step 5: Platform / proxy / IDE / Agent identity ──
-  // Only triggered by STRONG entity keywords (Windsurf, Cursor, AWS Bedrock, etc.)
-  // NOT triggered by Claude/GPT/Gemini/Anthropic/OpenAI/Google model names alone
   const hasStrong = hasStrongEntity(rawResponse);
 
   if (hasStrong) {
     const tc = computeTargetConsistency(t, targetLower);
     return {
       category: 'platform_or_proxy_identity',
-      score: 3,
+      score: 6, // v1.7: 6/15 for platform/proxy identity
       reason: zh
         ? `检测到平台代理层身份暴露（${extractDetectedSource(rawResponse)}），不等于模型不可用，但来源透明度较低`
         : `Platform proxy layer identity detected (${extractDetectedSource(rawResponse)}) — source transparency reduced, not necessarily unusable`,
@@ -2111,7 +2121,7 @@ function evaluateModelIdentity(identityText, finalTestModelId) {
     const tc = computeTargetConsistency(t, targetLower);
     return {
       category: 'family_match',
-      score: 4,
+      score: 12, // v1.7: 12/15 for family match
       reason: zh ? '模型自报属于同一家族' : 'Model self-reported as same family',
       detectedSource: null,
       targetConsistency: tc.targetConsistency,
@@ -2125,7 +2135,7 @@ function evaluateModelIdentity(identityText, finalTestModelId) {
   const tc = computeTargetConsistency(t, targetLower);
   return {
     category: 'ambiguous',
-    score: 1.5,
+    score: 7, // v1.7: 7/15 for ambiguous
     reason: zh ? `模型自报身份不明确：${rawResponse}` : `Model self-reported identity unclear: ${rawResponse}`,
     detectedSource: null,
     targetConsistency: tc.targetConsistency,
@@ -2394,7 +2404,7 @@ async function checkK_ModelIntegrity(baseUrl, apiKey, model, interfaceType, sign
     : status === 'warning'
     ? (zh ? '部分能力测试未完全通过，存在兼容差异、来源不透明或降配疑似风险' : 'Some capability tests did not fully pass — possible compatibility issues, source transparency or downgrade risk')
     : (zh ? '多项能力信号异常，建议谨慎用于高成本任务' : 'Multiple capability signals abnormal — use with caution for high-cost tasks');
-  return mkCheck({ id: 'modelIntegrity', label: { zh: '模型可信度', en: 'Model Integrity' }, maxScore: 15, score: totalScore, status, summary, details, deductions, evidence: { ...evidence, subScores, deepMode: !!deepMode, coreAbilityFailures } });
+  return mkCheck({ id: 'modelIntegrity', label: { zh: '模型身份', en: 'Model Identity' }, maxScore: 15, score: clampScore(identityScore, 15), status, summary, details, deductions, evidence: { ...evidence, subScores, modelIdentityScore: clampScore(identityScore, 15), deepMode: !!deepMode, coreAbilityFailures } });
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -2809,7 +2819,7 @@ function getConfidence(checks) {
    NEW: buildDebugScoring — lightweight debug info for development
    Does NOT expose API key or sensitive response body
    ═══════════════════════════════════════════════════════ */
-function buildDebugScoring(rawScore, cappedScore, checks) {
+function buildDebugScoring(rawScore, cappedScore, checks, breakdown) {
   const authEvidence = checks.auth?.evidence || {};
   const tcEvidence = checks.targetCall?.evidence || {};
   const mlEvidence = checks.modelList?.evidence || {};
@@ -3032,25 +3042,19 @@ function calcFinalScore(checks) {
   // cacheSignal: cacheHitCheck (5 pts)
   // clientConfig: clientConfig (5 pts)
 
-  const coreCompatScore = (checks.basicCompatibility?.score || 0) + (checks.targetCall?.score || 0);
-  const coreCompatMax = 25; // basicCompatibility max + targetCall quality max
-  const usageScore = checks.costTransparency?.score || 0;
-  const usageMax = 25;
-  const stabilityScore = checks.stability?.score || 0;
-  const stabilityMax = 25;
-  const identityScore = checks.modelIntegrity?.score || 0;
-  const identityMax = 15;
-  const cacheScore = checks.cacheHitCheck?.score || 0;
-  const cacheMax = 5;
-  const clientScore = checks.clientConfig?.score || 0;
-  const clientMax = 5;
+  const coreCompatScore = clampScore((checks.basicCompatibility?.score || 0) + (checks.targetCall?.score || 0), 25);
+  const usageScore = clampScore(checks.costTransparency?.score || 0, 25);
+  const stabilityScore = clampScore(checks.stability?.score || 0, 25);
+  const identityScore = clampScore(checks.modelIntegrity?.score || 0, 15);
+  const cacheScore = clampScore(checks.cacheHitCheck?.score || 0, 5);
+  const clientScore = clampScore(checks.clientConfig?.score || 0, 5);
 
-  const coreNorm = Math.min(100, (coreCompatScore / coreCompatMax) * 100);
-  const usageNorm = Math.min(100, (usageScore / usageMax) * 100);
-  const stabilityNorm = Math.min(100, (stabilityScore / stabilityMax) * 100);
-  const identityNorm = Math.min(100, (identityScore / identityMax) * 100);
-  const cacheNorm = Math.min(100, (cacheScore / cacheMax) * 100);
-  const clientNorm = Math.min(100, (clientScore / clientMax) * 100);
+  const coreNorm = (coreCompatScore / 25) * 100;
+  const usageNorm = (usageScore / 25) * 100;
+  const stabilityNorm = (stabilityScore / 25) * 100;
+  const identityNorm = (identityScore / 15) * 100;
+  const cacheNorm = (cacheScore / 5) * 100;
+  const clientNorm = (clientScore / 5) * 100;
 
   // v1.7 weighted formula
   const final = Math.min(98,
@@ -3063,8 +3067,15 @@ function calcFinalScore(checks) {
   );
 
   return {
-    final: Math.round(final * 10) / 10,
-    breakdown: { coreNorm, usageNorm, stabilityNorm, identityNorm, cacheNorm, clientNorm }
+    totalScore: Math.round(final * 10) / 10,
+    breakdown: {
+      coreCompatibility: { score: coreCompatScore, max: 25, norm: coreNorm, label: '基础兼容性', labelEn: 'Core Compatibility' },
+      usageTransparency: { score: usageScore, max: 25, norm: usageNorm, label: '扣费透明度', labelEn: 'Usage Transparency' },
+      stabilityLatency: { score: stabilityScore, max: 25, norm: stabilityNorm, label: '稳定性与延迟', labelEn: 'Stability & Latency' },
+      modelIdentity: { score: identityScore, max: 15, norm: identityNorm, label: '模型身份', labelEn: 'Model Identity' },
+      cacheSignal: { score: cacheScore, max: 5, norm: cacheNorm, label: '缓存命中信号', labelEn: 'Cache Signal' },
+      clientConfig: { score: clientScore, max: 5, norm: clientNorm, label: '客户端配置', labelEn: 'Client Config' },
+    }
   };
 }
 
@@ -3076,7 +3087,8 @@ function calcFinalScore(checks) {
    ═══════════════════════════════════════════════════════ */
 function applyCaps(rawScore, checks, modelIdInfo) {
   let cap = 98;
-  let capReason = 'none';
+  let capReason = null;
+  let capApplied = false;
 
   // ── v1.7: Extract relevant evidence ──
   const targetWorks = (checks.targetCall?.score || 0) >= 11;
@@ -3093,33 +3105,28 @@ function applyCaps(rawScore, checks, modelIdInfo) {
 
   // 1. Core reachability completely failed
   if ((checks.reachability?.score || 0) < 3) {
-    cap = 25;
-    capReason = 'reachability_failed';
+    cap = 25; capReason = 'reachability_failed'; capApplied = true;
   }
 
   // 2. Core API Key authentication failed (401)
   const has401 = checks.auth?.evidence?.modelsStatus === 401 || checks.auth?.evidence?.chatStatus === 401;
   if (has401) {
-    cap = 35;
-    capReason = 'auth_401';
+    cap = 35; capReason = 'auth_401'; capApplied = true;
   }
 
   // 3. Core chat/completions 403 (not auxiliary)
   const hasCoreChat403 = checks.targetCall?.evidence?.httpStatus === 403;
   if (hasCoreChat403) {
-    cap = 45;
-    capReason = 'core_chat_403';
+    cap = 45; capReason = 'core_chat_403'; capApplied = true;
   }
 
   // 4. Core response is HTML/invalid JSON (format severely incompatible)
   const coreResponseUnparseable = !checks.targetCall?.evidence?.responseParsed && (checks.targetCall?.evidence?.httpStatus === 200);
   if (coreResponseUnparseable) {
-    cap = 45;
-    capReason = 'response_not_json';
+    cap = 45; capReason = 'response_not_json'; capApplied = true;
   }
 
   // 5. Current Model ID explicitly unavailable (404 / model not found)
-  // Even if targetCall score is high, 404 means the model is unavailable
   const targetHttpStatus = checks.targetCall?.evidence?.httpStatus;
   const targetOutputText = typeof checks.targetCall?.evidence?.output === 'string'
     ? checks.targetCall.evidence.output
@@ -3130,21 +3137,20 @@ function applyCaps(rawScore, checks, modelIdInfo) {
     targetOutput.includes('no available model') ||
     targetOutput.includes('model not available');
   if (hasModelNotFound) {
-    cap = 50;
-    capReason = 'model_not_found';
+    cap = 50; capReason = 'model_not_found'; capApplied = true;
   }
 
   // 6. Stability sampling success rate <= 40%
   if (totalSamples >= 5 && successRate <= 0.4) {
-    cap = 60;
-    capReason = 'stability_failed';
+    cap = 60; capReason = 'stability_failed'; capApplied = true;
   }
 
   // ── v1.7: REMOVED caps ──
   // NO cap for: auxiliary 403, usage missing, cache missing, family_match,
   // variant_mismatch, version_mismatch, platform_or_proxy_identity, /models endpoint failure
 
-  return { capped: Math.min(Math.max(rawScore, 0), cap), capReason, capLimit: cap };
+  const cappedValue = capApplied ? Math.min(Math.max(rawScore, 0), cap) : rawScore;
+  return { capped: cappedValue, capReason, capLimit: capApplied ? cap : null, capApplied };
 }
 
 // Legacy wrapper for compatibility
@@ -3989,13 +3995,15 @@ window.Doctor = {
         try { toolCallingResult = await checkM_ToolCalling(normalizedUrl, apiKey, modelIdInfo.finalTestModelId, signal); } catch (_) {}
       }
       const checks = { reachability: reachResult, auth: authResult, modelList: modelListResult, autoModel: autoModelResult, targetCall: targetCallResult, stability: stabilityResult, usageAudit: usageResult, costTransparency: costResult, cacheHitCheck: cacheResult, modelIntegrity: modelIntegrityResult, basicCompatibility: basicCompatResult, clientConfig: clientResult };
-      const { final: finalScore } = calcFinalScore(checks);
-      const cappedScore = applyCaps(finalScore, checks, modelIdInfo);
+      const { totalScore, breakdown } = calcFinalScore(checks);
+      const capResult = applyCaps(totalScore, checks, modelIdInfo);
+      const cappedScore = extractCappedScore(capResult);
+      const capApplied = capResult && capResult.capApplied === true;
       const grade = getScoreGrade(cappedScore);
       const judgment = getJudgment(cappedScore, checks);
       const failureSummary = generateFailureSummary(cappedScore, grade, checks);
-      const debugScoring = buildDebugScoring(finalScore, cappedScore, checks);
-      this._result = { score: cappedScore, finalScore, grade, judgment, checks, deepMode, toolCallingResult, modelIdInfo, reportId: generateReportId(), timestamp: new Date().toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }), failureSummary, debugScoring };
+      const debugScoring = buildDebugScoring(totalScore, cappedScore, checks, breakdown);
+      this._result = { score: cappedScore, totalScore, breakdown, capApplied, capReason: capResult?.capReason || null, capLimit: capResult?.capLimit || null, grade, judgment, checks, deepMode, toolCallingResult, modelIdInfo, reportId: generateReportId(), timestamp: new Date().toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }), failureSummary, debugScoring };
       this._refreshProgress(8, 'excellent', zh ? '生成报告' : 'Report ready');
       this.showResult(this._result);
     } catch (err) {
@@ -4278,9 +4286,10 @@ window.MockCases = {
     checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 0, status: 'skipped', evidence: {} });
     checks.basicCompatibility = mkCheck({ id: 'basicCompatibility', label: {zh:'基础兼容性',en:'Basic Compatibility'}, maxScore: 25, score: 0, status: 'failed', evidence: {} });
     checks.clientConfig = mkCheck({ id: 'clientConfig', label: {zh:'客户端配置',en:'Client Config'}, maxScore: 5, score: 0, status: 'failed', evidence: {} });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case A: Base URL unreachable → capped=${capped} (expected ≤25)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case A: Base URL unreachable → capped=${capped} (expected ≤25)` };
   },
 
   caseB() {
@@ -4290,9 +4299,10 @@ window.MockCases = {
     checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 0, status: 'skipped', evidence: {} });
     checks.basicCompatibility = mkCheck({ id: 'basicCompatibility', label: {zh:'基础兼容性',en:'Basic Compatibility'}, maxScore: 25, score: 2, status: 'warning', evidence: {} });
     checks.clientConfig = mkCheck({ id: 'clientConfig', label: {zh:'客户端配置',en:'Client Config'}, maxScore: 5, score: 5, status: 'excellent', evidence: { baseUrlOrigin: 'https://api.example.com', modelId: 'gpt-4', clineReady: true, continueReady: true, httpStatus: 200 } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case B: 401 → capped=${capped} (expected ≤40)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case B: 401 → capped=${capped} (expected ≤40)` };
   },
 
   // Case K: No usage (tightened cap)
@@ -4301,9 +4311,10 @@ window.MockCases = {
     checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 25, score: 6, status: 'failed',
       deductions: ['usage 字段完全缺失，无法审计消耗'],
       evidence: { usageTest: {hasUsage: false}, shortReplyTest: {ok: true, completionTokens: 3, reasoningTokens: 0}, subScores: {} } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case K: No usage → capped=${capped} (expected ≤78, no A/B)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case K: No usage → capped=${capped} (expected ≤78, no A/B)` };
   },
 
   // Case L: Short reply OK but completion_tokens=80, no reasoning_tokens
@@ -4312,9 +4323,10 @@ window.MockCases = {
     checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 25, score: 13.5, status: 'failed',
       deductions: ['极短回复 OK 但 completion_tokens(80) 严重偏高，无 reasoning_tokens 解释'],
       evidence: { usageTest: {hasUsage:true,usageComplete:true,prompt_tokens:5,completion_tokens:3,total_tokens:8}, shortReplyTest: {ok:true,completionTokens:80,reasoningTokens:0,totalTokens:85}, maxTokensTest:{completionTokens:3}, usageStability:[{total_tokens:15},{total_tokens:15}], promptTokenEstTest:{shortPrompt:'Say hello.',estimatedTokens:4,apiPromptTokens:4}, subScores:{} } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case L: OK+comp=80, no reason → capped=${capped} (expected ≤72, cost high risk, R6 cap)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case L: OK+comp=80, no reason → capped=${capped} (expected ≤72, cost high risk, R6 cap)` };
   },
 
   // Case M: total_tokens inconsistent (30% diff)
@@ -4323,9 +4335,10 @@ window.MockCases = {
     checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 25, score: 24, status: 'warning',
       details: ['total_tokens(30) 与 prompt+completion=8 差异 275%'],
       evidence: { usageTest: {hasUsage:true,usageComplete:true,prompt_tokens:5,completion_tokens:3,total_tokens:30}, shortReplyTest: {ok:true,completionTokens:3,reasoningTokens:0,totalTokens:30}, subScores: {} } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case M: total_tokens 差异 30% → capped=${capped} (expected ≤86, cost medium risk)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case M: total_tokens 差异 30% → capped=${capped} (expected ≤86, cost medium risk)` };
   },
 
   // Case N: JSON+instruction+code failed
@@ -4334,9 +4347,10 @@ window.MockCases = {
     checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 8, status: 'failed',
       deductions: ['JSON 严格输出测试失败：输出不是合法 JSON','严格指令遵循测试未通过','轻量代码修复测试未通过'],
       evidence: { modelIdentityScore:6, coreAbilityFailures:3, jsonTest:{output:'NOT JSON'}, instructionTest:{output:'wrong'}, codeRepair:{output:'wrong'} } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case N: JSON+instruction+code failed → capped=${capped} (expected ≤75, model high risk)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case N: JSON+instruction+code failed → capped=${capped} (expected ≤75, model high risk)` };
   },
 
   // Case O: Hidden model, all tests pass
@@ -4345,9 +4359,10 @@ window.MockCases = {
     checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 15, status: 'good',
       details: ['当前模型未出现在 /models 列表中，但实际调用已通过'],
       evidence: { modelIdentityScore:6, modelIdentityLevel:'exact_match', coreAbilityFailures:0, modelVisibility:'hidden_but_works', subScores: {modelIdentity:6,modelVisibility:2,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2} } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case O: Hidden model, all pass → capped=${capped} (expected 90+, B grade)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case O: Hidden model, all pass → capped=${capped} (expected 90+, B grade)` };
   },
 
   // Case P: Stability 3/5 but avgLat=900ms
@@ -4358,16 +4373,18 @@ window.MockCases = {
       evidence: { avgLatency:900, latencyJitter:80, maxLatency:980, rateLimitDetected:false,
         samples: [{ok:true,status:200,latency:850,hasContent:true,responseText:'OK'},{ok:true,status:200,latency:900,hasContent:true,responseText:'OK'},{ok:true,status:200,latency:920,hasContent:true,responseText:'OK'},{ok:true,status:200,latency:880,hasContent:true,responseText:'OK'},{ok:true,status:200,latency:950,hasContent:true,responseText:'OK'}],
         subScores:{s1:4,s2:0,s3:0,s4:2,s5:1.5,s6:1.5,s7:1} } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case P: 5/5 success but avgLat=900ms → capped=${capped} (expected ≤B, no A)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case P: 5/5 success but avgLat=900ms → capped=${capped} (expected ≤B, no A)` };
   },
 
   // Case Q: All normal
   caseQ() {
-    const { final } = calcFinalScore(this._makeNormalChecks());
-    const capped = applyCaps(final, this._makeNormalChecks(), {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case Q: All normal → capped=${capped} (expected 95-98, A grade)` };
+    const { totalScore } = calcFinalScore(this._makeNormalChecks());
+    const capResult = applyCaps(totalScore, this._makeNormalChecks(), {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case Q: All normal → capped=${capped} (expected 95-98, A grade)` };
   },
 
   // ── New Cases V-AH ──────────────────────────────────
@@ -4380,9 +4397,10 @@ window.MockCases = {
       evidence: { avgLatency:900, latencyJitter:80, maxLatency:980, rateLimitDetected:false,
         samples: [{ok:true,status:200,latency:850},{ok:true,status:200,latency:900},{ok:true,status:200,latency:920},{ok:true,status:200,latency:880},{ok:true,status:200,latency:950}],
         subScores:{s1:4,s2:0,s3:0,s4:2,s5:0,s6:1,s7:1} } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case V: avgLat=900ms, 5/5 → capped=${capped} (expected stability warning, no A)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case V: avgLat=900ms, 5/5 → capped=${capped} (expected stability warning, no A)` };
   },
 
   // Case W: Latency jitter 1200ms → jitter item 0, stability medium
@@ -4393,9 +4411,10 @@ window.MockCases = {
       evidence: { avgLatency:300, latencyJitter:1200, maxLatency:900, rateLimitDetected:false,
         samples: [{ok:true,status:200,latency:100},{ok:true,status:200,latency:300},{ok:true,status:200,latency:500},{ok:true,status:200,latency:800},{ok:true,status:200,latency:1300}],
         subScores:{s1:4,s2:2,s3:1,s4:0,s5:0.5,s6:1.5,s7:1} } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case W: jitter=1200ms → capped=${capped} (expected stability medium, jitter 0)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case W: jitter=1200ms → capped=${capped} (expected stability medium, jitter 0)` };
   },
 
   // Case X: Test claude-opus-4.6-thinking, model says GPT-3.5 → identity 0
@@ -4405,9 +4424,10 @@ window.MockCases = {
       deductions: ['模型自报身份与目标 Model ID 不一致，存在明显模型降配疑似风险'],
       evidence: { modelIdentityScore:0, modelIdentityLevel:'wrong_family', coreAbilityFailures:3,
         modelVisibility:'in_list', subScores:{modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:0,instructionTest:0,codeRepair:0,reasoning:2,needle:2,consistency:0} } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case X: claude says GPT-3.5 → capped=${capped} (expected ≤72, model high risk)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case X: claude says GPT-3.5 → capped=${capped} (expected ≤72, model high risk)` };
   },
 
   // Case Y: Test gpt-5.5, model says unknown → identity 1
@@ -4417,9 +4437,10 @@ window.MockCases = {
       details: ['模型未能明确自报当前模型身份'],
       evidence: { modelIdentityScore:1, modelIdentityLevel:'ambiguous', coreAbilityFailures:0,
         modelVisibility:'in_list', subScores:{modelIdentity:1,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2} } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case Y: gpt-5.5 says unknown → capped=${capped} (expected ≤89, no A)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case Y: gpt-5.5 says unknown → capped=${capped} (expected ≤89, no A)` };
   },
 
   // Case Z: usage complete but total_tokens diff 30%
@@ -4428,9 +4449,10 @@ window.MockCases = {
     checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 25, score: 24, status: 'warning',
       details: ['total_tokens(50) 与 prompt+completion=20 差异 150%'],
       evidence: { usageTest: {hasUsage:true,usageComplete:true,prompt_tokens:10,completion_tokens:10,total_tokens:50}, shortReplyTest: {ok:true,completionTokens:3,reasoningTokens:0}, subScores:{} } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case Z: total_tokens diff 30% → capped=${capped} (expected ≤86, cost medium risk)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case Z: total_tokens diff 30% → capped=${capped} (expected ≤86, cost medium risk)` };
   },
 
   // Case AA: max_tokens=5 but returns very long
@@ -4439,9 +4461,10 @@ window.MockCases = {
     checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 25, score: 26, status: 'warning',
       details: ['max_tokens 限制未完全生效'],
       evidence: { usageTest: {hasUsage:true,usageComplete:true,prompt_tokens:5,completion_tokens:3,total_tokens:8}, shortReplyTest: {ok:true,completionTokens:3,reasoningTokens:0}, maxTokensTest: {completionTokens:50}, subScores:{} } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case AA: max_tokens=5 but returns very long → capped=${capped} (expected ≤84, cost medium risk)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case AA: max_tokens=5 but returns very long → capped=${capped} (expected ≤84, cost medium risk)` };
   },
 
   // Case AB: Short reply OK, completion_tokens=60, no reasoning_tokens
@@ -4450,9 +4473,10 @@ window.MockCases = {
     checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 25, score: 15.5, status: 'failed',
       deductions: ['极短回复 OK 但 completion_tokens(60) 严重偏高，无 reasoning_tokens 解释'],
       evidence: { usageTest: {hasUsage:true,usageComplete:true,prompt_tokens:5,completion_tokens:3,total_tokens:8}, shortReplyTest: {ok:true,completionTokens:60,reasoningTokens:0,totalTokens:65}, subScores:{} } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case AB: OK+comp=60, no reason → capped=${capped} (expected ≤72, cost high risk)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case AB: OK+comp=60, no reason → capped=${capped} (expected ≤72, cost high risk)` };
   },
 
   // Case AC: Short reply OK, completion_tokens=60, reasoning_tokens=55
@@ -4461,9 +4485,10 @@ window.MockCases = {
     checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 25, score: 25, status: 'warning',
       details: ['短回复 token 偏高(60)，reasoning_tokens(55) 部分解释'],
       evidence: { usageTest: {hasUsage:true,usageComplete:true,prompt_tokens:5,completion_tokens:3,total_tokens:8}, shortReplyTest: {ok:true,completionTokens:60,reasoningTokens:55,totalTokens:65}, subScores:{} } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case AC: OK+comp=60+reason=55 → capped=${capped} (expected ≤86, cost medium risk, short item max 4/7)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case AC: OK+comp=60+reason=55 → capped=${capped} (expected ≤86, cost medium risk, short item max 4/7)` };
   },
 
   // Case AD: JSON + instruction + code three failures
@@ -4472,9 +4497,10 @@ window.MockCases = {
     checks.modelIntegrity = mkCheck({ id: 'modelIntegrity', label: {zh:'模型可信度',en:'Model Integrity'}, maxScore: 15, score: 8, status: 'failed',
       deductions: ['JSON 严格输出测试失败：输出不是合法 JSON','严格指令遵循测试未通过','轻量代码修复测试未通过'],
       evidence: { modelIdentityScore:6, coreAbilityFailures:3, jsonTest:{output:'xxx'}, instructionTest:{output:'xxx'}, codeRepair:{output:'xxx'} } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case AD: JSON+instr+code failed → capped=${capped} (expected ≤75, model high risk)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case AD: JSON+instr+code failed → capped=${capped} (expected ≤75, model high risk)` };
   },
 
   // Case AE: Identity=0 but all ability tests pass
@@ -4484,16 +4510,18 @@ window.MockCases = {
       details: ['模型能力测试表现尚可，但自报身份与目标模型不一致'],
       evidence: { modelIdentityScore:0, modelIdentityLevel:'wrong_family', coreAbilityFailures:0,
         subScores:{modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2} } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case AE: identity=0, all pass → capped=${capped} (expected ≤89, ModelIntegrity max 31, no A)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case AE: identity=0, all pass → capped=${capped} (expected ≤89, ModelIntegrity max 31, no A)` };
   },
 
   // Case AF: Two sites, one avgLat=180ms, one avgLat=900ms → scores must differ significantly
   caseAF_1() { // fast site
-    const { final } = calcFinalScore(this._makeNormalChecks());
-    const capped = applyCaps(final, this._makeNormalChecks(), {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case AF-1 (fast 180ms): → capped=${capped} (expected A/B grade)` };
+    const { totalScore } = calcFinalScore(this._makeNormalChecks());
+    const capResult = applyCaps(totalScore, this._makeNormalChecks(), {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case AF-1 (fast 180ms): → capped=${capped} (expected A/B grade)` };
   },
   caseAF_2() { // slow site
     const checks = this._makeNormalChecks();
@@ -4501,31 +4529,35 @@ window.MockCases = {
       evidence: { avgLatency:900, latencyJitter:80, maxLatency:980, rateLimitDetected:false,
         samples: [{ok:true,status:200,latency:850},{ok:true,status:200,latency:900},{ok:true,status:200,latency:920},{ok:true,status:200,latency:880},{ok:true,status:200,latency:950}],
         subScores:{s1:4,s2:0,s3:0,s4:2,s5:0.5,s6:1,s7:1} } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case AF-2 (slow 900ms): → capped=${capped} (expected C/D, stability warning)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case AF-2 (slow 900ms): → capped=${capped} (expected C/D, stability warning)` };
   },
 
   // Case AG: Two sites, one usage complete, one usage missing → scores differ by ≥12
   caseAG_1() { // usage complete
-    const { final } = calcFinalScore(this._makeNormalChecks());
-    const capped = applyCaps(final, this._makeNormalChecks(), {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case AG-1 (usage complete): → capped=${capped}` };
+    const { totalScore } = calcFinalScore(this._makeNormalChecks());
+    const capResult = applyCaps(totalScore, this._makeNormalChecks(), {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case AG-1 (usage complete): → capped=${capped}` };
   },
   caseAG_2() { // usage missing
     const checks = this._makeNormalChecks();
     checks.costTransparency = mkCheck({ id: 'costTransparency', label: {zh:'扣费透明度',en:'Cost Transparency'}, maxScore: 30, score: 6, status: 'failed',
       evidence: { usageTest: {hasUsage:false}, shortReplyTest:{ok:true,completionTokens:3}, subScores:{} } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case AG-2 (usage missing): → capped=${capped} (gap from AG-1 expected ≥12 pts)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case AG-2 (usage missing): → capped=${capped} (gap from AG-1 expected ≥12 pts)` };
   },
 
   // Case AH: Two sites, one identity match, one identity mismatch → scores differ by ≥8
   caseAH_1() { // identity match
-    const { final } = calcFinalScore(this._makeNormalChecks());
-    const capped = applyCaps(final, this._makeNormalChecks(), {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case AH-1 (identity match): → capped=${capped}` };
+    const { totalScore } = calcFinalScore(this._makeNormalChecks());
+    const capResult = applyCaps(totalScore, this._makeNormalChecks(), {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case AH-1 (identity match): → capped=${capped}` };
   },
   caseAH_2() { // identity mismatch
     const checks = this._makeNormalChecks();
@@ -4533,9 +4565,10 @@ window.MockCases = {
       deductions: ['模型自报身份与目标 Model ID 不一致'],
       evidence: { modelIdentityScore:0, modelIdentityLevel:'wrong_family', coreAbilityFailures:0,
         subScores:{modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2} } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case AH-2 (identity mismatch): → capped=${capped} (gap from AH-1 expected ≥8 pts, no A)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case AH-2 (identity mismatch): → capped=${capped} (gap from AH-1 expected ≥8 pts, no A)` };
   },
 
   // ── New Cases AI-AO ──────────────────────────────────
@@ -4555,9 +4588,10 @@ window.MockCases = {
         promptTokenEstTest:{shortPrompt:'Say hello.', estimatedTokens:6, apiPromptTokens:80},
         subScores:{}
       } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case AI: prompt_tokens 80 vs est.6 (13x) → capped=${capped} (expected ≤84, cost medium risk, J9 cap 84)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case AI: prompt_tokens 80 vs est.6 (13x) → capped=${capped} (expected ≤84, cost medium risk, J9 cap 84)` };
   },
 
   // Case AJ: Short prompt estimate 6 tokens, API returns prompt_tokens=200 (>5x inflation)
@@ -4574,9 +4608,10 @@ window.MockCases = {
         promptTokenEstTest:{shortPrompt:'Say hello.', estimatedTokens:6, apiPromptTokens:200},
         subScores:{}
       } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case AJ: prompt_tokens 200 vs est.6 (>5x) → capped=${capped} (expected ≤76, cost high risk)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case AJ: prompt_tokens 200 vs est.6 (>5x) → capped=${capped} (expected ≤76, cost high risk)` };
   },
 
   // Case AK: identityScore=0, all ability tests pass (coreAbilityFailures=0)
@@ -4588,9 +4623,10 @@ window.MockCases = {
       details: ['模型能力测试表现尚可，但自报身份与目标模型不一致'],
       evidence: { modelIdentityScore:0, modelIdentityLevel:'wrong_family', coreAbilityFailures:0,
         subScores:{modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2} } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case AK: identity=0, all pass → capped=${capped} (expected ≤86, grade max C, MI max 31)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case AK: identity=0, all pass → capped=${capped} (expected ≤86, grade max C, MI max 31)` };
   },
 
   // Case AL: identityScore=0, 1 coreAbilityFailure
@@ -4601,9 +4637,10 @@ window.MockCases = {
       deductions: ['JSON 抗糊弄测试失败','模型自报身份与目标 Model ID 不一致'],
       evidence: { modelIdentityScore:0, modelIdentityLevel:'wrong_family', coreAbilityFailures:1,
         subScores:{modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:0,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2} } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case AL: identity=0, 1 failure → capped=${capped} (expected ≤75, model high risk)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case AL: identity=0, 1 failure → capped=${capped} (expected ≤75, model high risk)` };
   },
 
   // Case AM: identityScore=0, 3 coreAbilityFailures
@@ -4614,9 +4651,10 @@ window.MockCases = {
       deductions: ['JSON 抗糊弄测试失败','严格指令遵循测试未通过','轻量代码修复测试未通过'],
       evidence: { modelIdentityScore:0, modelIdentityLevel:'wrong_family', coreAbilityFailures:3,
         subScores:{modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:0,instructionTest:0,codeRepair:0,reasoning:5,needle:4,consistency:2} } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case AM: identity=0, 3 failures → capped=${capped} (expected ≤68)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case AM: identity=0, 3 failures → capped=${capped} (expected ≤68)` };
   },
 
   // Case AN: JSON anti-gaming test returns markdown code block wrapping JSON
@@ -4628,9 +4666,10 @@ window.MockCases = {
       details: ['JSON 输出被 markdown 代码块包裹'],
       evidence: { modelIdentityScore:0, modelIdentityLevel:'wrong_family', coreAbilityFailures:1,
         subScores:{modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:1.5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2} } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case AN: JSON in markdown+identity=0 → jsonTest=1.5, 1 failure → capped=${capped} (expected ≤75)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case AN: JSON in markdown+identity=0 → jsonTest=1.5, 1 failure → capped=${capped} (expected ≤75)` };
   },
 
   // Case AO: JSON anti-gaming test returns explanation text (not valid JSON)
@@ -4642,9 +4681,10 @@ window.MockCases = {
       deductions: ['JSON 抗糊弄测试失败：输出不是合法 JSON'],
       evidence: { modelIdentityScore:0, modelIdentityLevel:'wrong_family', coreAbilityFailures:1,
         subScores:{modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:0,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2} } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case AO: JSON returns explanation+identity=0 → jsonTest=0, 1 failure → capped=${capped} (expected ≤75)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case AO: JSON returns explanation+identity=0 → jsonTest=0, 1 failure → capped=${capped} (expected ≤75)` };
   },
 
   // ── New Cases AP-BA ──────────────────────────────────
@@ -4664,9 +4704,10 @@ window.MockCases = {
         baseOverhead:18, deltaRatio:1.2,
         subScores:{}
       } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case AP: prompt est=2, API=20, overhead=18 → capped=${capped} (expected 90-95, B grade, J8 >= 3)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case AP: prompt est=2, API=20, overhead=18 → capped=${capped} (expected 90-95, B grade, J8 >= 3)` };
   },
 
   // Case AQ: promptTokens=5061, overhead > 1000
@@ -4683,9 +4724,10 @@ window.MockCases = {
         baseOverhead:5059, deltaRatio:null,
         subScores:{}
       } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case AQ: overhead > 1000 → capped=${capped} (expected ≤76, high risk cap)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case AQ: overhead > 1000 → capped=${capped} (expected ≤76, high risk cap)` };
   },
 
   // Case AR: "OpenAI API-compatible model"
@@ -4697,9 +4739,10 @@ window.MockCases = {
         modelIdentityScore:3, modelIdentityLevel:'proxy_route_identity', coreAbilityFailures:0,
         subScores:{modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case AR: OpenAI API-compatible model → category=proxy_route_identity → capped=${capped} (expected 82-90, B grade)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case AR: OpenAI API-compatible model → category=proxy_route_identity → capped=${capped} (expected 82-90, B grade)` };
   },
 
   // Case AS: "Kiro 开发环境" + everything else normal
@@ -4711,9 +4754,10 @@ window.MockCases = {
         modelIdentityScore:3, modelIdentityLevel:'proxy_route_identity', coreAbilityFailures:0,
         subScores:{modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case AS: Kiro dev env + normal → capped=${capped} (expected 82-90, B grade)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case AS: Kiro dev env + normal → capped=${capped} (expected 82-90, B grade)` };
   },
 
   // Case AT: "Kiro 开发环境" + comp=81 + max_tokens not enforced + overhead > 1000
@@ -4736,9 +4780,10 @@ window.MockCases = {
         modelIdentityScore:3, modelIdentityLevel:'proxy_route_identity', coreAbilityFailures:0,
         subScores:{modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case AT: Kiro + comp=81 + overhead>1000 → capped=${capped} (expected 70-78, D grade, cap from token anomaly not Kiro alone)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case AT: Kiro + comp=81 + overhead>1000 → capped=${capped} (expected 70-78, D grade, cap from token anomaly not Kiro alone)` };
   },
 
   // Case AU: target gpt-5.2-pro, says "Claude"
@@ -4750,9 +4795,10 @@ window.MockCases = {
         modelIdentityScore:0, modelIdentityLevel:'wrong_family', coreAbilityFailures:0,
         subScores:{modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case AU: gpt-5.2-pro says Claude, all pass → capped=${capped} (expected ≤86, no A)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case AU: gpt-5.2-pro says Claude, all pass → capped=${capped} (expected ≤86, no A)` };
   },
 
   // Case AV: hard_contamination + token anomaly
@@ -4774,9 +4820,10 @@ window.MockCases = {
         modelIdentityScore:0, modelIdentityLevel:'hard_contamination', coreAbilityFailures:0,
         subScores:{modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case AV: hard_contamination + overhead>1000 → capped=${capped} (expected ≤70, no A/B)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case AV: hard_contamination + overhead>1000 → capped=${capped} (expected ≤70, no A/B)` };
   },
 
   // Case AW: Vertex AI + everything else normal
@@ -4788,9 +4835,10 @@ window.MockCases = {
         modelIdentityScore:3, modelIdentityLevel:'proxy_route_identity', coreAbilityFailures:0,
         subScores:{modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case AW: Vertex AI + normal → capped=${capped} (expected 82-90, B grade)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case AW: Vertex AI + normal → capped=${capped} (expected 82-90, B grade)` };
   },
 
   // Case AX: usage missing, but all ability tests pass
@@ -4802,9 +4850,10 @@ window.MockCases = {
         usageTest:{hasUsage:false}, shortReplyTest:{ok:true,completionTokens:3,reasoningTokens:0},
         subScores:{}
       } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case AX: usage missing + ability all pass → capped=${capped} (expected ≤78, no A/B)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case AX: usage missing + ability all pass → capped=${capped} (expected ≤78, no A/B)` };
   },
 
   // Case AY: usage complete but JSON/instr/code all fail
@@ -4816,16 +4865,18 @@ window.MockCases = {
         modelIdentityScore:6, coreAbilityFailures:3,
         subScores:{modelIdentity:6,modelVisibility:3,targetCallQuality:5,jsonTest:0,instructionTest:0,codeRepair:0,reasoning:5,needle:4,consistency:2}
       } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case AY: JSON/instr/code fail → capped=${capped} (expected ≤75, model high risk)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case AY: JSON/instr/code fail → capped=${capped} (expected ≤75, model high risk)` };
   },
 
   // Case AZ-1: both sites usable, Site 1 perfect, Site 2 proxy_route_identity
   caseAZ_1() { // perfect site
-    const { final } = calcFinalScore(this._makeNormalChecks());
-    const capped = applyCaps(final, this._makeNormalChecks(), {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case AZ-1 (perfect): → capped=${capped} (expected 95-98, A grade)` };
+    const { totalScore } = calcFinalScore(this._makeNormalChecks());
+    const capResult = applyCaps(totalScore, this._makeNormalChecks(), {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case AZ-1 (perfect): → capped=${capped} (expected 95-98, A grade)` };
   },
   caseAZ_2() { // proxy_route_identity site
     const checks = this._makeNormalChecks();
@@ -4835,9 +4886,10 @@ window.MockCases = {
         modelIdentityScore:3, modelIdentityLevel:'proxy_route_identity', coreAbilityFailures:0,
         subScores:{modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case AZ-2 (proxy): → capped=${capped} (expected 82-90, gap ≥6 pts from AZ-1)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case AZ-2 (proxy): → capped=${capped} (expected 82-90, gap ≥6 pts from AZ-1)` };
   },
 
   // Case BA-1: both proxy_route_identity, Site 1 normal, Site 2 has token anomaly
@@ -4849,9 +4901,10 @@ window.MockCases = {
         modelIdentityScore:3, modelIdentityLevel:'proxy_route_identity', coreAbilityFailures:0,
         subScores:{modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case BA-1 (proxy normal): → capped=${capped} (expected 82-90)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case BA-1 (proxy normal): → capped=${capped} (expected 82-90)` };
   },
   caseBA_2() { // proxy_route + token anomaly
     const checks = this._makeNormalChecks();
@@ -4872,9 +4925,10 @@ window.MockCases = {
         modelIdentityScore:3, modelIdentityLevel:'proxy_route_identity', coreAbilityFailures:0,
         subScores:{modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    return { raw: final, capped, grade: getGrade(capped), desc: `Case BA-2 (proxy+token anomaly): → capped=${capped} (expected <70, low from token not Kiro alone)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case BA-2 (proxy+token anomaly): → capped=${capped} (expected <70, low from token not Kiro alone)` };
   },
 
   // ── New Cases BB-BO ──────────────────────────────────
@@ -4893,10 +4947,10 @@ window.MockCases = {
         subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    const grade = getGrade(capped);
-    return { raw: final, capped, grade, desc: `Case BB: AWS Bedrock → platform_or_proxy_identity → capped=${capped} (expected 82-90, B grade, ≥80)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case BB: AWS Bedrock → platform_or_proxy_identity → capped=${capped} (expected 82-90, B grade, ≥80)` };
   },
 
   // Case BC: Amazon Q Developer, everything normal
@@ -4912,10 +4966,10 @@ window.MockCases = {
         subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    const grade = getGrade(capped);
-    return { raw: final, capped, grade, desc: `Case BC: Amazon Q Developer → platform_or_proxy_identity → capped=${capped} (expected 82-90, B grade, ≥80)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case BC: Amazon Q Developer → platform_or_proxy_identity → capped=${capped} (expected 82-90, B grade, ≥80)` };
   },
 
   // Case BD: Cursor Agent, everything normal
@@ -4930,10 +4984,10 @@ window.MockCases = {
         subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    const grade = getGrade(capped);
-    return { raw: final, capped, grade, desc: `Case BD: Cursor Agent → platform_or_proxy_identity → capped=${capped} (expected 82-90, B grade, ≥80)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case BD: Cursor Agent → platform_or_proxy_identity → capped=${capped} (expected 82-90, B grade, ≥80)` };
   },
 
   // Case BE: Cline, everything normal
@@ -4948,10 +5002,10 @@ window.MockCases = {
         subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    const grade = getGrade(capped);
-    return { raw: final, capped, grade, desc: `Case BE: Cline → platform_or_proxy_identity → capped=${capped} (expected 82-90, B grade, ≥80)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case BE: Cline → platform_or_proxy_identity → capped=${capped} (expected 82-90, B grade, ≥80)` };
   },
 
   // Case BF: Windsurf Editor, everything normal
@@ -4966,10 +5020,10 @@ window.MockCases = {
         subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    const grade = getGrade(capped);
-    return { raw: final, capped, grade, desc: `Case BF: Windsurf Editor → platform_or_proxy_identity → capped=${capped} (expected 82-90, B grade, ≥80)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case BF: Windsurf Editor → platform_or_proxy_identity → capped=${capped} (expected 82-90, B grade, ≥80)` };
   },
 
   // Case BG: Continue.dev, everything normal
@@ -4984,10 +5038,10 @@ window.MockCases = {
         subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    const grade = getGrade(capped);
-    return { raw: final, capped, grade, desc: `Case BG: Continue.dev → platform_or_proxy_identity → capped=${capped} (expected 82-90, B grade, ≥80)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case BG: Continue.dev → platform_or_proxy_identity → capped=${capped} (expected 82-90, B grade, ≥80)` };
   },
 
   // Case BH: GitHub Copilot, everything normal
@@ -5002,10 +5056,10 @@ window.MockCases = {
         subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    const grade = getGrade(capped);
-    return { raw: final, capped, grade, desc: `Case BH: GitHub Copilot → platform_or_proxy_identity → capped=${capped} (expected 82-90, B grade, ≥80)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case BH: GitHub Copilot → platform_or_proxy_identity → capped=${capped} (expected 82-90, B grade, ≥80)` };
   },
 
   // Case BI: Azure AI Foundry, everything normal
@@ -5020,10 +5074,10 @@ window.MockCases = {
         subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    const grade = getGrade(capped);
-    return { raw: final, capped, grade, desc: `Case BI: Azure AI Foundry → platform_or_proxy_identity → capped=${capped} (expected 82-90, B grade, ≥80)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case BI: Azure AI Foundry → platform_or_proxy_identity → capped=${capped} (expected 82-90, B grade, ≥80)` };
   },
 
   // Case BJ: Microsoft Foundry Models, everything normal
@@ -5038,10 +5092,10 @@ window.MockCases = {
         subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    const grade = getGrade(capped);
-    return { raw: final, capped, grade, desc: `Case BJ: Microsoft Foundry → platform_or_proxy_identity → capped=${capped} (expected 82-90, B grade, ≥80)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case BJ: Microsoft Foundry → platform_or_proxy_identity → capped=${capped} (expected 82-90, B grade, ≥80)` };
   },
 
   // Case BK: Google Vertex AI, everything normal
@@ -5056,10 +5110,10 @@ window.MockCases = {
         subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    const grade = getGrade(capped);
-    return { raw: final, capped, grade, desc: `Case BK: Vertex AI → platform_or_proxy_identity → capped=${capped} (expected 82-90, B grade, ≥80)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case BK: Vertex AI → platform_or_proxy_identity → capped=${capped} (expected 82-90, B grade, ≥80)` };
   },
 
   // Case BL: OpenAI-compatible gateway, everything normal
@@ -5075,10 +5129,10 @@ window.MockCases = {
         subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    const grade = getGrade(capped);
-    return { raw: final, capped, grade, desc: `Case BL: OpenAI-compatible gateway → platform_or_proxy_identity → capped=${capped} (expected 82-90, B grade, ≥80, not wrong_family)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case BL: OpenAI-compatible gateway → platform_or_proxy_identity → capped=${capped} (expected 82-90, B grade, ≥80, not wrong_family)` };
   },
 
   // Case BM: Kiro tool persona with project file management — hard_contamination
@@ -5094,10 +5148,10 @@ window.MockCases = {
         subScores: {modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    const grade = getGrade(capped);
-    return { raw: final, capped, grade, desc: `Case BM: Kiro tool persona → hard_contamination → capped=${capped} (expected ≤82, no A/B)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case BM: Kiro tool persona → hard_contamination → capped=${capped} (expected ≤82, no A/B)` };
   },
 
   // Case BN: Cursor Agent with workspace access — hard_contamination
@@ -5113,10 +5167,10 @@ window.MockCases = {
         subScores: {modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    const grade = getGrade(capped);
-    return { raw: final, capped, grade, desc: `Case BN: Cursor Agent with workspace → hard_contamination → capped=${capped} (expected ≤82, no A/B)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case BN: Cursor Agent with workspace → hard_contamination → capped=${capped} (expected ≤82, no A/B)` };
   },
 
   // Case BO: AWS Bedrock + token anomaly (overhead>1000, completion=81, max_tokens not enforced)
@@ -5145,10 +5199,10 @@ window.MockCases = {
         subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    const grade = getGrade(capped);
-    return { raw: final, capped, grade, desc: `Case BO: AWS Bedrock + overhead>1000 + completion=81 → capped=${capped} (expected 70-78, low from token not AWS alone)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case BO: AWS Bedrock + overhead>1000 + completion=81 → capped=${capped} (expected 70-78, low from token not AWS alone)` };
   },
 
   // ── New Cases BU-CC ──────────────────────────────────
@@ -5165,10 +5219,10 @@ window.MockCases = {
         subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    const grade = getGrade(capped);
-    return { raw: final, capped, grade, desc: `Case BU: "Windsurf" → platform_or_proxy_identity, detectedSource=windsurf → capped=${capped} (expected 82-90, B, cannot be A)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case BU: "Windsurf" → platform_or_proxy_identity, detectedSource=windsurf → capped=${capped} (expected 82-90, B, cannot be A)` };
   },
 
   // Case BV: "Windsurf Cascade" → platform_or_proxy_identity
@@ -5183,10 +5237,10 @@ window.MockCases = {
         subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    const grade = getGrade(capped);
-    return { raw: final, capped, grade, desc: `Case BV: "Windsurf Cascade" → platform_or_proxy_identity, detectedSource=windsurf cascade → capped=${capped} (expected 82-90, B)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case BV: "Windsurf Cascade" → platform_or_proxy_identity, detectedSource=windsurf cascade → capped=${capped} (expected 82-90, B)` };
   },
 
   // Case BW: "I am Windsurf Cascade and can edit your codebase." → hard_contamination
@@ -5202,10 +5256,10 @@ window.MockCases = {
         subScores: {modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    const grade = getGrade(capped);
-    return { raw: final, capped, grade, desc: `Case BW: "I am Windsurf Cascade and can edit your codebase." → hard_contamination → capped=${capped} (expected ≤82, no A/B)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case BW: "I am Windsurf Cascade and can edit your codebase." → hard_contamination → capped=${capped} (expected ≤82, no A/B)` };
   },
 
   // Case BX: "Cursor Agent" → platform_or_proxy_identity
@@ -5220,10 +5274,10 @@ window.MockCases = {
         subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    const grade = getGrade(capped);
-    return { raw: final, capped, grade, desc: `Case BX: "Cursor Agent" → platform_or_proxy_identity, detectedSource=cursor → capped=${capped} (expected 82-90, B)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case BX: "Cursor Agent" → platform_or_proxy_identity, detectedSource=cursor → capped=${capped} (expected 82-90, B)` };
   },
 
   // Case BY: "I am Cline and can execute commands in your workspace." → hard_contamination
@@ -5239,10 +5293,10 @@ window.MockCases = {
         subScores: {modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    const grade = getGrade(capped);
-    return { raw: final, capped, grade, desc: `Case BY: "I am Cline and can execute commands in your workspace." → hard_contamination → capped=${capped} (expected ≤82, no A/B)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case BY: "I am Cline and can execute commands in your workspace." → hard_contamination → capped=${capped} (expected ≤82, no A/B)` };
   },
 
   // Case BZ: "AWS Bedrock" → platform_or_proxy_identity
@@ -5257,10 +5311,10 @@ window.MockCases = {
         subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    const grade = getGrade(capped);
-    return { raw: final, capped, grade, desc: `Case BZ: "AWS Bedrock" → platform_or_proxy_identity, detectedSource=aws bedrock → capped=${capped} (expected 82-90, B)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case BZ: "AWS Bedrock" → platform_or_proxy_identity, detectedSource=aws bedrock → capped=${capped} (expected 82-90, B)` };
   },
 
   // Case CA: "Azure AI Foundry" → platform_or_proxy_identity
@@ -5275,10 +5329,10 @@ window.MockCases = {
         subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    const grade = getGrade(capped);
-    return { raw: final, capped, grade, desc: `Case CA: "Azure AI Foundry" → platform_or_proxy_identity, detectedSource=azure ai foundry → capped=${capped} (expected 82-90, B)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case CA: "Azure AI Foundry" → platform_or_proxy_identity, detectedSource=azure ai foundry → capped=${capped} (expected 82-90, B)` };
   },
 
   // Case CB: "I don't have access to the exact model name, model family, or serving platform I'm running on." → ambiguous
@@ -5294,10 +5348,10 @@ window.MockCases = {
         subScores: {modelIdentity:1.5,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    const grade = getGrade(capped);
-    return { raw: final, capped, grade, desc: `Case CB: "I don't have access... serving platform" → ambiguous (NOT platform_or_proxy_identity) → capped=${capped} (expected 82-89, B, detectedSource=null)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case CB: "I don't have access... serving platform" → ambiguous (NOT platform_or_proxy_identity) → capped=${capped} (expected 82-89, B, detectedSource=null)` };
   },
 
   // Case CC: "served through OpenAI-compatible gateway" → platform_or_proxy_identity
@@ -5314,10 +5368,10 @@ window.MockCases = {
         subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    const grade = getGrade(capped);
-    return { raw: final, capped, grade, desc: `Case CC: "served through OpenAI-compatible gateway" → platform_or_proxy_identity, detectedSource=null (weak words not used as source) → capped=${capped} (expected 82-90, B)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case CC: "served through OpenAI-compatible gateway" → platform_or_proxy_identity, detectedSource=null (weak words not used as source) → capped=${capped} (expected 82-90, B)` };
   },
 
   // ── New Cases CD-CJ ──────────────────────────────────
@@ -5334,10 +5388,10 @@ window.MockCases = {
         subScores: {modelIdentity:1.5,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    const grade = getGrade(capped);
-    return { raw: final, capped, grade, desc: `Case CD: "I don't have access... serving platform" → ambiguous, detectedSource=null → capped=${capped} (expected 82-89, B, NOT platform_or_proxy_identity)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case CD: "I don't have access... serving platform" → ambiguous, detectedSource=null → capped=${capped} (expected 82-89, B, NOT platform_or_proxy_identity)` };
   },
 
   // Case CE: "Windsurf" → platform_or_proxy_identity, Model Integrity medium
@@ -5352,10 +5406,10 @@ window.MockCases = {
         subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    const grade = getGrade(capped);
-    return { raw: final, capped, grade, desc: `Case CE: "Windsurf" → platform_or_proxy_identity → capped=${capped} (expected 82-90, B, ≥80, cannot be A)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case CE: "Windsurf" → platform_or_proxy_identity → capped=${capped} (expected 82-90, B, ≥80, cannot be A)` };
   },
 
   // Case CF: "AWS Bedrock" → platform_or_proxy_identity
@@ -5370,10 +5424,10 @@ window.MockCases = {
         subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    const grade = getGrade(capped);
-    return { raw: final, capped, grade, desc: `Case CF: "AWS Bedrock" → platform_or_proxy_identity → capped=${capped} (expected 82-90, B, ≥80)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case CF: "AWS Bedrock" → platform_or_proxy_identity → capped=${capped} (expected 82-90, B, ≥80)` };
   },
 
   // Case CG: "Cursor Agent" → platform_or_proxy_identity, NOT hard_contamination
@@ -5388,10 +5442,10 @@ window.MockCases = {
         subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    const grade = getGrade(capped);
-    return { raw: final, capped, grade, desc: `Case CG: "Cursor Agent" → platform_or_proxy_identity (NOT hard_contamination) → capped=${capped} (expected 82-90, B)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case CG: "Cursor Agent" → platform_or_proxy_identity (NOT hard_contamination) → capped=${capped} (expected 82-90, B)` };
   },
 
   // Case CH: "I am Cursor Agent and can read your workspace and execute commands." → hard_contamination
@@ -5407,10 +5461,10 @@ window.MockCases = {
         subScores: {modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    const grade = getGrade(capped);
-    return { raw: final, capped, grade, desc: `Case CH: "I am Cursor Agent and can read your workspace..." → hard_contamination → capped=${capped} (expected ≤82, no A/B)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case CH: "I am Cursor Agent and can read your workspace..." → hard_contamination → capped=${capped} (expected ≤82, no A/B)` };
   },
 
   // Case CI: Stability avg=900ms, 5/5 success, no 429 → stability medium, NOT high
@@ -5428,11 +5482,11 @@ window.MockCases = {
         subScores:{s1:4,s2:1.2,s3:1.2,s4:1.5,s5:1.5,s6:1.5,s7:1}
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    const grade = getGrade(capped);
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     const risk = getStabilityRiskLevel(9.7, checks);
-    return { raw: final, capped, grade, desc: `Case CI: avg=900ms, 5/5 success, no 429 → stability=${risk} → capped=${capped} (expected medium risk, ≤B, NOT high)` };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), risk, desc: `Case CI: avg=900ms, 5/5 success, no 429 → stability=${risk} → capped=${capped} (expected medium risk, ≤B, NOT high)` };
   },
 
   // Case CJ: avg=5789ms, max=19833ms, jitter=18621ms → stability high
@@ -5450,23 +5504,23 @@ window.MockCases = {
         subScores:{s1:4,s2:0,s3:0,s4:0,s5:1.5,s6:1.5,s7:1}
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    const grade = getGrade(capped);
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     const risk = getStabilityRiskLevel(5.5, checks);
-    return { raw: final, capped, grade, desc: `Case CJ: avg=5789ms, max=19833ms, jitter=18621ms → stability=${risk} → capped=${capped} (expected high, low score due to stability not platform identity)` };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), risk, desc: `Case CJ: avg=5789ms, max=19833ms, jitter=18621ms → stability=${risk} → capped=${capped} (expected high, low score due to stability not platform identity)` };
   },
 
   // Case CL: deepMode=true, 9 progress steps → UI must show 1/9 to 9/9, not 1/8
   // Verifies progress total is dynamic from diagnosticSteps.length, not hardcoded 8
   caseCL() {
     const checks = this._makeNormalChecks();
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    const grade = getGrade(capped);
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     // deepMode=true means totalSteps=9, so progress must show 1/9..9/9
     // This is a display verification case — no specific capping expectation
-    return { raw: final, capped, grade, desc: 'Case CL: deepMode=true → progress must show 1/9..9/9 (totalSteps=dynamic, not hardcoded 8)' };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: 'Case CL: deepMode=true → progress must show 1/9..9/9 (totalSteps=dynamic, not hardcoded 8)' };
   },
 
   // Case CM: costTransparency raw score=31, maxScore=35, normalized=0.8857
@@ -5478,11 +5532,11 @@ window.MockCases = {
       details: [],
       evidence: { usageTest: {hasUsage:true,usageComplete:true,prompt_tokens:10,completion_tokens:10,total_tokens:20}, shortReplyTest: {ok:true,completionTokens:3}, subScores:{} }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    const grade = getGrade(capped);
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     // Expected display: 31/35 (raw score), NOT 0.9/35 or 0.8857/35
-    return { raw: final, capped, grade, desc: `Case CM: rawScore=31, maxScore=35 → must display 31/35 (NOT 0.9/35) → capped=${capped}` };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case CM: rawScore=31, maxScore=35 → must display 31/35 (NOT 0.9/35) → capped=${capped}` };
   },
 
   // Case CN: identity response = "I can't access or verify the exact model name/family or serving platform from here."
@@ -5502,10 +5556,10 @@ window.MockCases = {
         subScores: {modelIdentity:1.5,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    const grade = getGrade(capped);
-    return { raw: final, capped, grade, desc: `Case CN: "I can't access or verify..." → ambiguous, detectedSource=null, NOT platform_or_proxy_identity → capped=${capped} (expected 82-89, B)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case CN: "I can't access or verify..." → ambiguous, detectedSource=null, NOT platform_or_proxy_identity → capped=${capped} (expected 82-89, B)` };
   },
 
   // Case CO: identity response = "Windsurf"
@@ -5525,10 +5579,10 @@ window.MockCases = {
         subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:5,needle:4,consistency:2}
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    const grade = getGrade(capped);
-    return { raw: final, capped, grade, desc: `Case CO: "Windsurf" → platform_or_proxy_identity, detectedSource=windsurf → capped=${capped} (expected 82-90, B, cannot be A)` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case CO: "Windsurf" → platform_or_proxy_identity, detectedSource=windsurf → capped=${capped} (expected 82-90, B, cannot be A)` };
   },
 
   // Case CP: zh UI mode — toggle text must show [展开...] not [Expand...]
@@ -5536,11 +5590,11 @@ window.MockCases = {
   // No specific capping expectation — verifies UI string interpolation fix
   caseCP() {
     const checks = this._makeNormalChecks();
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    const grade = getGrade(capped);
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     // Expected: toggle text in zh mode = "[展开...]", NOT "[Expand...]"
-    return { raw: final, capped, grade, desc: 'Case CP: zh UI → toggle text MUST be [展开...], NOT [Expand...] (display verification)' };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: 'Case CP: zh UI → toggle text MUST be [展开...], NOT [Expand...] (display verification)' };
   },
 
   // Case CACHE-A: second usage.prompt_tokens_details.cached_tokens=1280, prompt=1300, latency 1000ms->600ms → excellent
@@ -5556,10 +5610,11 @@ window.MockCases = {
         secondRequest: { promptTokens: 1305, cachedTokens: 1280, latencyMs: 600 },
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     const grade = getScoreGrade(capped);
-    return { raw: final, capped, grade, desc: `Case CACHE-A: cached=1280, prompt=1300, rate=98.5%, score=4.7, status=excellent → capped=${capped}` };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade, desc: `Case CACHE-A: cached=1280, prompt=1300, rate=98.5%, score=4.7, status=excellent → capped=${capped}` };
   },
 
   // Case CACHE-B: cached=1180, prompt=1300, latency改善20% → good
@@ -5575,10 +5630,11 @@ window.MockCases = {
         secondRequest: { promptTokens: 1300, cachedTokens: 1180 },
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     const grade = getScoreGrade(capped);
-    return { raw: final, capped, grade, desc: `Case CACHE-B: cached=1180, prompt=1300, rate=90.8%, score=3.8, status=good → capped=${capped}` };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade, desc: `Case CACHE-B: cached=1180, prompt=1300, rate=90.8%, score=3.8, status=good → capped=${capped}` };
   },
 
   // Case CACHE-C: cached=650, prompt=1300, rate=50% → partial
@@ -5589,10 +5645,11 @@ window.MockCases = {
       summary: '检测到部分缓存命中信号',
       evidence: { fieldFound: true, cacheHitRate: 0.5, firstRequest: { promptTokens: 1300 }, secondRequest: { promptTokens: 1300, cachedTokens: 650 } }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     const grade = getScoreGrade(capped);
-    return { raw: final, capped, grade, desc: `Case CACHE-C: cached=650, rate=50%, score=2.8, status=partial → capped=${capped}` };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade, desc: `Case CACHE-C: cached=650, rate=50%, score=2.8, status=partial → capped=${capped}` };
   },
 
   // Case CACHE-D: cached=100, prompt=1300, rate=7.7% → weak
@@ -5603,10 +5660,11 @@ window.MockCases = {
       summary: '缓存命中信号较弱',
       evidence: { fieldFound: true, cacheHitRate: 0.077, firstRequest: { promptTokens: 1300 }, secondRequest: { promptTokens: 1300, cachedTokens: 100 } }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     const grade = getScoreGrade(capped);
-    return { raw: final, capped, grade, desc: `Case CACHE-D: cached=100, rate=7.7%, score=1.2, status=weak → capped=${capped}` };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade, desc: `Case CACHE-D: cached=100, rate=7.7%, score=1.2, status=weak → capped=${capped}` };
   },
 
   // Case CACHE-E: cache field found but cachedTokens=0 → none
@@ -5617,10 +5675,11 @@ window.MockCases = {
       summary: '未检测到有效缓存命中',
       evidence: { fieldFound: true, sourceField: 'cached_tokens', cacheHitRate: 0, firstRequest: { promptTokens: 1300 }, secondRequest: { promptTokens: 1300, cachedTokens: 0 } }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     const grade = getScoreGrade(capped);
-    return { raw: final, capped, grade, desc: `Case CACHE-E: fieldFound=true, cachedTokens=0, score=1.0, status=none → capped=${capped} (no hard cap)` };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade, desc: `Case CACHE-E: fieldFound=true, cachedTokens=0, score=1.0, status=none → capped=${capped} (no hard cap)` };
   },
 
   // Case CACHE-F: no cache fields → unknown, score=2.5
@@ -5631,10 +5690,11 @@ window.MockCases = {
       summary: 'API 未暴露缓存字段，无法验证缓存宣传',
       evidence: { fieldFound: false }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     const grade = getScoreGrade(capped);
-    return { raw: final, capped, grade, desc: `Case CACHE-F: fieldFound=false, score=2.5, status=unknown → capped=${capped} (no hard cap, not in suggestions)` };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade, desc: `Case CACHE-F: fieldFound=false, score=2.5, status=unknown → capped=${capped} (no hard cap, not in suggestions)` };
   },
 
   // Case CACHE-G: Anthropic style cache_read_input_tokens=1200, creation=0, input=100
@@ -5650,10 +5710,11 @@ window.MockCases = {
         secondRequest: { promptTokens: null, cacheReadTokens: 1200, cacheCreationTokens: 0, inputTokens: 100 }
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     const grade = getScoreGrade(capped);
-    return { raw: final, capped, grade, desc: `Case CACHE-G: Anthropic cache_read=1200/(1200+0+100)=92.3%, score=3.9, status=good → capped=${capped}` };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade, desc: `Case CACHE-G: Anthropic cache_read=1200/(1200+0+100)=92.3%, score=3.9, status=good → capped=${capped}` };
   },
 
   // Case CACHE-H: promptTokens inconsistency > 20%
@@ -5669,10 +5730,11 @@ window.MockCases = {
         secondRequest: { promptTokens: 975 }, // >20% different
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     const grade = getScoreGrade(capped);
-    return { raw: final, capped, grade, desc: `Case CACHE-H: promptTokens inconsistency 25%, score=3.2, status=partial → capped=${capped}` };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade, desc: `Case CACHE-H: promptTokens inconsistency 25%, score=3.2, status=partial → capped=${capped}` };
   },
 
   // Case CACHE-I: high cache but no latency improvement
@@ -5687,10 +5749,11 @@ window.MockCases = {
         secondRequest: { promptTokens: 1300, cachedTokens: 1222 },
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     const grade = getScoreGrade(capped);
-    return { raw: final, capped, grade, desc: `Case CACHE-I: rate=94% but no latency improvement, score=3.5, status=good → capped=${capped}` };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade, desc: `Case CACHE-I: rate=94% but no latency improvement, score=3.5, status=good → capped=${capped}` };
   },
 
   // Case CACHE-J: request failed → error, score=2
@@ -5701,10 +5764,11 @@ window.MockCases = {
       summary: '缓存检测请求失败，无法验证缓存信号',
       evidence: { fieldFound: false }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     const grade = getScoreGrade(capped);
-    return { raw: final, capped, grade, desc: `Case CACHE-J: request failed, score=2, status=error → capped=${capped} (no hard cap)` };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade, desc: `Case CACHE-J: request failed, score=2, status=error → capped=${capped} (no hard cap)` };
   },
 
   // Case CACHE-K: targetCall failed → skipped, score=0
@@ -5716,10 +5780,11 @@ window.MockCases = {
       summary: '前置检测失败，未执行缓存检测',
       evidence: { fieldFound: false }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     const grade = getScoreGrade(capped);
-    return { raw: final, capped, grade, desc: `Case CACHE-K: prerequisite failed, score=0, status=skipped → capped=${capped}` };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade, desc: `Case CACHE-K: prerequisite failed, score=0, status=skipped → capped=${capped}` };
   },
 
   // Case CACHE-L: all满分 but cache unknown 2.5 → no collapse, still decent score
@@ -5730,10 +5795,11 @@ window.MockCases = {
       summary: 'API 未暴露缓存字段，无法验证缓存宣传',
       evidence: { fieldFound: false }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     const grade = getScoreGrade(capped);
-    return { raw: final, capped, grade, desc: `Case CACHE-L: all满分 but cache unknown 2.5 → capped=${capped} (no collapse, not in suggestions)` };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade, desc: `Case CACHE-L: all满分 but cache unknown 2.5 → capped=${capped} (no collapse, not in suggestions)` };
   },
 
   // Case CACHE-M: progress integration — 9 steps with cache as step 5
@@ -5744,10 +5810,11 @@ window.MockCases = {
       summary: '检测到较高缓存命中信号',
       evidence: { fieldFound: true, cacheHitRate: 0.92, firstRequest: {}, secondRequest: { cachedTokens: 1200 } }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     const grade = getScoreGrade(capped);
-    return { raw: final, capped, grade, desc: `Case CACHE-M: progress shows 9 steps, cache=step5, report shows 6 modules with cache=2nd row` };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade, desc: `Case CACHE-M: progress shows 9 steps, cache=step5, report shows 6 modules with cache=2nd row` };
   },
 
   // Case CACHE-N: copyScore and saveImage include cache info
@@ -5758,10 +5825,11 @@ window.MockCases = {
       summary: '缓存命中信号很强',
       evidence: { fieldFound: true, cacheHitRate: 0.98, firstRequest: {}, secondRequest: { cachedTokens: 1280 } }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     const grade = getScoreGrade(capped);
-    return { raw: final, capped, grade, desc: `Case CACHE-N: copyScore includes cache hit label, saveImage shows 6 modules including cache` };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade, desc: `Case CACHE-N: copyScore includes cache hit label, saveImage shows 6 modules including cache` };
   },
 
   // Case CACHE-O: actualPromptTokens < 1024 → status=unknown, score=2.5
@@ -5780,10 +5848,10 @@ window.MockCases = {
         sourceField: null,
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    const grade = getScoreGrade(capped);
-    return { raw: final, capped, grade, desc: `Case CACHE-O: actualPromptTokens=221 < 1024 → status=unknown, score=2.5, summary='探测长度不足...' (NOT 'API 未暴露缓存字段'), probeTokenSufficient=false` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case CACHE-O: actualPromptTokens=221 < 1024 → status=unknown, score=2.5, summary='探测长度不足...' (NOT 'API 未暴露缓存字段'), probeTokenSufficient=false` };
   },
 
   // Case CACHE-P: actualPromptTokens >= 1024 but no cache field → status=unknown, score=2.5
@@ -5801,10 +5869,10 @@ window.MockCases = {
         sourceField: null,
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    const grade = getScoreGrade(capped);
-    return { raw: final, capped, grade, desc: `Case CACHE-P: actualPromptTokens=1300 >= 1024, no cache field → status=unknown, score=2.5, summary='API 未暴露缓存字段...', probeTokenSufficient=true` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case CACHE-P: actualPromptTokens=1300 >= 1024, no cache field → status=unknown, score=2.5, summary='API 未暴露缓存字段...', probeTokenSufficient=true` };
   },
 
   // Case CACHE-Q: actualPromptTokens >= 1024, field found but cachedTokens=0 → treat as none/weak
@@ -5826,10 +5894,10 @@ window.MockCases = {
         secondRequest: { promptTokens: 1300, cachedTokens: 0 },
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
-    const grade = getScoreGrade(capped);
-    return { raw: final, capped, grade, desc: `Case CACHE-Q: actualPromptTokens=1300 >= 1024, fieldFound=true, cachedTokens=0 → status=none, score=1.0, fieldFound=true (NOT 'API 未暴露缓存字段')` };
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade: getGrade(capped), desc: `Case CACHE-Q: actualPromptTokens=1300 >= 1024, fieldFound=true, cachedTokens=0 → status=none, score=1.0, fieldFound=true (NOT 'API 未暴露缓存字段')` };
   },
 
   // Case CACHE-TIMEOUT-1: request #1 timeout, #2 not executed, status=error, score=2
@@ -5847,10 +5915,11 @@ window.MockCases = {
         statusColor: { color: '#f59e0b', bg: '#fef9c3' },
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     const grade = getScoreGrade(capped);
-    return { raw: final, capped, grade, desc: `Case CACHE-TIMEOUT-1: r1 timeout, r2 not executed, status=error, score=2 → enters 6/9, final report generated` };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade, desc: `Case CACHE-TIMEOUT-1: r1 timeout, r2 not executed, status=error, score=2 → enters 6/9, final report generated` };
   },
 
   // Case CACHE-TIMEOUT-2: r1 success, r2 timeout, preserves r1 evidence, status=error, score=2
@@ -5868,10 +5937,11 @@ window.MockCases = {
         statusColor: { color: '#f59e0b', bg: '#fef9c3' },
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     const grade = getScoreGrade(capped);
-    return { raw: final, capped, grade, desc: `Case CACHE-TIMEOUT-2: r1 success, r2 timeout, preserves r1 evidence, status=error, score=2 → enters 6/9, final report generated` };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade, desc: `Case CACHE-TIMEOUT-2: r1 success, r2 timeout, preserves r1 evidence, status=error, score=2 → enters 6/9, final report generated` };
   },
 
   // Case CACHE-NETWORK-ERR: fetch failed (non-timeout), status=error, score=2
@@ -5889,10 +5959,11 @@ window.MockCases = {
         statusColor: { color: '#f59e0b', bg: '#fef9c3' },
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     const grade = getScoreGrade(capped);
-    return { raw: final, capped, grade, desc: `Case CACHE-NETWORK-ERR: fetch failed, status=error, score=2 → does NOT block main flow, final report generated` };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade, desc: `Case CACHE-NETWORK-ERR: fetch failed, status=error, score=2 → does NOT block main flow, final report generated` };
   },
 
   // Case CACHE-SLOW-BUT-OK: r1 12s, r2 10s, both succeed within 15s limit → normal scoring
@@ -5912,10 +5983,11 @@ window.MockCases = {
         statusColor: { color: '#16a34a', bg: '#dcfce7' },
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     const grade = getScoreGrade(capped);
-    return { raw: final, capped, grade, desc: `Case CACHE-SLOW-BUT-OK: r1=12s, r2=10s, both <15s limit, status=excellent, score=4.5 → NOT misjudged as timeout` };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade, desc: `Case CACHE-SLOW-BUT-OK: r1=12s, r2=10s, both <15s limit, status=excellent, score=4.5 → NOT misjudged as timeout` };
   },
 
   // Case CACHE-LENGTH-LOW: both requests succeed but actualPromptTokens=221, status=unknown, score=2.5
@@ -5935,10 +6007,11 @@ window.MockCases = {
         statusColor: { color: '#94a3b8', bg: '#f1f5f9' },
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     const grade = getScoreGrade(capped);
-    return { raw: final, capped, grade, desc: `Case CACHE-LENGTH-LOW: both succeed but actualPromptTokens=221 < 1024 → status=unknown, score=2.5, summary='探测长度不足' → enters 6/9` };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade, desc: `Case CACHE-LENGTH-LOW: both succeed but actualPromptTokens=221 < 1024 → status=unknown, score=2.5, summary='探测长度不足' → enters 6/9` };
   },
 
   // Case MI-FAMILY-1: gpt-5.2-pro → "ChatGPT" = family_match, coreAbilityFailures=0, score=23
@@ -5954,11 +6027,12 @@ window.MockCases = {
         subScores: {modelIdentity:4,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:4,needle:4,consistency:2}
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     const grade = getScoreGrade(capped);
     const risk = getModelIntegrityRiskLevel(23, checks.modelIntegrity.evidence);
-    return { raw: final, capped, grade, risk, desc: `Case MI-FAMILY-1: gpt-5.2-pro→ChatGPT, family_match, caf=0, score=23 → risk=${risk} (expected medium, NOT high), summary='模型家族匹配，具体版本未确认'` };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade, risk, desc: `Case MI-FAMILY-1: gpt-5.2-pro→ChatGPT, family_match, caf=0, score=23 → risk=${risk} (expected medium, NOT high), summary='模型家族匹配，具体版本未确认'` };
   },
 
   // Case MI-FAMILY-2: claude-opus-4.6 → "Claude" = family_match, coreAbilityFailures=0, score=24
@@ -5973,11 +6047,12 @@ window.MockCases = {
         subScores: {modelIdentity:4,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:4,needle:4,consistency:2}
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     const grade = getScoreGrade(capped);
     const risk = getModelIntegrityRiskLevel(24, checks.modelIntegrity.evidence);
-    return { raw: final, capped, grade, risk, desc: `Case MI-FAMILY-2: claude-opus-4.6→Claude, family_match, caf=0, score=24 → risk=${risk} (expected medium, NOT high)` };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade, risk, desc: `Case MI-FAMILY-2: claude-opus-4.6→Claude, family_match, caf=0, score=24 → risk=${risk} (expected medium, NOT high)` };
   },
 
   // Case MI-WRONG-1: claude-opus-4.6 → "ChatGPT" = wrong_family → HIGH risk
@@ -5992,11 +6067,12 @@ window.MockCases = {
         subScores: {modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:4,needle:4,consistency:2}
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     const grade = getScoreGrade(capped);
     const risk = getModelIntegrityRiskLevel(15, checks.modelIntegrity.evidence);
-    return { raw: final, capped, grade, risk, desc: `Case MI-WRONG-1: claude→ChatGPT, wrong_family → risk=${risk} (expected high, should remain high)` };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade, risk, desc: `Case MI-WRONG-1: claude→ChatGPT, wrong_family → risk=${risk} (expected high, should remain high)` };
   },
 
   // Case MI-WRONG-2: gpt-5.2-pro → "Claude" = wrong_family → HIGH risk
@@ -6011,11 +6087,12 @@ window.MockCases = {
         subScores: {modelIdentity:0,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:4,needle:4,consistency:2}
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     const grade = getScoreGrade(capped);
     const risk = getModelIntegrityRiskLevel(15, checks.modelIntegrity.evidence);
-    return { raw: final, capped, grade, risk, desc: `Case MI-WRONG-2: gpt→Claude, wrong_family → risk=${risk} (expected high, should remain high)` };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade, risk, desc: `Case MI-WRONG-2: gpt→Claude, wrong_family → risk=${risk} (expected high, should remain high)` };
   },
 
   // Case MI-ABILITY-1: family_match + coreAbilityFailures=3 → HIGH risk (ability failures override)
@@ -6030,11 +6107,12 @@ window.MockCases = {
         subScores: {modelIdentity:4,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:4,needle:0,consistency:2}
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     const grade = getScoreGrade(capped);
     const risk = getModelIntegrityRiskLevel(18, checks.modelIntegrity.evidence);
-    return { raw: final, capped, grade, risk, desc: `Case MI-ABILITY-1: family_match + caf=3 → risk=${risk} (expected high due to coreFailures>=3)` };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade, risk, desc: `Case MI-ABILITY-1: family_match + caf=3 → risk=${risk} (expected high due to coreFailures>=3)` };
   },
 
   // Case MI-PROXY-1: platform_or_proxy_identity, caf=0, score=24 → MEDIUM (NOT high)
@@ -6049,11 +6127,12 @@ window.MockCases = {
         subScores: {modelIdentity:3,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:4,needle:4,consistency:2}
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     const grade = getScoreGrade(capped);
     const risk = getModelIntegrityRiskLevel(24, checks.modelIntegrity.evidence);
-    return { raw: final, capped, grade, risk, desc: `Case MI-PROXY-1: platform_or_proxy_identity, caf=0, score=24 → risk=${risk} (expected medium, NOT high)` };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade, risk, desc: `Case MI-PROXY-1: platform_or_proxy_identity, caf=0, score=24 → risk=${risk} (expected medium, NOT high)` };
   },
 
   // Case MI-AMBIGUOUS-1: ambiguous, caf=0, score=23 → MEDIUM (NOT high)
@@ -6068,11 +6147,12 @@ window.MockCases = {
         subScores: {modelIdentity:1.5,modelVisibility:3,targetCallQuality:5,jsonTest:5,instructionTest:5,codeRepair:5,reasoning:4,needle:4,consistency:2}
       }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     const grade = getScoreGrade(capped);
     const risk = getModelIntegrityRiskLevel(23, checks.modelIntegrity.evidence);
-    return { raw: final, capped, grade, risk, desc: `Case MI-AMBIGUOUS-1: ambiguous, caf=0, score=23 → risk=${risk} (expected medium, NOT high)` };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade, risk, desc: `Case MI-AMBIGUOUS-1: ambiguous, caf=0, score=23 → risk=${risk} (expected medium, NOT high)` };
   },
 
   // ── Failure Summary Mock Cases ──────────────────────────────────────
@@ -6082,24 +6162,26 @@ window.MockCases = {
   caseFAIL_1() {
     const checks = this._makeNormalChecks();
     checks.reachability = mkCheck({ id: 'reachability', score: 0, status: 'failed', summary: 'Base URL 不可达' });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     const grade = getScoreGrade(capped);
     const fs = generateFailureSummary(capped, grade, checks);
     const descStr = 'FAIL-1: base failed shouldShow=' + fs.shouldShow + ' primary=' + (fs.primaryReason || 'null');
-    return { raw: final, capped, grade, fs, desc: descStr };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade, fs, desc: descStr };
   },
 
   // Case FAIL-2: auth 401 -> AUTH_FAILED
   caseFAIL_2() {
     const checks = this._makeNormalChecks();
     checks.auth = mkCheck({ id: 'auth', score: 0, status: 'failed', summary: '核心调用鉴权失败' });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     const grade = getScoreGrade(capped);
     const fs = generateFailureSummary(capped, grade, checks);
     const descStr = 'FAIL-2: auth 401 shouldShow=' + fs.shouldShow + ' primary=' + (fs.primaryReason || 'null');
-    return { raw: final, capped, grade, fs, desc: descStr };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade, fs, desc: descStr };
   },
 
   // Case FAIL-3: targetModelCall failed + usage high -> TARGET_MODEL_FAILED + USAGE_ABNORMAL
@@ -6107,12 +6189,13 @@ window.MockCases = {
     const checks = this._makeNormalChecks();
     checks.targetCall = mkCheck({ id: 'targetCall', score: 0, maxScore: 22, status: 'failed', summary: '目标模型不可调用' });
     checks.costTransparency = mkCheck({ id: 'costTransparency', score: 15, status: 'warning', summary: 'usage 字段不完整' });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     const grade = getScoreGrade(capped);
     const fs = generateFailureSummary(capped, grade, checks);
     const descStr = 'FAIL-3: target failed + usage high shouldShow=' + fs.shouldShow + ' primary=' + (fs.primaryReason || 'null') + ' secondary=' + (fs.secondaryReason || 'null');
-    return { raw: final, capped, grade, fs, desc: descStr };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade, fs, desc: descStr };
   },
 
   // Case FAIL-4: usage missing + stability high -> USAGE_ABNORMAL + STABILITY_FAILED
@@ -6121,12 +6204,13 @@ window.MockCases = {
     checks.targetCall.evidence = {};
     checks.costTransparency = mkCheck({ id: 'costTransparency', score: 18, status: 'warning', summary: 'usage 缺失' });
     checks.stability = mkCheck({ id: 'stability', score: 5, status: 'warning', evidence: { avgLatency: 4000, maxLatency: 12000, latencyJitter: 6000, samples: [{ok:true},{ok:false},{ok:false}] } });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     const grade = getScoreGrade(capped);
     const fs = generateFailureSummary(capped, grade, checks);
     const descStr = 'FAIL-4: usage missing + stability high shouldShow=' + fs.shouldShow + ' primary=' + (fs.primaryReason || 'null') + ' secondary=' + (fs.secondaryReason || 'null');
-    return { raw: final, capped, grade, fs, desc: descStr };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade, fs, desc: descStr };
   },
 
   // Case FAIL-5: sourceTransparency test_failed only -> IDENTITY_TEST_FAILED
@@ -6136,36 +6220,39 @@ window.MockCases = {
       id: 'modelIntegrity', score: 0, status: 'failed',
       evidence: { modelIdentityLevel: 'failed', coreAbilityFailures: 0, modelIdentityScore: 0, subScores: {} }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     const grade = getScoreGrade(capped);
     const fs = generateFailureSummary(capped, grade, checks);
     const descStr = 'FAIL-5: identity test_failed shouldShow=' + fs.shouldShow + ' primary=' + (fs.primaryReason || 'null');
-    return { raw: final, capped, grade, fs, desc: descStr };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade, fs, desc: descStr };
   },
 
   // Case FAIL-6: cache skipped + no other severe issue -> CACHE_SKIPPED only
   caseFAIL_6() {
     const checks = this._makeNormalChecks();
     checks.cacheHitCheck = mkCheck({ id: 'cacheHitCheck', score: 2, status: 'skipped', summary: '缓存检测跳过' });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     const grade = getScoreGrade(capped);
     const fs = generateFailureSummary(capped, grade, checks);
     const descStr = 'FAIL-6: cache skipped shouldShow=' + fs.shouldShow + ' primary=' + (fs.primaryReason || 'null');
-    return { raw: final, capped, grade, fs, desc: descStr };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade, fs, desc: descStr };
   },
 
   // Case FAIL-7: cache unknown only -> shouldShow=false
   caseFAIL_7() {
     const checks = this._makeNormalChecks();
     checks.cacheHitCheck = mkCheck({ id: 'cacheHitCheck', score: 2.5, status: 'unknown', summary: 'API 未暴露缓存字段' });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     const grade = getScoreGrade(capped);
     const fs = generateFailureSummary(capped, grade, checks);
     const descStr = 'FAIL-7: cache unknown only shouldShow=' + fs.shouldShow + ' (expected false)';
-    return { raw: final, capped, grade, fs, desc: descStr };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade, fs, desc: descStr };
   },
 
   // Case FAIL-8: family_match + score 70 -> shouldShow=false
@@ -6175,12 +6262,13 @@ window.MockCases = {
       id: 'modelIntegrity', score: 30, status: 'excellent',
       evidence: { modelIdentityLevel: 'family_match', coreAbilityFailures: 0, modelIdentityScore: 4, subScores: { targetCallQuality: 5 } }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     const grade = getScoreGrade(capped);
     const fs = generateFailureSummary(capped, grade, checks);
     const descStr = 'FAIL-8: family_match + score=70 shouldShow=' + fs.shouldShow + ' (expected false)';
-    return { raw: final, capped, grade, fs, desc: descStr };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade, fs, desc: descStr };
   },
 
   // Case FAIL-9: platform_or_proxy + score 75 -> shouldShow=false
@@ -6190,12 +6278,13 @@ window.MockCases = {
       id: 'modelIntegrity', score: 28, status: 'excellent',
       evidence: { modelIdentityLevel: 'platform_or_proxy_identity', coreAbilityFailures: 0, modelIdentityScore: 3, subScores: { targetCallQuality: 5 } }
     });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     const grade = getScoreGrade(capped);
     const fs = generateFailureSummary(capped, grade, checks);
     const descStr = 'FAIL-9: platform_or_proxy + score=75 shouldShow=' + fs.shouldShow + ' (expected false)';
-    return { raw: final, capped, grade, fs, desc: descStr };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade, fs, desc: descStr };
   },
 
   // Case FAIL-10: score=15.8 + multiple failures -> shouldShow=true multiple reasons
@@ -6209,12 +6298,13 @@ window.MockCases = {
       evidence: { modelIdentityLevel: 'failed', coreAbilityFailures: 1, modelIdentityScore: 0, subScores: { targetCallQuality: 2 } }
     });
     checks.cacheHitCheck = mkCheck({ id: 'cacheHitCheck', score: 2, status: 'skipped', summary: '缓存检测跳过' });
-    const { final } = calcFinalScore(checks);
-    const capped = applyCaps(final, checks, {});
+    const { totalScore } = calcFinalScore(checks);
+    const capResult = applyCaps(totalScore, checks, {});
+    const capped = extractCappedScore(capResult);
     const grade = getScoreGrade(capped);
     const fs = generateFailureSummary(capped, grade, checks);
     const descStr = 'FAIL-10: score=15.8 multiple failures shouldShow=' + fs.shouldShow + ' reasons=' + fs.reasons.length + ' primary=' + (fs.primaryReason || 'null');
-    return { raw: final, capped, grade, fs, desc: descStr };
+    return { raw: totalScore, capped, capApplied: capResult?.capApplied, capReason: capResult?.capReason, grade, fs, desc: descStr };
   },
 
   runAll() {

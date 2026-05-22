@@ -16,28 +16,36 @@ const WEIGHT_V17 = {
   clientConfig: 5,
 };
 
+// ─── Helper functions ────────────────────────
+
+function clampScore(score, max) {
+  const n = Number(score);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(max, n));
+}
+
+function extractCappedScore(capResult) {
+  if (typeof capResult === 'number') return capResult;
+  if (capResult && typeof capResult.capped === 'number') return capResult.capped;
+  return 0;
+}
+
 // ─── v1.7 calcFinalScore (copy from test.js) ────────────────────────
 
 function calcFinalScore(checks) {
-  const coreCompatScore = (checks.basicCompatibility?.score || 0) + (checks.targetCall?.score || 0);
-  const coreCompatMax = 25;
-  const usageScore = checks.costTransparency?.score || 0;
-  const usageMax = 25;
-  const stabilityScore = checks.stability?.score || 0;
-  const stabilityMax = 25;
-  const identityScore = checks.modelIntegrity?.score || 0;
-  const identityMax = 15;
-  const cacheScore = checks.cacheHitCheck?.score || 0;
-  const cacheMax = 5;
-  const clientScore = checks.clientConfig?.score || 0;
-  const clientMax = 5;
+  const coreCompatScore = clampScore((checks.basicCompatibility?.score || 0) + (checks.targetCall?.score || 0), 25);
+  const usageScore = clampScore(checks.costTransparency?.score || 0, 25);
+  const stabilityScore = clampScore(checks.stability?.score || 0, 25);
+  const identityScore = clampScore(checks.modelIntegrity?.score || 0, 15);
+  const cacheScore = clampScore(checks.cacheHitCheck?.score || 0, 5);
+  const clientScore = clampScore(checks.clientConfig?.score || 0, 5);
 
-  const coreNorm = Math.min(100, (coreCompatScore / coreCompatMax) * 100);
-  const usageNorm = Math.min(100, (usageScore / usageMax) * 100);
-  const stabilityNorm = Math.min(100, (stabilityScore / stabilityMax) * 100);
-  const identityNorm = Math.min(100, (identityScore / identityMax) * 100);
-  const cacheNorm = Math.min(100, (cacheScore / cacheMax) * 100);
-  const clientNorm = Math.min(100, (clientScore / clientMax) * 100);
+  const coreNorm = (coreCompatScore / 25) * 100;
+  const usageNorm = (usageScore / 25) * 100;
+  const stabilityNorm = (stabilityScore / 25) * 100;
+  const identityNorm = (identityScore / 15) * 100;
+  const cacheNorm = (cacheScore / 5) * 100;
+  const clientNorm = (clientScore / 5) * 100;
 
   const final = Math.min(98,
     coreNorm * 0.25 +
@@ -49,8 +57,15 @@ function calcFinalScore(checks) {
   );
 
   return {
-    final: Math.round(final * 10) / 10,
-    breakdown: { coreNorm, usageNorm, stabilityNorm, identityNorm, cacheNorm, clientNorm }
+    totalScore: Math.round(final * 10) / 10,
+    breakdown: {
+      coreCompatibility: { score: coreCompatScore, max: 25, norm: coreNorm, label: '基础兼容性', labelEn: 'Core Compatibility' },
+      usageTransparency: { score: usageScore, max: 25, norm: usageNorm, label: '扣费透明度', labelEn: 'Usage Transparency' },
+      stabilityLatency: { score: stabilityScore, max: 25, norm: stabilityNorm, label: '稳定性与延迟', labelEn: 'Stability & Latency' },
+      modelIdentity: { score: identityScore, max: 15, norm: identityNorm, label: '模型身份', labelEn: 'Model Identity' },
+      cacheSignal: { score: cacheScore, max: 5, norm: cacheNorm, label: '缓存命中信号', labelEn: 'Cache Signal' },
+      clientConfig: { score: clientScore, max: 5, norm: clientNorm, label: '客户端配置', labelEn: 'Client Config' },
+    }
   };
 }
 
@@ -58,7 +73,8 @@ function calcFinalScore(checks) {
 
 function applyCaps(rawScore, checks, modelIdInfo) {
   let cap = 98;
-  let capReason = 'none';
+  let capReason = null;
+  let capApplied = false;
 
   const targetWorks = (checks.targetCall?.score || 0) >= 11;
   const identityCategory = checks.modelIntegrity?.evidence?.modelIdentityLevel || 'exact_match';
@@ -72,51 +88,48 @@ function applyCaps(rawScore, checks, modelIdInfo) {
 
   // 1. Core reachability completely failed
   if ((checks.reachability?.score || 0) < 3) {
-    cap = 25;
-    capReason = 'reachability_failed';
+    cap = 25; capReason = 'reachability_failed'; capApplied = true;
   }
 
   // 2. Core API Key authentication failed (401)
   const has401 = checks.auth?.evidence?.modelsStatus === 401 || checks.auth?.evidence?.chatStatus === 401;
   if (has401) {
-    cap = 35;
-    capReason = 'auth_401';
+    cap = 35; capReason = 'auth_401'; capApplied = true;
   }
 
   // 3. Core chat/completions 403 (not auxiliary)
   const hasCoreChat403 = checks.targetCall?.evidence?.httpStatus === 403;
   if (hasCoreChat403) {
-    cap = 45;
-    capReason = 'core_chat_403';
+    cap = 45; capReason = 'core_chat_403'; capApplied = true;
   }
 
   // 4. Core response is HTML/invalid JSON
   const coreResponseUnparseable = !checks.targetCall?.evidence?.responseParsed && (checks.targetCall?.evidence?.httpStatus === 200);
   if (coreResponseUnparseable) {
-    cap = 45;
-    capReason = 'response_not_json';
+    cap = 45; capReason = 'response_not_json'; capApplied = true;
   }
 
   // 5. Current Model ID explicitly unavailable (404 / model not found)
-  // Even if targetCall score is high, 404 means the model is unavailable
   const targetHttpStatus = checks.targetCall?.evidence?.httpStatus;
-  const targetOutput = (checks.targetCall?.evidence?.output || '').toLowerCase();
+  const targetOutputText = typeof checks.targetCall?.evidence?.output === 'string'
+    ? checks.targetCall.evidence.output
+    : checks.targetCall?.evidence?.output?.text || '';
+  const targetOutput = targetOutputText.toLowerCase();
   const hasModelNotFound = targetHttpStatus === 404 ||
     targetOutput.includes('model not found') ||
     targetOutput.includes('no available model') ||
     targetOutput.includes('model not available');
   if (hasModelNotFound) {
-    cap = 50;
-    capReason = 'model_not_found';
+    cap = 50; capReason = 'model_not_found'; capApplied = true;
   }
 
   // 6. Stability sampling success rate <= 40%
   if (totalSamples >= 5 && successRate <= 0.4) {
-    cap = 60;
-    capReason = 'stability_failed';
+    cap = 60; capReason = 'stability_failed'; capApplied = true;
   }
 
-  return { capped: Math.min(Math.max(rawScore, 0), cap), capReason, capLimit: cap };
+  const cappedValue = capApplied ? Math.min(Math.max(rawScore, 0), cap) : rawScore;
+  return { capped: cappedValue, capReason, capLimit: capApplied ? cap : null, capApplied };
 }
 
 // ─── Helper: Create mock checks ────────────────────────
@@ -137,7 +150,7 @@ function makeChecks(overrides = {}) {
   return {
     reachability: mkCheck({ maxScore: 12, score: 12, status: 'excellent', ...overrides.reachability }),
     auth: mkCheck({ maxScore: 14, score: 14, status: 'excellent', ...overrides.auth }),
-    basicCompatibility: mkCheck({ maxScore: 7, score: 7, status: 'excellent', ...overrides.basicCompatibility }),
+    basicCompatibility: mkCheck({ maxScore: 25, score: 25, status: 'excellent', ...overrides.basicCompatibility }),
     targetCall: mkCheck({ maxScore: 22, score: 22, status: 'excellent', httpStatus: 200, responseParsed: true, output: 'OK', ...overrides.targetCall }),
     costTransparency: mkCheck({ maxScore: 25, score: 25, status: 'excellent', ...overrides.costTransparency }),
     cacheHitCheck: mkCheck({ maxScore: 5, score: 5, status: 'excellent', ...overrides.cacheHitCheck }),
@@ -178,7 +191,7 @@ const TEST_CASES = [
     expected: {
       minScore: 78,
       noCap: true,
-      capReason: 'none',
+      capApplied: false,
       stabilityScore: 24,
       identityScore: 12,
       cacheScore: 3,
@@ -210,6 +223,7 @@ const TEST_CASES = [
     expected: {
       minScore: 70,
       noCap: true,
+      capApplied: false,
       stabilityScore: 22,
       identityScore: 12,
     }
@@ -239,6 +253,7 @@ const TEST_CASES = [
     expected: {
       minScore: 65,
       noCap: true,
+      capApplied: false,
       stabilityScore: 20,
     }
   },
@@ -280,7 +295,7 @@ const TEST_CASES = [
     expected: {
       minScore: 50,
       noCap: true, // usage missing should NOT trigger cap
-      capReason: 'none',
+      capApplied: false,
       usageScore: 10,
     }
   },
@@ -295,7 +310,7 @@ const TEST_CASES = [
     expected: {
       minScore: 70,
       noCap: true, // auxiliary 403 should NOT trigger cap
-      capReason: 'none',
+      capApplied: false,
     }
   },
   {
@@ -308,7 +323,7 @@ const TEST_CASES = [
     expected: {
       minScore: 70,
       noCap: true, // family_match should NOT trigger cap
-      capReason: 'none',
+      capApplied: false,
       identityScore: 12,
       identityLevel: 'family_match',
     }
@@ -323,7 +338,7 @@ const TEST_CASES = [
     expected: {
       minScore: 65,
       noCap: true, // version_mismatch should NOT trigger cap
-      capReason: 'none',
+      capApplied: false,
       identityScore: 8,
       identityLevel: 'variant_mismatch',
     }
@@ -438,6 +453,64 @@ const TEST_CASES = [
       identityScore: 12,
     }
   },
+  {
+    name: 'Case 14: screenshot_regression_object_score (screenshot latencies=[2776,1651,1739,1775,3440], 5/5 success)',
+    checks: makeChecks({
+      costTransparency: { score: 25, status: 'excellent', evidence: { usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 } } },
+      cacheHitCheck: { score: 2, status: 'unknown', evidence: { sourceField: null, probeTokenSufficient: false } }, // no cache field
+      modelIntegrity: {
+        score: 12,
+        status: 'good',
+        evidence: {
+          modelIdentityLevel: 'family_match',
+          modelIdentityScore: 12,
+          coreAbilityFailures: 0
+        }
+      },
+      stability: {
+        score: 23,
+        maxScore: 25,
+        status: 'excellent',
+        evidence: {
+          avgLatency: 2276,
+          medianLatency: 1775,
+          maxLatency: 3440,
+          latencyJitter: 1789,
+          latencyRatio: 1.94,
+          stabilitySuccessScore: 12,
+          stabilityAverageLatencyScore: 7,
+          stabilityJitterScore: 4,
+          samples: [
+            {ok: true, status: 200, latency: 2776, hasContent: true},
+            {ok: true, status: 200, latency: 1651, hasContent: true},
+            {ok: true, status: 200, latency: 1739, hasContent: true},
+            {ok: true, status: 200, latency: 1775, hasContent: true},
+            {ok: true, status: 200, latency: 3440, hasContent: true},
+          ]
+        }
+      },
+      modelIntegrity: {
+        score: 12,
+        maxScore: 15,
+        status: 'good',
+        evidence: {
+          modelIdentityLevel: 'family_match',
+          modelIdentityScore: 12,
+          coreAbilityFailures: 0
+        }
+      },
+    }),
+    expected: {
+      minScore: 80,
+      noCap: true,
+      capApplied: false,
+      capReason: null,
+      stabilityScore: 23,
+      stabilityMax: 25,
+      identityScore: 12,
+      identityMax: 15,
+    }
+  },
 ];
 
 // ─── Run Tests ───────────────────────────────────────────────────
@@ -449,9 +522,10 @@ console.log('══════════════════════�
 let allPass = true;
 
 for (const tc of TEST_CASES) {
-  const { final } = calcFinalScore(tc.checks);
-  const capResult = applyCaps(final, tc.checks, {});
-  const { capped, capReason } = capResult;
+  const { totalScore, breakdown } = calcFinalScore(tc.checks);
+  const capResult = applyCaps(totalScore, tc.checks, {});
+  const capped = extractCappedScore(capResult);
+  const { capReason, capApplied } = capResult;
 
   let casePass = true;
   const reasons = [];
@@ -469,9 +543,9 @@ for (const tc of TEST_CASES) {
 
   // Check cap
   if (tc.expected.noCap !== undefined && tc.expected.noCap === true) {
-    if (capReason !== 'none') {
+    if (capApplied === true) {
       casePass = false;
-      reasons.push(`FAIL: expected no cap, got capReason=${capReason}`);
+      reasons.push(`FAIL: expected no cap, got capApplied=true, capReason=${capReason}`);
     }
   }
 
@@ -485,12 +559,25 @@ for (const tc of TEST_CASES) {
     reasons.push(`FAIL: capReason=${capReason} (expected: ${tc.expected.capReason})`);
   }
 
+  if (tc.expected.capApplied !== undefined && capApplied !== tc.expected.capApplied) {
+    casePass = false;
+    reasons.push(`FAIL: capApplied=${capApplied} (expected: ${tc.expected.capApplied})`);
+  }
+
   // Check specific scores
   if (tc.expected.stabilityScore !== undefined) {
     const stabilityScore = tc.checks.stability?.score || 0;
     if (stabilityScore !== tc.expected.stabilityScore) {
       casePass = false;
       reasons.push(`FAIL: stabilityScore=${stabilityScore} (expected: ${tc.expected.stabilityScore})`);
+    }
+  }
+
+  if (tc.expected.stabilityMax !== undefined) {
+    const stabilityMax = tc.checks.stability?.maxScore || 0;
+    if (stabilityMax !== tc.expected.stabilityMax) {
+      casePass = false;
+      reasons.push(`FAIL: stabilityMax=${stabilityMax} (expected: ${tc.expected.stabilityMax})`);
     }
   }
 
@@ -502,9 +589,33 @@ for (const tc of TEST_CASES) {
     }
   }
 
+  if (tc.expected.identityMax !== undefined) {
+    const identityMax = tc.checks.modelIntegrity?.maxScore || 0;
+    if (identityMax !== tc.expected.identityMax) {
+      casePass = false;
+      reasons.push(`FAIL: identityMax=${identityMax} (expected: ${tc.expected.identityMax})`);
+    }
+  }
+
+  // Check totalScore is a number (not object)
+  if (typeof totalScore !== 'number') {
+    casePass = false;
+    reasons.push(`FAIL: totalScore is ${typeof totalScore}, expected number`);
+  }
+
+  // Check no score > max in breakdown
+  if (breakdown) {
+    for (const [key, item] of Object.entries(breakdown)) {
+      if (item.score > item.max) {
+        casePass = false;
+        reasons.push(`FAIL: breakdown.${key}.score=${item.score} > max=${item.max}`);
+      }
+    }
+  }
+
   const status = casePass ? 'PASS ✓' : 'FAIL ✗';
   console.log(`${status}  ${tc.name}`);
-  console.log(`       raw=${final}  capped=${capped}  capReason=${capReason}`);
+  console.log(`       totalScore=${totalScore}  capped=${capped}  capApplied=${capApplied}  capReason=${capReason}`);
   if (!casePass) {
     allPass = false;
     for (const r of reasons) console.log(`       ${r}`);
