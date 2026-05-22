@@ -1867,6 +1867,90 @@ function computeTargetConsistency(t, targetLower) {
   };
 }
 
+/**
+ * Extracts self-claimed identity label from model response text.
+ * Used only for display purposes, does NOT affect scoring.
+ * @param {string} answerText - The model's response text
+ * @returns {{ label: string|null, type: string, matchedKeyword: string|null, confidence: string }}
+ */
+function extractSelfClaimLabel(answerText) {
+  if (!answerText || typeof answerText !== 'string') {
+    return { label: null, type: 'unknown', matchedKeyword: null, confidence: 'low' };
+  }
+  const text = answerText.toLowerCase().trim();
+  
+  // Client / IDE tool keywords
+  const clientToolKeywords = [
+    'windsurf', 'cursor', 'kiro', 'cline', 'continue', 'trae', 'copilot',
+    'github copilot', 'cursor agent', 'windsurf editor'
+  ];
+  for (const kw of clientToolKeywords) {
+    if (text.includes(kw)) {
+      const label = answerText.substring(0, 160).trim();
+      return { label, type: 'client_tool', matchedKeyword: kw, confidence: 'high' };
+    }
+  }
+  
+  // Gateway / Proxy / Relay keywords
+  const gatewayKeywords = [
+    'openrouter', 'gateway', 'proxy', 'router', 'relay',
+    'api gateway', 'api platform', 'middleman',
+    '中转', '网关', '代理'
+  ];
+  for (const kw of gatewayKeywords) {
+    if (text.includes(kw)) {
+      const label = answerText.substring(0, 160).trim();
+      return { label, type: 'gateway_proxy', matchedKeyword: kw, confidence: 'high' };
+    }
+  }
+  
+  // Hosting / Cloud provider keywords
+  const hostingKeywords = [
+    'azure', 'azure openai', 'aws', 'bedrock', 'amazon bedrock',
+    'google vertex', 'vertex ai', 'aws bedrock', 'amazon q'
+  ];
+  for (const kw of hostingKeywords) {
+    if (text.includes(kw)) {
+      // Check if also contains model name
+      const modelFamily = extractModelFamilyFromText(text);
+      if (modelFamily && modelFamily !== 'unknown') {
+        const label = answerText.substring(0, 160).trim();
+        return { label, type: 'hosting_provider_with_model', matchedKeyword: kw, confidence: 'medium' };
+      }
+      const label = answerText.substring(0, 160).trim();
+      return { label, type: 'hosting_provider', matchedKeyword: kw, confidence: 'high' };
+    }
+  }
+  
+  // Model variant keywords
+  const modelVariantKeywords = [
+    'opus', 'sonnet', 'haiku', 'gpt-4o', 'gpt-4', 'gpt-5', 'gpt-3.5',
+    'gemini-2.5', 'gemini-pro', 'gemini-flash', 'gemini-1.5',
+    'claude-3', 'claude-2', 'claude-4',
+    'qwen-2', 'qwen-2.5', 'deepseek-v3', 'llama-3', 'mistral'
+  ];
+  for (const kw of modelVariantKeywords) {
+    if (text.includes(kw)) {
+      const label = answerText.substring(0, 160).trim();
+      return { label, type: 'model_variant', matchedKeyword: kw, confidence: 'high' };
+    }
+  }
+  
+  // Model family keywords
+  const modelFamilyKeywords = [
+    'claude', 'gpt', 'chatgpt', 'gemini', 'llama', 'qwen',
+    'deepseek', 'grok', 'mistral', 'anthropic', 'openai', 'google'
+  ];
+  for (const kw of modelFamilyKeywords) {
+    if (text.includes(kw)) {
+      const label = answerText.substring(0, 160).trim();
+      return { label, type: 'model_family', matchedKeyword: kw, confidence: 'medium' };
+    }
+  }
+  
+  return { label: null, type: 'unknown', matchedKeyword: null, confidence: 'low' };
+}
+
 function evaluateModelIdentity(identityText, finalTestModelId) {
   const zh = getDocLang() !== 'en';
   const t = identityText.toLowerCase().trim();
@@ -2856,6 +2940,30 @@ function buildDebugScoring(rawScore, cappedScore, checks) {
     targetConsistency: checks.modelIntegrity?.evidence?.sourceTransparency?.targetConsistency || null,
     platformProxyMatchedKeyword: checks.modelIntegrity?.evidence?.sourceTransparency?.detectedSource || null,
     identityEvidenceVersion: '1.0',
+    // Self-claim identity fields (for display only, does not affect scoring)
+    selfClaimLabel: (() => {
+      const answer = checks.modelIntegrity?.evidence?.modelIdentityResponse || '';
+      const result = extractSelfClaimLabel(answer);
+      return result.label || null;
+    })(),
+    selfClaimType: (() => {
+      const answer = checks.modelIntegrity?.evidence?.modelIdentityResponse || '';
+      const result = extractSelfClaimLabel(answer);
+      return result.type || null;
+    })(),
+    selfClaimMatchedKeyword: (() => {
+      const answer = checks.modelIntegrity?.evidence?.modelIdentityResponse || '';
+      const result = extractSelfClaimLabel(answer);
+      return result.matchedKeyword || null;
+    })(),
+    selfClaimConfidence: (() => {
+      const answer = checks.modelIntegrity?.evidence?.modelIdentityResponse || '';
+      const result = extractSelfClaimLabel(answer);
+      return result.confidence || null;
+    })(),
+    // Official baseline (planned feature)
+    officialBaselineEnabled: false,
+    officialBaselineStatus: 'planned_not_enabled',
     // Model connectivity summary
     modelConnectivityCount: Array.isArray(checks.modelList?.evidence?.models) ? checks.modelList.evidence.models.length : 0,
     modelConnectivitySuccessCount: null,
@@ -3206,13 +3314,16 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
   const sourceTransparency = checks.modelIntegrity?.evidence?.sourceTransparency;
   const srcRisk = sourceTransparency?.riskLevel || (isProxyOrPlatform || identityCategory === 'ambiguous' || identityCategory === 'wrong_family' || identityCategory === 'hard_contamination' ? 'medium' : 'low');
   const srcLabelMap = {
-    exact_match: {zh:'清晰',en:'Clear'}, family_match: {zh:'家族匹配',en:'Family Match'},
-    platform_or_proxy_identity: {zh:'平台代理层暴露',en:'Platform/Proxy Exposed'},
-    proxy_route_identity: {zh:'平台代理层暴露',en:'Platform/Proxy Exposed'},
-    ambiguous: {zh:'身份未确认',en:'Identity Unconfirmed'},
-    wrong_family: {zh:'模型家族不一致',en:'Family Inconsistent'},
-    hard_contamination: {zh:'工具人格污染',en:'Tool/Persona Contamination'},
-    failed: {zh:'测试失败',en:'Test Failed'}, empty: {zh:'无回答',en:'No Answer'},
+    exact_match: {zh:'身份匹配',en:'Identity Match'}, 
+    family_match: {zh:'家族匹配',en:'Family Match'},
+    platform_or_proxy_identity: {zh:'平台/客户端',en:'Platform/Client'},
+    proxy_route_identity: {zh:'平台/客户端',en:'Platform/Client'},
+    ambiguous: {zh:'无法确认',en:'Unconfirmed'},
+    wrong_family: {zh:'目标不一致',en:'Inconsistent'},
+    version_mismatch: {zh:'目标不一致',en:'Inconsistent'},
+    variant_mismatch: {zh:'目标不一致',en:'Inconsistent'},
+    hard_contamination: {zh:'人格污染',en:'Contamination'},
+    failed: {zh:'检测失败',en:'Test Failed'}, empty: {zh:'无回答',en:'No Answer'},
   };
   const srcLabel = srcLabelMap[identityCategory] || {zh:'未知',en:'Unknown'};
   const detectedSource = sourceTransparency?.detectedSource || null;
@@ -3345,7 +3456,7 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
       const threshold = ev.minPromptTokensRequired ?? 1024;
       const sufficient = ev.probeTokenSufficient;
       cacheHitHtml = `<div style="margin-top:8px;padding:8px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;font-size:11px">
-        <div style="font-weight:600;color:#0f172a;margin-bottom:6px">${zh ? '缓存命中检测明细' : 'Cache Hit Details'}</div>
+        <div style="font-weight:600;color:#0f172a;margin-bottom:6px">${zh ? '缓存命中信号明细' : 'Cache Hit Signal Details'}</div>
         <div style="margin-bottom:6px;padding:6px 8px;background:${sufficient ? '#dcfce7' : '#fef3c7'};border-radius:6px;font-size:10px;display:flex;align-items:center;gap:6px">
           <span style="font-weight:700;color:${sufficient ? '#16a34a' : '#d97706'}">${sufficient ? (zh ? '探测长度足够' : 'Probe Sufficient') : (zh ? '探测长度不足' : 'Probe Insufficient')}</span>
           <span style="color:${sufficient ? '#166534' : '#92400e'}">${zh ? '实际：' : 'Actual: '}${actualTokens !== '—' ? actualTokens : '—'} tokens &nbsp;|&nbsp; ${zh ? '阈值：' : 'Threshold: '}${threshold} tokens</span>
@@ -3379,25 +3490,60 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
     if (checkKey === 'modelIntegrity' && checkData.evidence?.sourceTransparency) {
       const st = checkData.evidence.sourceTransparency;
       const stLabelMap = {
-        exact_match: zh ? '清晰' : 'Clear',
+        exact_match: zh ? '身份匹配' : 'Identity Match',
         family_match: zh ? '家族匹配' : 'Family Match',
-        platform_or_proxy_identity: zh ? '平台代理层暴露' : 'Platform/Proxy Layer',
-        proxy_route_identity: zh ? '平台代理层暴露' : 'Platform/Proxy Layer',
-        ambiguous: zh ? '身份未确认' : 'Identity Unconfirmed',
-        wrong_family: zh ? '模型家族错配' : 'Wrong Family',
-        hard_contamination: zh ? '工具人格污染' : 'Tool Persona Contamination',
-        failed: zh ? '测试失败' : 'Test Failed',
+        platform_or_proxy_identity: zh ? '平台/客户端' : 'Platform/Client',
+        proxy_route_identity: zh ? '平台/客户端' : 'Platform/Client',
+        ambiguous: zh ? '无法确认' : 'Unconfirmed',
+        wrong_family: zh ? '目标不一致' : 'Inconsistent',
+        version_mismatch: zh ? '目标不一致' : 'Inconsistent',
+        variant_mismatch: zh ? '目标不一致' : 'Inconsistent',
+        hard_contamination: zh ? '人格污染' : 'Contamination',
+        failed: zh ? '检测失败' : 'Test Failed',
         empty: zh ? '无回答' : 'No Answer',
       };
+      // Build deduction text based on identity category
+      const targetModel = checkData.evidence?.targetModel || modelIdInfo?.finalTestModelId || '';
+      const responseModel = st.evidenceText ? (st.evidenceText.substring(0, 160)) : '';
+      let deductionHtml = '';
+      if (st.category === 'family_match') {
+        deductionHtml = `<div style="margin-top:8px;padding:6px 8px;background:#fef9c3;border-radius:6px;font-size:10px;color:#92400e">
+          <div style="font-weight:600;margin-bottom:4px">${zh ? '扣分原因' : 'Deduction Reasons'}</div>
+          <ul style="margin:0;padding-left:16px;line-height:1.6">
+            <li>${zh ? '目标模型包含具体子版本或变体' : 'Target model contains specific version or variant'}</li>
+            <li>${zh ? '响应只确认了模型家族，未确认具体子版本' : 'Response only confirms model family, not specific version'}</li>
+            <li>${zh ? '因此按"同家族但版本未完全确认"处理' : 'Treated as family match with version unconfirmed'}</li>
+          </ul>
+        </div>`;
+      } else if (st.category === 'wrong_family' || st.category === 'variant_mismatch' || st.category === 'version_mismatch') {
+        deductionHtml = `<div style="margin-top:8px;padding:6px 8px;background:#fee2e2;border-radius:6px;font-size:10px;color:#991b1b">
+          <div style="font-weight:600;margin-bottom:4px">${zh ? '扣分原因' : 'Deduction Reasons'}</div>
+          <ul style="margin:0;padding-left:16px;line-height:1.6">
+            <li>${zh ? '目标模型与响应自称的模型变体不一致' : 'Target model differs from response self-reported variant'}</li>
+            <li>${zh ? '可能是模型别名、路由映射、供应商包装或配置错误' : 'Possible alias, routing, vendor wrapping or config error'}</li>
+            <li>${zh ? '建议更换明确可用的 model ID 后复测' : 'Recommend re-testing with a clear model ID'}</li>
+          </ul>
+        </div>`;
+      } else if (st.category === 'platform_or_proxy_identity' || st.category === 'proxy_route_identity') {
+        deductionHtml = `<div style="margin-top:8px;padding:6px 8px;background:#fef9c3;border-radius:6px;font-size:10px;color:#92400e">
+          <div style="font-weight:600;margin-bottom:4px">${zh ? '扣分原因' : 'Deduction Reasons'}</div>
+          <ul style="margin:0;padding-left:16px;line-height:1.6">
+            <li>${zh ? '响应更像平台、客户端或代理层身份' : 'Response resembles platform, client or proxy layer identity'}</li>
+            <li>${zh ? '未直接确认底层模型版本' : 'Does not directly confirm underlying model version'}</li>
+            <li>${zh ? '建议结合官方接口或稳定任务继续验证' : 'Recommend continuing verification with official interface or stable tasks'}</li>
+          </ul>
+        </div>`;
+      }
       sourceTransparencyHtml = `<div style="margin-top:8px;padding:8px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;font-size:11px">
-        <div style="font-weight:600;color:#0f172a;margin-bottom:6px">${zh ? '来源透明度' : 'Source Transparency'}</div>
+        <div style="font-weight:600;color:#0f172a;margin-bottom:6px">${zh ? '模型身份' : 'Model Identity'}</div>
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
           <span style="font-size:11px;color:#374151">${zh ? '分类：' : 'Category: '}</span>
           <span style="font-weight:600;color:${riskColors[st.riskLevel || 'medium'].color}">${escH(stLabelMap[st.category] || st.category || '-')}</span>
         </div>
-        ${st.detectedSource ? `<div style="margin-bottom:4px"><span style="font-size:10px;color:#94a3b8">${zh ? '检测来源：' : 'Source: '}</span><span style="font-size:11px;font-weight:600;color:#d97706">${escH(st.detectedSource)}</span></div>` : ''}
-        ${st.evidenceText ? `<div style="margin-bottom:4px"><span style="font-size:10px;color:#94a3b8">${zh ? '原始回答：' : 'Raw response: '}</span><span style="font-size:10px;color:#475569;font-style:italic">${escH(st.evidenceText.substring(0, 120))}${st.evidenceText.length > 120 ? '...' : ''}</span></div>` : ''}
-        ${st.explanation ? `<div style="font-size:10px;color:#64748b;line-height:1.5">${escH(st.explanation.substring(0, 200))}</div>` : ''}
+        ${st.detectedSource ? `<div style="margin-bottom:4px"><span style="font-size:10px;color:#94a3b8">${zh ? '响应自称：' : 'Self-reported: '}</span><span style="font-size:11px;font-weight:600;color:#d97706">${escH(st.detectedSource)}</span></div>` : ''}
+        ${responseModel ? `<div style="margin-bottom:4px"><span style="font-size:10px;color:#94a3b8">${zh ? '原始回答：' : 'Raw answer: '}</span><span style="font-size:10px;color:#475569;font-style:italic">${escH(responseModel)}${responseModel.length >= 160 ? '...' : ''}</span></div>` : ''}
+        ${st.explanation ? `<div style="font-size:10px;color:#64748b;line-height:1.5;margin-top:6px">${escH(st.explanation.substring(0, 200))}</div>` : ''}
+        ${deductionHtml}
       </div>`;
     }
 
@@ -3629,6 +3775,12 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
 
     ${toolCallingHtml}
     ${suggestionHtml}
+
+    <!-- Official baseline comparison placeholder -->
+    <div style="background:#f8fafc;border-radius:12px;padding:10px 14px;margin-bottom:10px;font-size:10px;color:#94a3b8;border:1px dashed #cbd5e1">
+      <div style="font-weight:600;color:#64748b;margin-bottom:4px">${zh ? '官方基准线对比（规划中）' : 'Official Baseline Comparison (Planned)'}</div>
+      <div>${zh ? '规划中：未来可选择使用用户自己的官方 API Key 做同题对照测试。该模式会产生额外请求费用，并且只在当前浏览器内运行，不上传或保存 API Key。当前版本仅展示目标接口的真实请求证据，不进行官方对照评分。' : 'Planned: Future option to use your own official API key for parallel testing. This mode will incur additional request costs and runs only in your browser — no API key upload or storage. Current version shows real request evidence from the target endpoint only, without official baseline scoring.'}</div>
+    </div>
 
     <!-- Test config -->
     <div style="background:#fff;border-radius:12px;padding:10px 14px;margin-bottom:10px;font-size:11px;color:#64748b">

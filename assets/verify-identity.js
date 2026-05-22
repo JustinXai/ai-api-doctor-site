@@ -471,6 +471,74 @@ const TEST_CASES = [
       { field: 'detectedSource', expected: 'windsurf', desc: 'detectedSource should be windsurf' },
     ]
   },
+  // ─── New RC test cases ───────────────────────────────────
+  {
+    name: 'Case 11: answer=Windsurf, target=claude-opus-4-7 (RC)',
+    target: 'claude-opus-4-7',
+    answer: 'Windsurf',
+    checks: [
+      { field: 'category', expected: 'platform_or_proxy_identity', desc: 'should be platform_or_proxy_identity' },
+      { field: 'detectedSource', expected: 'windsurf', desc: 'should be windsurf' },
+    ]
+  },
+  {
+    name: 'Case 12: answer=I am Kiro, target=claude-sonnet-4-6 (RC)',
+    target: 'claude-sonnet-4-6',
+    answer: 'I am Kiro, an AI coding assistant',
+    checks: [
+      { field: 'category', expected: 'platform_or_proxy_identity', desc: 'should be platform_or_proxy_identity' },
+      { field: 'detectedSource', expected: 'kiro', desc: 'should be kiro' },
+    ]
+  },
+  {
+    name: 'Case 13: answer=Azure OpenAI GPT-4, target=gpt-4o-mini (RC)',
+    target: 'gpt-4o-mini',
+    answer: 'Azure OpenAI GPT-4',
+    checks: [
+      { field: 'category', oneOf: ['exact_match', 'platform_or_proxy_identity'], desc: 'should be exact_match or platform_or_proxy_identity' },
+      { field: 'category', forbidden: 'wrong_family', desc: 'must NOT be wrong_family' },
+      { field: 'category', forbidden: 'failed', desc: 'must NOT be failed' },
+    ]
+  },
+  {
+    name: 'Case 14: answer=AWS Bedrock Claude, target=claude-sonnet-4-6 (RC)',
+    target: 'claude-sonnet-4-6',
+    answer: 'AWS Bedrock Claude',
+    checks: [
+      { field: 'category', oneOf: ['exact_match', 'family_match', 'platform_or_proxy_identity'], desc: 'should be family_match or platform_or_proxy_identity' },
+      { field: 'category', forbidden: 'wrong_family', desc: 'must NOT be wrong_family' },
+      { field: 'category', forbidden: 'failed', desc: 'must NOT be failed' },
+    ]
+  },
+  {
+    name: 'Case 15: answer=Claude, target=claude-opus-4-7 (RC)',
+    target: 'claude-opus-4-7',
+    answer: 'Claude',
+    checks: [
+      { field: 'category', expected: 'family_match', desc: 'should be family_match' },
+      { field: 'targetConsistency', expected: 'family_match', desc: 'should be family_match' },
+      { field: 'category', forbidden: 'platform_or_proxy_identity', desc: 'must NOT be platform_or_proxy_identity' },
+    ]
+  },
+  {
+    name: 'Case 16: answer=Claude 3.5 Sonnet, target=claude-opus-4-7 (RC)',
+    target: 'claude-opus-4-7',
+    answer: 'Claude 3.5 Sonnet',
+    checks: [
+      { field: 'category', expected: 'family_match', desc: 'should be family_match (same family)' },
+      { field: 'category', forbidden: 'platform_or_proxy_identity', desc: 'must NOT be platform_or_proxy_identity' },
+      { field: 'detectedVariant', expected: 'sonnet', desc: 'should detect sonnet' },
+    ]
+  },
+  {
+    name: 'Case 17: answer=I cannot access my model name, target=gpt-4o-mini (RC)',
+    target: 'gpt-4o-mini',
+    answer: 'I cannot access my model name',
+    checks: [
+      { field: 'category', expected: 'ambiguous', desc: 'should be ambiguous' },
+      { field: 'category', forbidden: 'platform_or_proxy_identity', desc: 'must NOT be platform_or_proxy_identity' },
+    ]
+  },
 ];
 
 // ─── Run Tests ───────────────────────────────────────────────
