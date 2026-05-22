@@ -42,18 +42,28 @@ const PROMPT_LONG_CACHE = `The concept of RESTful API design emphasizes stateles
 const PROMPT_STABILITY = 'Reply with exactly: OK';
 
 /* ═══════════════════════════════════════════════════════
-   Score weights (total = 100)
-   Core: cost (30) + cache (5) + model (40) + stability (15) + compat (7) + client (3) = 100
+   Score weights — v1.7 Real-Data Weighted (total = 100)
+   Core: coreCompat (25) + usageTransparency (25) + stabilityLatency (25) + modelIdentity (15) + cacheSignal (5) + clientConfig (5) = 100
    ═══════════════════════════════════════════════════════ */
 const WEIGHT = {
-  basicCompatibility:  7,   // Basic reachability & auth (prerequisite)
-  costTransparency:   30,  // Usage billing transparency (compressed from 35)
-  cacheHitCheck:        5,  // Cache hit detection (new independent check)
-  modelIntegrity:     40,  // Model capability & integrity signals
-  stability:          15,  // Response stability
-  clientConfig:        3,  // Client config exportability
+  coreCompatibility:     25,  // OpenAI-compatible basic compatibility
+  usageTransparency:    25,  // Usage/billing transparency
+  stabilityLatency:     25,  // Response stability & latency
+  modelIdentity:        15,  // Model identity signals
+  cacheSignal:          5,  // Cache hit signals
+  clientConfig:         5,  // Client config exportability
 };
 WEIGHT.total = Object.values(WEIGHT).reduce((a, b) => a + b, 0); // 100
+
+// Legacy alias for compatibility
+const WEIGHT_V16 = {
+  basicCompatibility:  7,
+  costTransparency:   30,
+  cacheHitCheck:      5,
+  modelIntegrity:    40,
+  stability:         15,
+  clientConfig:       3,
+};
 
 /* ═══════════════════════════════════════════════════════
    Grade table (6 levels) — unified for all components
@@ -3010,182 +3020,134 @@ function getCapReason(score, checks) {
 }
 
 /* ═══════════════════════════════════════════════════════
-   NEW: calcFinalScore — normalized weighted sum
+   NEW: calcFinalScore — v1.7 Real-Data Weighted
+   Normalized weighted sum based on real request data.
    ═══════════════════════════════════════════════════════ */
 function calcFinalScore(checks) {
-  const costScore = checks.costTransparency?.score || 0;
-  const cacheScore = checks.cacheHitCheck?.score || 0;
-  const modelScore = checks.modelIntegrity?.score || 0;
+  // v1.7: Map old check names to new weights
+  // coreCompatibility: basicCompatibility (25 pts) + targetCall quality
+  // usageTransparency: costTransparency (25 pts)
+  // stabilityLatency: stability (25 pts)
+  // modelIdentity: modelIntegrity (15 pts) — reduced from 40
+  // cacheSignal: cacheHitCheck (5 pts)
+  // clientConfig: clientConfig (5 pts)
+
+  const coreCompatScore = (checks.basicCompatibility?.score || 0) + (checks.targetCall?.score || 0);
+  const coreCompatMax = 25; // basicCompatibility max + targetCall quality max
+  const usageScore = checks.costTransparency?.score || 0;
+  const usageMax = 25;
   const stabilityScore = checks.stability?.score || 0;
-  const compatScore = checks.basicCompatibility?.score || 0;
+  const stabilityMax = 25;
+  const identityScore = checks.modelIntegrity?.score || 0;
+  const identityMax = 15;
+  const cacheScore = checks.cacheHitCheck?.score || 0;
+  const cacheMax = 5;
   const clientScore = checks.clientConfig?.score || 0;
-  const costNorm = Math.min(100, (costScore / 30) * 100);
-  const cacheNorm = Math.min(100, (cacheScore / 5) * 100);
-  const modelNorm = Math.min(100, (modelScore / 40) * 100);
-  const stabilityNorm = Math.min(100, (stabilityScore / 15) * 100);
-  const compatNorm = Math.min(100, (compatScore / 7) * 100);
-  const clientNorm = Math.min(100, (clientScore / 3) * 100);
-  const final = Math.min(98, costNorm * 0.30 + cacheNorm * 0.05 + modelNorm * 0.40 + stabilityNorm * 0.15 + compatNorm * 0.07 + clientNorm * 0.03);
-  return { final: Math.round(final * 10) / 10 };
+  const clientMax = 5;
+
+  const coreNorm = Math.min(100, (coreCompatScore / coreCompatMax) * 100);
+  const usageNorm = Math.min(100, (usageScore / usageMax) * 100);
+  const stabilityNorm = Math.min(100, (stabilityScore / stabilityMax) * 100);
+  const identityNorm = Math.min(100, (identityScore / identityMax) * 100);
+  const cacheNorm = Math.min(100, (cacheScore / cacheMax) * 100);
+  const clientNorm = Math.min(100, (clientScore / clientMax) * 100);
+
+  // v1.7 weighted formula
+  const final = Math.min(98,
+    coreNorm * 0.25 +
+    usageNorm * 0.25 +
+    stabilityNorm * 0.25 +
+    identityNorm * 0.15 +
+    cacheNorm * 0.05 +
+    clientNorm * 0.05
+  );
+
+  return {
+    final: Math.round(final * 10) / 10,
+    breakdown: { coreNorm, usageNorm, stabilityNorm, identityNorm, cacheNorm, clientNorm }
+  };
 }
 
 /* ═══════════════════════════════════════════════════════
-   applyCaps — comprehensive hard cap rules (v6)
-   Cap hierarchy (lower caps override higher): 0 > 25 > 40 > 45 > 55 > 60 > 68 > 70 > 72 > 75 > 76 > 78 > 84 > 86 > 89 > 90 > 94 > 98
-   Key changes:
-   - New 6-type K0 classification with category-specific caps
-   - Kiro/Vertex/gateway = proxy_route_identity = medium risk, max 90, can be B
-   - hard_contamination → max 70-82, no A/B
-   - wrong_family → max 86/75/72 by failures, no A
-   - baseOverhead > 500/1000, deltaRatio > 5 new caps
-   - Grade准入规则 updated for new categories
+   applyCaps — v1.7 Real-Data Weighted
+   Only hard failures trigger cap. Soft issues only reduce scores.
+   Cap hierarchy (lower caps override higher):
+   0 > 25 > 35 > 40 > 45 > 50 > 60 > 98
    ═══════════════════════════════════════════════════════ */
 function applyCaps(rawScore, checks, modelIdInfo) {
   let cap = 98;
+  let capReason = 'none';
 
-  // ── Extract all relevant evidence ──
+  // ── v1.7: Extract relevant evidence ──
   const targetWorks = (checks.targetCall?.score || 0) >= 11;
   const identityCategory = checks.modelIntegrity?.evidence?.modelIdentityLevel || 'exact_match';
-  const identityScore = checks.modelIntegrity?.evidence?.modelIdentityScore ?? 6;
   const coreAbilityFailures = checks.modelIntegrity?.evidence?.coreAbilityFailures || 0;
-  const costScore = checks.costTransparency?.score || 0;
-  const modelScore = checks.modelIntegrity?.score || 0;
-  const stabilityScore = checks.stability?.score || 0;
-  const costRisk = getCostRiskLevel(costScore);
-  const modelRisk = getModelIntegrityRiskLevel(modelScore, checks.modelIntegrity?.evidence);
-  const stabilityRisk = getStabilityRiskLevel(stabilityScore, checks);
-  const highRiskCount = [costRisk === 'high', modelRisk === 'high', stabilityRisk === 'high'].filter(Boolean).length;
   const hasUsage = !!(checks.targetCall?.evidence?.usage && Object.keys(checks.targetCall.evidence.usage).length > 0);
-  const shortComp = checks.costTransparency?.evidence?.shortReplyTest?.completionTokens || 0;
-  const shortOutput = (checks.costTransparency?.evidence?.shortReplyTest?.output || '').trim();
-  const shortReasoning = checks.costTransparency?.evidence?.shortReplyTest?.reasoningTokens || 0;
   const successSamples = (checks.stability?.evidence?.samples || []).filter(s => s.ok && s.hasContent).length;
-  const tt = checks.costTransparency?.evidence?.usageTest || {};
-  const mtComp = checks.costTransparency?.evidence?.maxTokensTest?.completionTokens || 0;
-  const stabilityEvidence = checks.costTransparency?.evidence?.usageStability || [];
+  const totalSamples = (checks.stability?.evidence?.samples || []).length;
+  const successRate = totalSamples > 0 ? successSamples / totalSamples : 0;
   const baseOverhead = checks.costTransparency?.evidence?.baseOverhead ?? null;
   const deltaRatio = checks.costTransparency?.evidence?.deltaRatio ?? null;
-  const hasInconsistent = Object.values(checks).some(c => c?.status === 'inconsistent');
 
-  // ── Step 1: Config-level severity caps (never overridden) ──
-  if (checks.reachability?.score < 3) cap = 25;
+  // ── v1.7: HARD FAILURE caps only ──
+
+  // 1. Core reachability completely failed
+  if ((checks.reachability?.score || 0) < 3) {
+    cap = 25;
+    capReason = 'reachability_failed';
+  }
+
+  // 2. Core API Key authentication failed (401)
   const has401 = checks.auth?.evidence?.modelsStatus === 401 || checks.auth?.evidence?.chatStatus === 401;
-  if (has401) cap = Math.min(cap, 40);
-  // Only trigger 45 hard cap for CORE chat 403, NOT model_list 403
-  const hasCoreChat403 = checks.auth?.evidence?.chatStatus === 403 || (checks.targetCall?.evidence?.httpStatus === 403);
-  const hasModelList403Only = checks.auth?.evidence?.modelsStatus === 403 && checks.auth?.evidence?.chatStatus !== 403 && checks.targetCall?.evidence?.httpStatus === 403;
-  if (hasCoreChat403) cap = Math.min(cap, 45);
-  // core_chat returned HTTP 200 but response is HTML/invalid JSON — format severely incompatible
+  if (has401) {
+    cap = 35;
+    capReason = 'auth_401';
+  }
+
+  // 3. Core chat/completions 403 (not auxiliary)
+  const hasCoreChat403 = checks.targetCall?.evidence?.httpStatus === 403;
+  if (hasCoreChat403) {
+    cap = 45;
+    capReason = 'core_chat_403';
+  }
+
+  // 4. Core response is HTML/invalid JSON (format severely incompatible)
   const coreResponseUnparseable = !checks.targetCall?.evidence?.responseParsed && (checks.targetCall?.evidence?.httpStatus === 200);
-  if (coreResponseUnparseable) cap = Math.min(cap, 45);
-  // model_list-only 403: core chat must have succeeded → minimum floor of 60
-  // Extended: usage_audit / metadata_audit / cache_check 403 with targetWorks also get floor 60
-  let auxiliary403Floor = 0;
-  const hasAnyAuxiliary403 = (checks.auth?.evidence?.modelsStatus === 403 && !hasCoreChat403) ||
-    (checks.modelList?.evidence?.httpStatus === 403 && (checks.targetCall?.evidence?.httpStatus === 200)) ||
-    (checks.usageAudit?.evidence?.httpStatus === 403) ||
-    (checks.metadataAudit?.evidence?.httpStatus === 403) ||
-    (checks.cacheHitCheck?.evidence?.httpStatus === 403);
-  if (hasAnyAuxiliary403 && targetWorks) auxiliary403Floor = 60;
-  if (!targetWorks && (checks.reachability?.score || 0) >= 3) cap = Math.min(cap, 55);
-  const reachDeds = checks.reachability?.deductions || [];
-  if (reachDeds.some(d => /html|cloudflare|waf|login|signin/i.test(d))) cap = Math.min(cap, 60);
-
-  // ── Step 2: Core module-level caps ──
-  if (highRiskCount >= 1) cap = Math.min(cap, 78);
-  if (costRisk === 'high') cap = Math.min(cap, 78);
-  if (modelRisk === 'high') cap = Math.min(cap, 75);
-  if (successSamples === 0 && targetWorks) cap = Math.min(cap, 70);
-  if (coreAbilityFailures >= 4) cap = Math.min(cap, 68);
-  if (coreAbilityFailures >= 3) cap = Math.min(cap, 75);
-  if (hasInconsistent) cap = Math.min(cap, 72);
-  if (highRiskCount >= 2) cap = Math.min(cap, 84);
-  if (stabilityRisk === 'medium') cap = Math.min(cap, 84);
-  if (!hasUsage && targetWorks) cap = Math.min(cap, 78);
-
-  // ── Step 3: Specific cost transparency caps ──
-  // short reply OK but completion_tokens > 50, no reasoning → cap 72
-  if (shortComp > 50 && shortOutput.toUpperCase() === 'OK' && shortReasoning === 0) cap = 72;
-  // short reply >50 but reasoning explains it → cap 86
-  if (shortComp > 50 && shortReasoning > 0) cap = Math.min(cap, 86);
-  // total_tokens diff > 20% → cap 86
-  if (hasUsage && tt.total_tokens != null && (tt.prompt_tokens != null || tt.completion_tokens != null)) {
-    const p = tt.prompt_tokens ?? tt.input_tokens ?? 0;
-    const c = tt.completion_tokens ?? tt.output_tokens ?? 0;
-    const expected = p + c;
-    if (expected > 0) {
-      const diff = Math.abs((tt.total_tokens || 0) - expected);
-      const ratio = diff / expected;
-      if (ratio > 0.20) cap = Math.min(cap, 86);
-    }
-  }
-  // max_tokens severely not enforced → cap 84
-  if (mtComp > 20) cap = Math.min(cap, 84);
-  // usage variation > 50% → cap 85
-  if (stabilityEvidence.length >= 2) {
-    const t1 = stabilityEvidence[0].total_tokens || 0;
-    const t2 = stabilityEvidence[1].total_tokens || 0;
-    if (t1 > 0 && t2 > 0) {
-      const variation = Math.abs(t1 - t2) / Math.max(t1, t2);
-      if (variation > 0.50) cap = Math.min(cap, 85);
-    }
-  }
-  // baseOverhead > 500 (and ≤ 1000) → cost at least medium, cap 84
-  if (baseOverhead !== null && baseOverhead > 500 && baseOverhead <= 1000) cap = Math.min(cap, 84);
-  // baseOverhead > 1000 → cost high risk, cap 76
-  if (baseOverhead !== null && baseOverhead > 1000) cap = Math.min(cap, 76);
-  // deltaRatio > 5 → cost at least medium, cap 84
-  if (deltaRatio !== null && deltaRatio > 5) cap = Math.min(cap, 84);
-  // deltaRatio > 10 → cost high risk
-  if (deltaRatio !== null && deltaRatio > 10) cap = Math.min(cap, 78);
-
-  // ── Step 4: Model identity category-specific caps ──
-  // hard_contamination: no A/B, with token anomaly → 70, without → 82
-  if (identityCategory === 'hard_contamination') {
-    if (baseOverhead !== null && baseOverhead > 500) cap = Math.min(cap, 70);
-    else if (mtComp > 20) cap = Math.min(cap, 72);
-    else cap = Math.min(cap, 82);
-  }
-  // wrong_family: can't be A, by failures
-  if (identityCategory === 'wrong_family') {
-    if (coreAbilityFailures >= 2) cap = Math.min(cap, 72);
-    else if (coreAbilityFailures >= 1) cap = Math.min(cap, 75);
-    else cap = Math.min(cap, 86);
-  }
-  // ambiguous: identityScore 1.5, moderate cap
-  if (identityCategory === 'ambiguous') {
-    cap = Math.min(cap, 89);
-  }
-  // proxy_route_identity / platform_or_proxy_identity: can be B (not A), max 90
-  const isProxyOrPlatform = identityCategory === 'proxy_route_identity' || identityCategory === 'platform_or_proxy_identity';
-  if (isProxyOrPlatform) {
-    // But if accompanied by severe issues, lower
-    const hasSevereToken = (baseOverhead !== null && baseOverhead > 500) || (deltaRatio !== null && deltaRatio > 5);
-    const hasMaxTokensIssue = mtComp > 20;
-    if (hasSevereToken && hasMaxTokensIssue) cap = Math.min(cap, 72);
-    else if (hasSevereToken || hasMaxTokensIssue) cap = Math.min(cap, 78);
-    else if (coreAbilityFailures >= 1) cap = Math.min(cap, 84);
-    else cap = Math.min(cap, 90);
-  }
-  // legacy identityScore = 0 (wrong_family/mismatch)
-  if (identityScore === 0 && identityCategory !== 'wrong_family' && identityCategory !== 'hard_contamination') {
-    if (coreAbilityFailures >= 2) cap = Math.min(cap, 72);
-    else if (coreAbilityFailures >= 1) cap = Math.min(cap, 75);
-    else cap = Math.min(cap, 86);
+  if (coreResponseUnparseable) {
+    cap = 45;
+    capReason = 'response_not_json';
   }
 
-  // ── Step 5: Grade准入规则 ──
-  // A must have: all low risk, identityScore >= 4, coreAbilityFailures = 0, no issues
-  const canBeA = costRisk === 'low' && modelRisk === 'low' && stabilityRisk === 'low'
-    && identityScore >= 4 && coreAbilityFailures === 0
-    && !hasInconsistent && hasUsage;
-  // B must have: no high risk modules, coreAbilityFailures <= 1
-  const canBeB = costRisk !== 'high' && modelRisk !== 'high' && stabilityRisk !== 'high'
-    && coreAbilityFailures <= 1 && !hasInconsistent;
-  if (!canBeB) cap = Math.min(cap, 89);
-  if (!canBeA) cap = Math.min(cap, 94);
+  // 5. Current Model ID explicitly unavailable (404 / model not found)
+  // Even if targetCall score is high, 404 means the model is unavailable
+  const targetHttpStatus = checks.targetCall?.evidence?.httpStatus;
+  const targetOutput = (checks.targetCall?.evidence?.output || '').toLowerCase();
+  const hasModelNotFound = targetHttpStatus === 404 ||
+    targetOutput.includes('model not found') ||
+    targetOutput.includes('no available model') ||
+    targetOutput.includes('model not available');
+  if (hasModelNotFound) {
+    cap = 50;
+    capReason = 'model_not_found';
+  }
 
-  return Math.max(auxiliary403Floor, Math.min(Math.max(rawScore, 0), cap));
+  // 6. Stability sampling success rate <= 40%
+  if (totalSamples >= 5 && successRate <= 0.4) {
+    cap = 60;
+    capReason = 'stability_failed';
+  }
+
+  // ── v1.7: REMOVED caps ──
+  // NO cap for: auxiliary 403, usage missing, cache missing, family_match,
+  // variant_mismatch, version_mismatch, platform_or_proxy_identity, /models endpoint failure
+
+  return { capped: Math.min(Math.max(rawScore, 0), cap), capReason, capLimit: cap };
+}
+
+// Legacy wrapper for compatibility
+function applyCapsLegacy(rawScore, checks, modelIdInfo) {
+  const result = applyCaps(rawScore, checks, modelIdInfo);
+  return result.capped;
 }
 
 /* ═══════════════════════════════════════════════════════
