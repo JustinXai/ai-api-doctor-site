@@ -347,6 +347,36 @@ runCapTest('platform_or_proxy_identity (no cap)', {
   modelIntegrity: mkCheck({ score: 10, evidence: { modelIdentityLevel: 'platform_or_proxy_identity' } }),
 }, 98, 'none');
 
+// ─── Base URL Normalization Tests ────────────────────────
+
+function normalizeBaseUrl(url) {
+  if (!url) return url;
+  url = url.replace(/\/$/, '');
+  if (!url) return url;
+  if (!/^https?:\/\//.test(url)) url = 'https://' + url;
+  if (!url.match(/\/v1$/) && !url.endsWith('/chat/completions') && !url.endsWith('/models')) url = url + '/v1';
+  return url;
+}
+
+console.log('\n── 5. BASE URL NORMALIZATION ────────────────────────');
+
+const baseUrlTests = [
+  { input: 'https://api.example.com', expected: 'https://api.example.com/v1', desc: 'No /v1 → add /v1' },
+  { input: 'https://api.example.com/v1', expected: 'https://api.example.com/v1', desc: 'Has /v1 → keep /v1' },
+  { input: 'https://api.example.com/v1/', expected: 'https://api.example.com/v1', desc: 'Has /v1/ → trim trailing slash' },
+  { input: 'https://api.example.com/chat/completions', expected: 'https://api.example.com/chat/completions', desc: 'Has /chat/completions → keep' },
+  { input: 'api.example.com', expected: 'https://api.example.com/v1', desc: 'No protocol → add https:// and /v1' },
+  { input: 'https://api.example.com/v1/v1', expected: 'https://api.example.com/v1/v1', desc: 'Already has /v1 → no duplicate' },
+];
+
+for (const t of baseUrlTests) {
+  const result = normalizeBaseUrl(t.input);
+  const pass = result === t.expected;
+  if (!pass) allPass = false;
+  console.log(`${pass ? 'PASS ✓' : 'FAIL ✗'}  normalizeBaseUrl('${t.input}') = '${result}' (expected: '${t.expected}')`);
+  console.log(`       ${t.desc}`);
+}
+
 // ─── Summary ───────────────────────────────────────
 
 console.log('\n═══════════════════════════════════════════════════════════');

@@ -1,10 +1,8 @@
-UI normalization and stability formula fix
+Base URL input preserves user input
 
-- Fix breakdown UI to use normalized scores from breakdown object
-- Use breakdown.coreCompatibility.score instead of checks.basicCompatibility.score
-- Use breakdown.clientConfig.score instead of checks.clientConfig.score
-- Use breakdown risk for moduleSection color, not check status
-- Fix stability avgLatencyScore threshold: 3500ms = 4/8
-- Fix stability jitterScore: ratio 3.0-4.0 = 2/5, ratio 4.0-5.0 = 1/5
-- Add Case 16: screenshot_stability_and_normalization test
-- Cache bust: v=20260522-rc17f
+- Fix: onConnectionInfoInput no longer calls normalizeBaseUrl when filling URL input
+- Add: getRawBaseUrl() returns user's original input
+- Add: getRequestBaseUrl() returns normalized URL for API requests only
+- Report now shows rawBaseUrl (user's original) instead of normalized URL
+- Add 6 Base URL normalization test cases
+- Cache bust: v=20260522-rc17g

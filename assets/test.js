@@ -3704,7 +3704,7 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
   </div>`;
 
   const finalModel = modelIdInfo?.finalTestModelId || '';
-  const safeBaseUrl = maskBaseUrlForShare(formData?.baseUrl || '');
+  const safeBaseUrl = maskBaseUrlForShare(formData?.rawBaseUrl || formData?.baseUrl || '');
 
   return `<div id="result-card-inner" style="max-width:560px;margin:0 auto;padding:0 4px">
     <!-- Dark header: grade + score + 3 risk pills -->
@@ -3961,7 +3961,8 @@ window.Doctor = {
 
   onConnectionInfoInput(textarea) {
     const parsed = parseConnectionInfo(textarea.value);
-    if (parsed.baseUrl) { const urlEl = document.getElementById('doctor-base-url'); if (urlEl) urlEl.value = this.normalizeBaseUrl(parsed.baseUrl); }
+    // Preserve user's original URL - only use normalizeBaseUrl internally for requests
+    if (parsed.baseUrl) { const urlEl = document.getElementById('doctor-base-url'); if (urlEl) urlEl.value = parsed.baseUrl; }
     if (parsed.apiKey) { const keyEl = document.getElementById('doctor-api-key'); if (keyEl) keyEl.value = parsed.apiKey; }
     if (parsed.model) { const modelEl = document.getElementById('doctor-model'); if (modelEl) modelEl.value = parsed.model; }
   },
@@ -3975,8 +3976,19 @@ window.Doctor = {
     return url;
   },
 
+  // Get the raw base URL from input (user's original input)
+  getRawBaseUrl() {
+    return (document.getElementById('doctor-base-url')?.value || '').trim();
+  },
+
+  // Get normalized base URL for API requests only (never writes back to input)
+  getRequestBaseUrl() {
+    return this.normalizeBaseUrl(this.getRawBaseUrl());
+  },
+
   async run() {
-    const baseUrl = (document.getElementById('doctor-base-url')?.value || '').trim();
+    const rawBaseUrl = this.getRawBaseUrl();
+    const baseUrl = rawBaseUrl;
     const apiKey = (document.getElementById('doctor-api-key')?.value || '').trim();
     const model = (document.getElementById('doctor-model')?.value || '').trim();
     const zh = getDocLang() !== 'en';
@@ -3984,7 +3996,7 @@ window.Doctor = {
     if (!baseUrl) { showToast(zh ? '请填写 Base URL' : 'Please fill in Base URL'); return; }
     if (!apiKey) { showToast(zh ? '请填写 API Key' : 'Please fill in API Key'); return; }
     if (!model) { showToast(zh ? '请填写 Model ID' : 'Please fill in Model ID'); return; }
-    const normalizedUrl = this.normalizeBaseUrl(baseUrl);
+    const requestBaseUrl = this.getRequestBaseUrl();
     if (this._controller) this._controller.abort();
     this._controller = new AbortController();
     const btn = document.getElementById('doctor-run-btn');
@@ -3992,17 +4004,18 @@ window.Doctor = {
     // Clear previous report immediately so old results don't mislead users
     const resultNode = document.getElementById('result-card');
     if (resultNode) resultNode.innerHTML = '';
-    this._formData = { baseUrl: normalizedUrl, model, interfaceType: this._interfaceType };
+    // Store both raw and normalized URLs
+    this._formData = { baseUrl: requestBaseUrl, rawBaseUrl, model, interfaceType: this._interfaceType };
     this.showProgress('running', deepMode);
     try {
       const signal = this._controller.signal;
       this._refreshProgress(0, 'running');
       this._refreshProgress(1, 'running');
-      const [reachResult, authResult] = await Promise.all([checkA_Reachability(normalizedUrl, apiKey, signal), checkB_Auth(normalizedUrl, apiKey, signal)]);
+      const [reachResult, authResult] = await Promise.all([checkA_Reachability(requestBaseUrl, apiKey, signal), checkB_Auth(requestBaseUrl, apiKey, signal)]);
       this._refreshProgress(0, reachResult.status, reachResult.summary);
       this._refreshProgress(1, authResult.status, authResult.summary);
       this._refreshProgress(2, 'running');
-      const modelListResult = await checkC_ModelList(normalizedUrl, apiKey, signal, model);
+      const modelListResult = await checkC_ModelList(requestBaseUrl, apiKey, signal, model);
       this._refreshProgress(2, modelListResult.status, modelListResult.summary);
       let probedModelId = '';
       if (!this._userInputModelId && !this._autoDetectedModelId) {
@@ -4011,7 +4024,7 @@ window.Doctor = {
           const chatModels = allModels.filter(m => !/(embedding|embed|vision|audio|tts|speech|whisper|dalle|image)/i.test(m));
           const probeModel = chatModels[0] || allModels[0];
           try {
-            const req = buildRequest(normalizedUrl, apiKey, probeModel, this._interfaceType, PROMPT_SHORT, { maxTokens: 10 });
+            const req = buildRequest(requestBaseUrl, apiKey, probeModel, this._interfaceType, PROMPT_SHORT, { maxTokens: 10 });
             const resp = await fetch(req.endpoint, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body), signal });
             if (resp.ok) probedModelId = probeModel;
           } catch (_) {}
@@ -4019,13 +4032,13 @@ window.Doctor = {
       }
       const modelIdInfo = determineFinalTestModelId(this._userInputModelId, this._autoDetectedModelId || probedModelId, modelListResult);
       this._modelIdInfo = modelIdInfo;
-      const autoModelResult = await checkD_AutoModel(normalizedUrl, apiKey, modelIdInfo, authResult, signal, this._interfaceType);
+      const autoModelResult = await checkD_AutoModel(requestBaseUrl, apiKey, modelIdInfo, authResult, signal, this._interfaceType);
       this._refreshProgress(3, autoModelResult.status, autoModelResult.summary);
       this._refreshProgress(4, 'running');
-      const targetCallResult = await checkE_TargetCall(normalizedUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal);
+      const targetCallResult = await checkE_TargetCall(requestBaseUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal);
       this._refreshProgress(4, targetCallResult.status, targetCallResult.summary);
       this._refreshProgress(5, 'running');
-      const costResult = await checkJ_CostTransparency(normalizedUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult);
+      const costResult = await checkJ_CostTransparency(requestBaseUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult);
       this._refreshProgress(5, costResult.status, costResult.summary);
       const cacheInitMsg = zh ? '缓存命中检测中，超时将自动跳过...' : 'Checking cache hit signal. This step will auto-skip on timeout...';
       const elCache = document.getElementById('prog-detail-5');
@@ -4036,26 +4049,26 @@ window.Doctor = {
         const el = document.getElementById('prog-detail-5');
         if (el) el.textContent = slowMsg;
       }, 8000);
-      const cacheResult = await checkN_CacheHitCheck(normalizedUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult);
+      const cacheResult = await checkN_CacheHitCheck(requestBaseUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult);
       clearTimeout(cacheSlowTimer);
       this._refreshProgress(5, cacheResult.status, cacheResult.summary);
       this._refreshProgress(6, 'running');
-      const modelIntegrityResult = await checkK_ModelIntegrity(normalizedUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult, modelIdInfo, deepMode);
+      const modelIntegrityResult = await checkK_ModelIntegrity(requestBaseUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult, modelIdInfo, deepMode);
       this._refreshProgress(6, modelIntegrityResult.status, modelIntegrityResult.summary);
       this._refreshProgress(7, 'running');
-      const stabilityResult = await checkG_Stability(normalizedUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult);
+      const stabilityResult = await checkG_Stability(requestBaseUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult);
       this._refreshProgress(7, stabilityResult.status, stabilityResult.summary);
       // Internal: usage audit (no visible progress)
-      const usageResult = await checkH_UsageAudit(normalizedUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult);
+      const usageResult = await checkH_UsageAudit(requestBaseUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult);
       this._refreshProgress(8, 'running');
       const basicCompatResult = checkL_BasicCompatibility(reachResult, authResult, modelListResult, targetCallResult);
-      const clientResult = checkI_ClientConfig(normalizedUrl, apiKey, modelIdInfo.finalTestModelId, modelListResult, targetCallResult);
+      const clientResult = checkI_ClientConfig(requestBaseUrl, apiKey, modelIdInfo.finalTestModelId, modelListResult, targetCallResult);
       const combinedState = basicCompatResult.status === 'excellent' && clientResult.status === 'excellent' ? 'excellent' : basicCompatResult.status === 'failed' || clientResult.status === 'failed' ? 'warning' : 'good';
       this._refreshProgress(8, combinedState, `${basicCompatResult.summary} / ${clientResult.summary}`);
       // Tool calling is tested internally (deep mode) but not a visible progress step
       let toolCallingResult = null;
       if (deepMode) {
-        try { toolCallingResult = await checkM_ToolCalling(normalizedUrl, apiKey, modelIdInfo.finalTestModelId, signal); } catch (_) {}
+        try { toolCallingResult = await checkM_ToolCalling(requestBaseUrl, apiKey, modelIdInfo.finalTestModelId, signal); } catch (_) {}
       }
       const checks = { reachability: reachResult, auth: authResult, modelList: modelListResult, autoModel: autoModelResult, targetCall: targetCallResult, stability: stabilityResult, usageAudit: usageResult, costTransparency: costResult, cacheHitCheck: cacheResult, modelIntegrity: modelIntegrityResult, basicCompatibility: basicCompatResult, clientConfig: clientResult };
       const { totalScore, gradeScore, breakdown, breakdownTotalRaw, scoreConsistencyCheck } = calcFinalScore(checks);
@@ -4238,7 +4251,7 @@ window.Doctor = {
       F: zh ? '当前配置存在关键失败，不建议继续使用。请先修复 Key、Base URL、模型名、权限或接口兼容问题。' : 'Critical failure detected — do not continue. Fix key, base URL, model name, permissions or interface compatibility first.',
     };
     const decisionText = decisionMap[g] || '';
-    const maskedUrl = (typeof Doctor !== 'undefined' && Doctor._formData) ? maskBaseUrlForShare(Doctor._formData.baseUrl || '') : '';
+    const maskedUrl = (typeof Doctor !== 'undefined' && Doctor._formData) ? maskBaseUrlForShare(Doctor._formData.rawBaseUrl || Doctor._formData.baseUrl || '') : '';
     const failureLine = (failureSummary?.shouldShow && failureSummary.shortText)
       ? (zh ? `\n${failureSummary.displayLabel}：${failureSummary.shortText}` : `\n${failureSummary.displayLabel}: ${failureSummary.shortText}`)
       : '';
