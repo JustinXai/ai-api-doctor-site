@@ -105,6 +105,8 @@ const STATUS_CONFIG = {
   skipped:   { zh: '未验证', en: 'Not verified',  color: '#94a3b8', bg: '#f1f5f9', pill: 'warn' },
   inconsistent:{ zh: '矛盾', en: 'Inconsistent',  color: '#7c3aed', bg: '#ede9fe', pill: 'warn' },
   error:     { zh: '未验证', en: 'Not verified',  color: '#f59e0b', bg: '#fef9c3', pill: 'warn' },
+  unknown:   { zh: '未验证', en: 'Not verified',  color: '#94a3b8', bg: '#f1f5f9', pill: 'warn' },
+  field_found:{ zh: '部分暴露', en: 'Field Exposed', color: '#d97706', bg: '#fef9c3', pill: 'warn' },
 };
 
 function getCheckStatus(earned, maxScore, forced) {
@@ -3357,8 +3359,8 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
           <div style="font-weight:600;color:#92400e;margin-bottom:4px">${zh ? '✅ 缓存字段已暴露（探测不足）' : '✅ Cache Field Exposed (Probe Insufficient)'}</div>
           <div style="color:#92400e;line-height:1.5">${escH(checkData.summary || '')}</div>
         </div>` : ''}
-        ${isUnknown && !ev.fieldFound ? `<div style="font-size:10px;color:#64748b;line-height:1.5;margin-bottom:4px">${escH(checkData.summary || '')}</div>
-        <div style="font-size:10px;color:#64748b;line-height:1.5;border-top:1px solid #e2e8f0;padding-top:4px">${zh ? '未暴露字段不等于没有缓存。' : 'Missing fields do not necessarily mean caching is unavailable.'}</div>` : `<div style="font-size:10px;color:#64748b;line-height:1.5">${escH(checkData.summary || '')}</div>`}
+        ${cacheStatus === 'unknown' && !ev.fieldFound ? `<div style="font-size:10px;color:#64748b;line-height:1.5;margin-bottom:4px">${escH(checkData.summary || '')}</div>
+        <div style="font-size:10px;color:#64748b;line-height:1.5;border-top:1px solid #e2e8f0;padding-top:4px">${zh ? '未暴露字段不等于没有缓存。' : 'Missing fields do not necessarily mean caching is unavailable.'}</div>` : ''}
       </div>`;
     }
 
