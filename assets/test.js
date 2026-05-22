@@ -1868,6 +1868,25 @@ function computeTargetConsistency(t, targetLower) {
 }
 
 /**
+ * Extracts model family label from text (for self-claim display only).
+ * @param {string} text - Lowercased text to search
+ * @returns {string|null} - Family name or null
+ */
+function extractModelFamilyFromText(text) {
+  if (!text || typeof text !== 'string') return null;
+  const t = text.toLowerCase();
+  if (t.includes('claude') || t.includes('anthropic')) return 'claude';
+  if (t.includes('gpt') || t.includes('chatgpt') || t.includes('openai')) return 'gpt';
+  if (t.includes('gemini') || t.includes('google')) return 'gemini';
+  if (t.includes('llama') || t.includes('meta')) return 'llama';
+  if (t.includes('qwen') || t.includes('alibaba')) return 'qwen';
+  if (t.includes('deepseek')) return 'deepseek';
+  if (t.includes('mistral') || t.includes('mixtral')) return 'mistral';
+  if (t.includes('grok') || t.includes('xai')) return 'grok';
+  return null;
+}
+
+/**
  * Extracts self-claimed identity label from model response text.
  * Used only for display purposes, does NOT affect scoring.
  * @param {string} answerText - The model's response text
@@ -2202,6 +2221,10 @@ async function checkK_ModelIntegrity(baseUrl, apiKey, model, interfaceType, sign
         return zh
           ? `模型自报与目标模型属于同一大模型家族${tcText}，但具体版本未完全确认。这不等于降配，但具体版本仍需结合能力测试和 usage 信号判断。`
           : `Model self-reported as same model family as target${tc && tc !== 'unknown' ? `, target ${tc === 'variant_mismatch' || tc === 'version_mismatch' ? 'inconsistent' : 'consistent'}` : ', exact version not fully confirmed'}. Not equal to downgrade — evaluate with capability tests and usage signals.`;
+      }
+      // Fallback: exact_match or other recognized positive states
+      if (identityCategory === 'exact_match') {
+        return zh ? '模型身份与目标一致。' : 'Model identity matches target.';
       }
       return zh ? '模型身份信号基本正常。' : 'Model identity signal is basically normal.';
     })(),
@@ -2964,6 +2987,12 @@ function buildDebugScoring(rawScore, cappedScore, checks) {
     // Official baseline (planned feature)
     officialBaselineEnabled: false,
     officialBaselineStatus: 'planned_not_enabled',
+    // Model discovery (connectivity probe - does NOT affect scoring)
+    modelDiscoveryEnabled: false,
+    modelDiscoveryCandidateCount: null,
+    modelDiscoverySuccessCount: null,
+    modelDiscoverySelectedModel: null,
+    modelDiscoveryAffectsScore: false,
     // Model connectivity summary
     modelConnectivityCount: Array.isArray(checks.modelList?.evidence?.models) ? checks.modelList.evidence.models.length : 0,
     modelConnectivitySuccessCount: null,

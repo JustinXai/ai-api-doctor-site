@@ -95,6 +95,108 @@ function extractDetectedSource(text) {
   return null;
 }
 
+/**
+ * Extracts model family label from text (for self-claim display only).
+ * @param {string} text - Text to search
+ * @returns {string|null} - Family name or null
+ */
+function extractModelFamilyFromText(text) {
+  if (!text || typeof text !== 'string') return null;
+  const t = text.toLowerCase();
+  if (t.includes('claude') || t.includes('anthropic')) return 'claude';
+  if (t.includes('gpt') || t.includes('chatgpt') || t.includes('openai')) return 'gpt';
+  if (t.includes('gemini') || t.includes('google')) return 'gemini';
+  if (t.includes('llama') || t.includes('meta')) return 'llama';
+  if (t.includes('qwen') || t.includes('alibaba')) return 'qwen';
+  if (t.includes('deepseek')) return 'deepseek';
+  if (t.includes('mistral') || t.includes('mixtral')) return 'mistral';
+  if (t.includes('grok') || t.includes('xai')) return 'grok';
+  return null;
+}
+
+/**
+ * Extracts self-claimed identity label from model response text.
+ * @param {string} answerText - The model's response text
+ * @returns {{ label: string|null, type: string, matchedKeyword: string|null, confidence: string }}
+ */
+function extractSelfClaimLabel(answerText) {
+  if (!answerText || typeof answerText !== 'string') {
+    return { label: null, type: 'unknown', matchedKeyword: null, confidence: 'low' };
+  }
+  const text = answerText.toLowerCase().trim();
+  
+  // Client / IDE tool keywords
+  const clientToolKeywords = [
+    'windsurf', 'cursor', 'kiro', 'cline', 'continue', 'trae', 'copilot',
+    'github copilot', 'cursor agent', 'windsurf editor'
+  ];
+  for (const kw of clientToolKeywords) {
+    if (text.includes(kw)) {
+      const label = answerText.substring(0, 160).trim();
+      return { label, type: 'client_tool', matchedKeyword: kw, confidence: 'high' };
+    }
+  }
+  
+  // Gateway / Proxy / Relay keywords
+  const gatewayKeywords = [
+    'openrouter', 'gateway', 'proxy', 'router', 'relay',
+    'api gateway', 'api platform', 'middleman',
+    '中转', '网关', '代理'
+  ];
+  for (const kw of gatewayKeywords) {
+    if (text.includes(kw)) {
+      const label = answerText.substring(0, 160).trim();
+      return { label, type: 'gateway_proxy', matchedKeyword: kw, confidence: 'high' };
+    }
+  }
+  
+  // Hosting / Cloud provider keywords
+  const hostingKeywords = [
+    'azure', 'azure openai', 'aws', 'bedrock', 'amazon bedrock',
+    'google vertex', 'vertex ai', 'aws bedrock', 'amazon q'
+  ];
+  for (const kw of hostingKeywords) {
+    if (text.includes(kw)) {
+      // Check if also contains model name
+      const modelFamily = extractModelFamilyFromText(text);
+      if (modelFamily && modelFamily !== 'unknown') {
+        const label = answerText.substring(0, 160).trim();
+        return { label, type: 'hosting_provider_with_model', matchedKeyword: kw, confidence: 'medium' };
+      }
+      const label = answerText.substring(0, 160).trim();
+      return { label, type: 'hosting_provider', matchedKeyword: kw, confidence: 'high' };
+    }
+  }
+  
+  // Model variant keywords
+  const modelVariantKeywords = [
+    'opus', 'sonnet', 'haiku', 'gpt-4o', 'gpt-4', 'gpt-5', 'gpt-3.5',
+    'gemini-2.5', 'gemini-pro', 'gemini-flash', 'gemini-1.5',
+    'claude-3', 'claude-2', 'claude-4',
+    'qwen-2', 'qwen-2.5', 'deepseek-v3', 'llama-3', 'mistral'
+  ];
+  for (const kw of modelVariantKeywords) {
+    if (text.includes(kw)) {
+      const label = answerText.substring(0, 160).trim();
+      return { label, type: 'model_variant', matchedKeyword: kw, confidence: 'high' };
+    }
+  }
+  
+  // Model family keywords
+  const modelFamilyKeywords = [
+    'claude', 'gpt', 'chatgpt', 'gemini', 'llama', 'qwen',
+    'deepseek', 'grok', 'mistral', 'anthropic', 'openai', 'google'
+  ];
+  for (const kw of modelFamilyKeywords) {
+    if (text.includes(kw)) {
+      const label = answerText.substring(0, 160).trim();
+      return { label, type: 'model_family', matchedKeyword: kw, confidence: 'medium' };
+    }
+  }
+  
+  return { label: null, type: 'unknown', matchedKeyword: null, confidence: 'low' };
+}
+
 function isNegativeUnknownResponse(text) {
   const t = text.toLowerCase();
   return NEGATIVE_IDENTITY_PATTERNS.some(p => t.includes(p));
