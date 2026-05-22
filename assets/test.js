@@ -57,28 +57,28 @@ WEIGHT.total = Object.values(WEIGHT).reduce((a, b) => a + b, 0); // 100
 
 /* ═══════════════════════════════════════════════════════
    Grade table (6 levels) — unified for all components
-   Score range: 95-98=A, 90-94=B, 80-89=C, 65-79=D, 40-64=E, 0-39=F
-   Max score is 98 — excellent is not trivially given.
-   ═══════════════════════════════════════════════════════ */
+  Score range: 100=A, 90-99=B, 70-89=C, 60-69=D, 40-59=E, 0-39=F
+  Max score is 98 — this is a CONFIGURATION risk score, not a model intelligence score.
+  ═══════════════════════════════════════════════════════ */
 const GRADES = [
-  { min: 95, grade: 'A', label: 'Excellent', labelZh: '优秀',   color: '#16a34a', bg: '#dcfce7',
-    desc: 'Overall signals excellent — no significant billing or model downgrade risks detected',
-    descZh: '综合信号表现优秀，未发现明显扣费或模型降配风险' },
-  { min: 90, grade: 'B', label: 'Good',      labelZh: '良好',   color: '#16a34a', bg: '#ecfeff',
-    desc: 'Core signals good with minor explainable limitations',
-    descZh: '核心信号表现良好，存在少量可解释限制' },
-  { min: 80, grade: 'C', label: 'Fair',     labelZh: '可用',   color: '#d97706', bg: '#fef9c3',
-    desc: 'Usable, but some billing or model signals need attention',
-    descZh: '可用，但部分扣费或模型信号需要注意' },
-  { min: 65, grade: 'D', label: 'Limited',  labelZh: '受限',   color: '#ea580c', bg: '#ffedd5',
-    desc: 'Significant risks — recommend small-amount verification before use',
-    descZh: '存在明显风险，建议小额验证后再使用' },
-  { min: 40, grade: 'E', label: 'Poor',     labelZh: '较差',   color: '#dc2626', bg: '#fee2e2',
-    desc: 'Multiple critical signal anomalies — not recommended for high-cost tasks',
-    descZh: '多项关键信号异常，不建议用于高成本任务' },
-  { min: 0,  grade: 'F', label: 'Failed',   labelZh: '失败',   color: '#dc2626', bg: '#fee2e2',
-    desc: 'Configuration unusable or extremely high risk',
-    descZh: '当前配置不可用或风险极高' },
+  { min: 95, grade: 'A', label: 'Healthy integration', labelZh: '接入健康',   color: '#16a34a', bg: '#dcfce7',
+    desc: 'Configuration complete — compatibility, transparency and stability signals are all good. This does not mean the model is officially certified.',
+    descZh: '配置完整，兼容性、透明度和稳定性表现良好。评分较高不代表模型来源、供应商或底层版本被官方认证。' },
+  { min: 90, grade: 'B', label: 'Mostly reliable',    labelZh: '基本可靠',   color: '#16a34a', bg: '#ecfeff',
+    desc: 'Core integration functional — only minor transparency or audit gaps. Suitable for daily development; review usage, model version and stability before production.',
+    descZh: '主要接入能力正常，仅存在少量透明度或审计缺口。适合日常开发和测试；生产使用前建议复核 usage、模型版本和稳定性。' },
+  { min: 70, grade: 'C', label: 'Usable, review needed', labelZh: '可用，需复核', color: '#d97706', bg: '#fef9c3',
+    desc: 'Core calls work, but version transparency, usage, stability or compatibility risks exist. Suitable for testing or light development.',
+    descZh: '核心调用可用，但存在版本透明度、usage、稳定性或兼容性风险。可用于测试或轻量开发；用于长期任务前建议完成复核。' },
+  { min: 60, grade: 'D', label: 'Test only',          labelZh: '测试可用',   color: '#ea580c', bg: '#ffedd5',
+    desc: 'Basic calls may work, but multiple auxiliary or compatibility checks are incomplete. Only for temporary testing.',
+    descZh: '基础调用可能可用，但多个辅助检查或兼容性检查不完整。仅建议用于临时测试；不建议直接接入重要工作流。' },
+  { min: 40, grade: 'E', label: 'Manual review needed', labelZh: '需人工复核', color: '#dc2626', bg: '#fee2e2',
+    desc: 'High integration risk detected — may affect client stability. If only temporary testing, continue observing; prioritise confirming model version, response format and permissions.',
+    descZh: '存在较高接入风险，可能影响客户端稳定使用。如只是临时测试，可以继续观察，但应优先确认模型版本、返回格式和权限配置。' },
+  { min: 0,  grade: 'F', label: 'Critical failure',   labelZh: '关键失败',   color: '#dc2626', bg: '#fee2e2',
+    desc: 'Core calls, auth, format or stability checks failed. Do not continue with current configuration — fix key, base URL, model name, permissions or interface compatibility first.',
+    descZh: '关键调用、鉴权、格式或稳定性检查失败。当前配置不建议继续使用；请先修复 Key、Base URL、模型名、权限或接口兼容问题。' },
 ];
 
 /**
@@ -504,14 +504,26 @@ async function checkB_Auth(baseUrl, apiKey, signal) {
       try { const err = await resp.json(); errorMessage = err.error?.message || err.error?.code || ''; evidence.errorMessage = errorMessage; } catch (_) {}
     }
   } catch (err) { evidence.netError = err.message; }
-  if (modelsStatus === 401 || modelsStatus === 403) { a1 = 0; a3 = 0; deductions.push(zh ? `API Key 未被识别（HTTP ${modelsStatus}）` : `API Key not recognized (HTTP ${modelsStatus})`); status = 'failed'; }
+  if (modelsStatus === 401 || modelsStatus === 403) {
+    a1 = 0; a3 = 0;
+    deductions.push(zh ? `API Key 未被识别（HTTP ${modelsStatus}）` : `API Key not recognized (HTTP ${modelsStatus})`);
+    status = 'failed';
+    evidence.checkStage403 = evidence.checkStage403 || [];
+    evidence.checkStage403.push('model_list');
+  }
   try {
     const req = buildRequest(baseUrl, apiKey, 'test-model', 'OpenAI Chat', PROMPT_SHORT, { maxTokens: 5 });
     const resp = await fetch(req.endpoint, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body), signal });
     chatStatus = resp.status;
     evidence.chatStatus = chatStatus;
   } catch (err) { evidence.chatNetError = err.message; }
-  if (chatStatus === 401 || chatStatus === 403) { if (status !== 'failed') status = 'failed'; a3 = 0; details.push(zh ? 'Chat 请求收到 401/403' : 'Chat request received 401/403'); }
+  if (chatStatus === 401 || chatStatus === 403) {
+    if (status !== 'failed') status = 'failed';
+    a3 = 0;
+    details.push(zh ? 'Chat 请求收到 401/403' : 'Chat request received 401/403');
+    evidence.checkStage403 = evidence.checkStage403 || [];
+    evidence.checkStage403.push('core_chat');
+  }
   else if (chatStatus === 429) { a4 = 1.5; details.push(zh ? '遇到限流' : 'Rate limited'); if (status === 'excellent') status = 'good'; }
   else if (chatStatus >= 400) a4 = 0;
   a5 = errorMessage ? 1 : 0;
@@ -633,7 +645,7 @@ async function checkE_TargetCall(baseUrl, apiKey, model, interfaceType, signal) 
     if (!resp.ok) {
       tc1 = 0; tc2 = 0; tc3 = 0; tc4 = 0; tc5 = 0; tc6 = 0; tc7 = 0;
       deductions.push(zh ? `HTTP ${resp.status}` : `HTTP ${resp.status}`);
-      if (resp.status === 401 || resp.status === 403) { status = 'failed'; deductions.push(zh ? '鉴权失败' : 'Authentication failed'); }
+      if (resp.status === 401 || resp.status === 403) { status = 'failed'; deductions.push(zh ? '鉴权失败' : 'Authentication failed'); evidence.checkStage403 = ['core_chat']; }
       else if (resp.status === 429) { status = 'warning'; deductions.push(zh ? '限流' : 'Rate limited'); tc9 = 0; }
       else if (resp.status === 404) { status = 'warning'; deductions.push(zh ? '模型端点不存在' : 'Model endpoint not found'); }
       else status = 'warning';
@@ -699,6 +711,7 @@ async function checkG_Stability(baseUrl, apiKey, model, interfaceType, signal, t
       if (!resp.ok) {
         samples.push({ ok: false, status: resp.status, latency, errMsg: 'HTTP ' + resp.status, responseText: '' });
         if (resp.status === 429) evidence.rateLimitDetected = true;
+        if (resp.status === 403) { evidence._stability403 = evidence._stability403 || []; evidence._stability403.push(i); }
       } else {
         let data;
         try { data = await resp.json(); } catch (_) { data = {}; }
@@ -2257,7 +2270,7 @@ function getStabilityRiskLevel(score, checks) {
 function riskLevelLabelZH(level) { return level === 'low' ? '低风险' : level === 'medium' ? '中风险' : '高风险'; }
 function riskLevelLabelEN(level) { return level === 'low' ? 'Low Risk' : level === 'medium' ? 'Medium Risk' : 'High Risk'; }
 function stabilityLabelZH(score) { return score >= 13 ? '优秀' : score >= 9 ? '良好' : score >= 5 ? '可用' : '较差'; }
-function stabilityLabelEN(score) { return score >= 13 ? 'Excellent' : score >= 9 ? 'Good' : score >= 5 ? 'Usable' : 'Poor'; }
+function stabilityLabelEN(score) { return score >= 13 ? 'Excellent' : score >= 9 ? 'Good' : score >= 5 ? 'Usable' : 'Failed'; }
 
 /* ═══════════════════════════════════════════════════════
    Failure Summary — structured failure reason for Failed/low-score reports
@@ -2287,19 +2300,42 @@ function generateFailureSummary(score, grade, checks) {
       'critical', evidenceText, 'compatibility');
   }
 
-  // ── P2: Auth failure ──
+  // ── P2: Auth failure — distinguish by stage ──
   const authScore = checks.auth?.score || 0;
   const authStatus = checks.auth?.status || 'unknown';
-  if (authScore === 0 || authStatus === 'failed') {
+  const authEvidence = checks.auth?.evidence || {};
+  const has401 = authEvidence.modelsStatus === 401 || authEvidence.chatStatus === 401;
+  // core_chat 403: targetCall also returns 403, or auth check's chatStatus is 403
+  const hasCoreChat403 = authEvidence.chatStatus === 403 || (checks.targetCall?.evidence?.httpStatus === 403);
+  // model_list-only 403: modelsStatus is 403 but core chat succeeded
+  const hasModelList403Only = authEvidence.modelsStatus === 403 && !hasCoreChat403;
+  const tcScore = checks.targetCall?.score || 0;
+  const targetWorks = tcScore >= 11;
+
+  if (has401 || hasCoreChat403) {
+    // Core auth failure: key cannot call target model
     const evidenceText = checks.auth?.summary ||
-      (zh ? 'API 返回 401/403 或鉴权错误' : 'API returned 401/403 or authentication error');
+      (zh ? 'API 返回 401/403，无法调用目标模型' : 'API returned 401/403 — cannot call target model');
     addReason('AUTH_FAILED',
-      zh ? 'Key 鉴权失败' : 'API key authentication failed',
+      zh ? 'API Key 无法调用目标模型' : 'API key cannot call target model',
       'critical', evidenceText, 'auth');
+  } else if (hasModelList403Only && targetWorks) {
+    // model_list-only 403: core works, just auxiliary audit failed
+    const evidenceText = checks.auth?.summary ||
+      (zh ? '模型列表接口返回 403，但核心聊天请求可用' : 'Model list endpoint returned 403, but core chat request works');
+    addReason('AUTH_AUX_FAILED',
+      zh ? '部分权限 / 审计检查未通过' : 'Some permission or audit checks failed',
+      'medium', evidenceText, 'auth');
+  } else if (authScore === 0 || authStatus === 'failed') {
+    // Other auth failures (not 401/403 but auth still failed)
+    const evidenceText = checks.auth?.summary ||
+      (zh ? '部分权限 / 审计检查未通过（models 或辅助 endpoint 响应异常）' : 'Some permission or audit checks failed — models or auxiliary endpoints responded abnormally');
+    addReason('AUTH_AUX_FAILED',
+      zh ? '部分权限 / 审计检查未通过' : 'Some permission or audit checks failed',
+      'medium', evidenceText, 'auth');
   }
 
   // ── P3: Target model not callable ──
-  const tcScore = checks.targetCall?.score || 0;
   const tcMax = checks.targetCall?.maxScore || 22;
   const tcStatus = checks.targetCall?.status || 'unknown';
   if (tcScore === 0 || tcScore < 5 || tcStatus === 'failed') {
@@ -2391,19 +2427,26 @@ function generateFailureSummary(score, grade, checks) {
   const shouldShow = (
     score < 40 ||
     g === 'F' ||
-    g === 'E' ||
     costRisk === 'high' ||
     modelRisk === 'high' ||
     stabRisk === 'high' ||
     idCat === 'failed' ||
-    cacheStatus === 'skipped' ||
     reachScore === 0 ||
     authScore === 0 ||
     tcScore < 5
   );
 
+  // Do not show when the only reason is cache_skipped / family_match / platform_or_proxy_identity alone
+  const onlyLowSeverity = reasons.length > 0 && reasons.every(r =>
+    r.code === 'CACHE_SKIPPED' ||
+    (r.code === 'IDENTITY_TEST_FAILED' && idCat !== 'failed' && idCat !== 'empty')
+  );
+  if (onlyLowSeverity) {
+    return { shouldShow: false, primaryReason: null, secondaryReason: null, reasons: [], shortText: '', detailText: '', displayLabel: null };
+  }
+
   if (!shouldShow || reasons.length === 0) {
-    return { shouldShow: false, primaryReason: null, secondaryReason: null, reasons: [], shortText: '', detailText: '' };
+    return { shouldShow: false, primaryReason: null, secondaryReason: null, reasons: [], shortText: '', detailText: '', displayLabel: null };
   }
 
   const primary = reasons[0];
@@ -2418,6 +2461,12 @@ function generateFailureSummary(score, grade, checks) {
   const shortText = primaryText + secondaryText;
   const detailText = reasons.map(r => `• ${r.label}：${r.evidence}`).join('\n');
 
+  // displayLabel: "失败主因" for critical score/grade, "主要风险" for high risk only
+  const isCritical = score < 40 || g === 'F' || g === 'Failed';
+  const displayLabel = isCritical
+    ? (zh ? '失败主因' : 'Main failure reason')
+    : (zh ? '主要风险' : 'Main risk');
+
   return {
     shouldShow: true,
     primaryReason: primaryText,
@@ -2425,6 +2474,7 @@ function generateFailureSummary(score, grade, checks) {
     reasons,
     shortText,
     detailText,
+    displayLabel,
   };
 }
 
@@ -2462,6 +2512,131 @@ function getConfidence(checks) {
 
   // high confidence
   return { level: 'high', label: zh ? '高' : 'High', reason: zh ? '所有关键证据完整，置信度高' : 'All key evidence complete — high confidence' };
+}
+
+/* ═══════════════════════════════════════════════════════
+   NEW: buildDebugScoring — lightweight debug info for development
+   Does NOT expose API key or sensitive response body
+   ═══════════════════════════════════════════════════════ */
+function buildDebugScoring(rawScore, cappedScore, checks) {
+  const authEvidence = checks.auth?.evidence || {};
+  const tcEvidence = checks.targetCall?.evidence || {};
+  const mlEvidence = checks.modelList?.evidence || {};
+  const authEvidenceStages = authEvidence.checkStage403 || [];
+  const hasCoreChat403 = authEvidence.chatStatus === 403 || tcEvidence.httpStatus === 403;
+  const hasCoreChat401 = authEvidence.chatStatus === 401 || tcEvidence.httpStatus === 401;
+  const hasAuxiliary403Only = !hasCoreChat403 && !hasCoreChat401 && (
+    authEvidence.modelsStatus === 403 || mlEvidence.httpStatus === 403 ||
+    (checks.usageAudit?.evidence?.httpStatus === 403) || (checks.metadataAudit?.evidence?.httpStatus === 403) ||
+    (checks.cacheHitCheck?.evidence?.httpStatus === 403)
+  );
+  const coreResponseUnparseable = !tcEvidence.responseParsed && tcEvidence.httpStatus === 200;
+  const identityCategory = checks.modelIntegrity?.evidence?.modelIdentityLevel || 'unknown';
+  const exactVersionConfirmed = identityCategory === 'exact_match';
+  const modelFamily = checks.modelIntegrity?.evidence?.modelFamily || null;
+  const hasUsage = !!(tcEvidence.usage && Object.keys(tcEvidence.usage).length > 0);
+  const formatRiskLevel = (() => {
+    if (!tcEvidence.responseParsed) return 'critical';
+    if (!tcEvidence.formatChoices && !tcEvidence.formatMessage) return 'critical';
+    if (!tcEvidence.output || tcEvidence.output.status === 'absent') return 'critical';
+    return 'none';
+  })();
+  const costRisk = getCostRiskLevel(checks.costTransparency?.score || 0);
+  const modelRisk = getModelIntegrityRiskLevel(checks.modelIntegrity?.score || 0, checks.modelIntegrity?.evidence);
+  const stabilityRisk = getStabilityRiskLevel(checks.stability?.score || 0, checks);
+  const successSamples = (checks.stability?.evidence?.samples || []).filter(s => s.ok && s.hasContent).length;
+  const targetWorks = (checks.targetCall?.score || 0) >= 11;
+  // Determine primary reason code
+  let primaryReasonCode = 'OK';
+  if (hasCoreChat401) primaryReasonCode = 'CORE_AUTH_401';
+  else if (hasCoreChat403) primaryReasonCode = 'CORE_AUTH_403';
+  else if (coreResponseUnparseable) primaryReasonCode = 'FORMAT_UNPARSEABLE';
+  else if (hasAuxiliary403Only) primaryReasonCode = 'AUXILIARY_403_ONLY';
+  else if (!targetWorks) primaryReasonCode = 'TARGET_CALL_FAILED';
+  else if (formatRiskLevel === 'critical') primaryReasonCode = 'FORMAT_CRITICAL';
+  else if (costRisk === 'high') primaryReasonCode = 'COST_HIGH_RISK';
+  else if (modelRisk === 'high') primaryReasonCode = 'MODEL_HIGH_RISK';
+  else if (stabilityRisk === 'high') primaryReasonCode = 'STABILITY_HIGH_RISK';
+  else if (identityCategory === 'wrong_family') primaryReasonCode = 'WRONG_FAMILY';
+  else if (identityCategory === 'hard_contamination') primaryReasonCode = 'HARD_CONTAMINATION';
+  else if (!hasUsage) primaryReasonCode = 'USAGE_MISSING';
+  else if (successSamples < 3) primaryReasonCode = 'STABILITY_PARTIAL';
+  // auxiliary403Floor: any auxiliary-only 403 → score should be >= 60, NOT 45
+  const auxiliary403FloorApplied = hasAuxiliary403Only && targetWorks && cappedScore >= 60;
+  // Determine visible text
+  let visibleTitle = '正常';
+  let visibleSuggestion = '主要信号正常，建议继续小额观察';
+  if (hasCoreChat401 || hasCoreChat403) {
+    visibleTitle = '核心调用鉴权失败';
+    visibleSuggestion = 'API Key 无法调用目标模型，请检查 Key 权限、模型名和 Base URL。';
+  } else if (coreResponseUnparseable) {
+    visibleTitle = '响应格式严重不兼容';
+    visibleSuggestion = 'API 返回格式与 OpenAI 标准不兼容，建议检查接口配置或使用兼容层。';
+  } else if (hasAuxiliary403Only) {
+    visibleTitle = '部分辅助接口权限受限';
+    visibleSuggestion = '测试可用 / 可用，需复核。核心调用正常，建议小额验证后继续使用。';
+  } else if (!targetWorks) {
+    visibleTitle = '核心调用失败';
+    visibleSuggestion = '核心模型调用未成功，请检查 Base URL、模型名和网络连通性。';
+  } else if (formatRiskLevel === 'critical') {
+    visibleTitle = '响应格式严重不兼容';
+    visibleSuggestion = 'API 返回格式与 OpenAI 标准不兼容，建议检查接口配置或使用兼容层。';
+  } else if (identityCategory === 'wrong_family') {
+    visibleTitle = '模型家族不一致';
+    visibleSuggestion = '建议谨慎使用该配置。';
+  } else if (!hasUsage) {
+    visibleTitle = 'usage 缺失';
+    visibleSuggestion = '测试可用，需复核。建议小额验证扣费后再用于重要任务。';
+  } else if (modelRisk === 'medium' || stabilityRisk === 'medium') {
+    visibleTitle = '部分信号存在异常';
+    visibleSuggestion = '建议小额继续验证模型质量。';
+  } else if (costRisk === 'low' && modelRisk === 'low' && stabilityRisk === 'low' && identityCategory === 'exact_match') {
+    visibleTitle = '主要信号正常';
+    visibleSuggestion = '扣费透明度、模型能力和稳定性信号表现良好，建议继续小额观察。';
+  } else {
+    visibleTitle = '部分信号异常';
+    visibleSuggestion = '建议小额继续验证。';
+  }
+  return {
+    rawWeightedScore: Math.round(rawScore * 10) / 10,
+    finalScore: Math.round(cappedScore * 10) / 10,
+    capApplied: cappedScore < rawScore,
+    capReason: cappedScore < rawScore ? getCapReason(cappedScore, checks) : null,
+    coreChatSuccess: targetWorks,
+    coreChatStatus: tcEvidence.httpStatus || 0,
+    coreAuthFailed: hasCoreChat403,
+    coreAuth401: hasCoreChat401,
+    auxiliary403Stages: authEvidenceStages,
+    modelListStatus: mlEvidence.httpStatus || 0,
+    usageAuditStatus: checks.usageAudit?.evidence?.httpStatus || (hasUsage ? 200 : 0),
+    metadataAuditStatus: checks.metadataAudit?.evidence?.httpStatus || (exactVersionConfirmed ? 200 : 0),
+    formatRiskLevel,
+    formatCriticalFailed: formatRiskLevel === 'critical',
+    usageMissing: !hasUsage,
+    modelsEndpointFailed: mlEvidence.httpStatus === 403 || mlEvidence.httpStatus === 404,
+    modelFamily,
+    exactVersionConfirmed,
+    stabilityFailed: successSamples < 2,
+    primaryReasonCode,
+    auxiliary403FloorApplied,
+    visibleTitle,
+    visibleSuggestion,
+  };
+}
+
+/** Helper: get the reason why a cap was applied */
+function getCapReason(score, checks) {
+  const hasCoreChat403 = checks.auth?.evidence?.chatStatus === 403 || (checks.targetCall?.evidence?.httpStatus === 403);
+  const has401 = checks.auth?.evidence?.modelsStatus === 401 || checks.auth?.evidence?.chatStatus === 401;
+  if (hasCoreChat403) return 'core_chat_403';
+  if (has401) return 'core_chat_401';
+  if (score <= 25) return 'reachability_failed';
+  if (score <= 40) return 'auth_401';
+  if (score <= 45) return 'core_auth_403';
+  if (score <= 55) return 'target_not_working';
+  if (score <= 60) return 'html_response';
+  if (score <= 68) return 'severe_issues';
+  return 'other_cap';
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -2526,8 +2701,22 @@ function applyCaps(rawScore, checks, modelIdInfo) {
   if (checks.reachability?.score < 3) cap = 25;
   const has401 = checks.auth?.evidence?.modelsStatus === 401 || checks.auth?.evidence?.chatStatus === 401;
   if (has401) cap = Math.min(cap, 40);
-  const has403 = checks.auth?.evidence?.modelsStatus === 403 || checks.auth?.evidence?.chatStatus === 403;
-  if (has403) cap = Math.min(cap, 45);
+  // Only trigger 45 hard cap for CORE chat 403, NOT model_list 403
+  const hasCoreChat403 = checks.auth?.evidence?.chatStatus === 403 || (checks.targetCall?.evidence?.httpStatus === 403);
+  const hasModelList403Only = checks.auth?.evidence?.modelsStatus === 403 && checks.auth?.evidence?.chatStatus !== 403 && checks.targetCall?.evidence?.httpStatus === 403;
+  if (hasCoreChat403) cap = Math.min(cap, 45);
+  // core_chat returned HTTP 200 but response is HTML/invalid JSON — format severely incompatible
+  const coreResponseUnparseable = !checks.targetCall?.evidence?.responseParsed && (checks.targetCall?.evidence?.httpStatus === 200);
+  if (coreResponseUnparseable) cap = Math.min(cap, 45);
+  // model_list-only 403: core chat must have succeeded → minimum floor of 60
+  // Extended: usage_audit / metadata_audit / cache_check 403 with targetWorks also get floor 60
+  let auxiliary403Floor = 0;
+  const hasAnyAuxiliary403 = (checks.auth?.evidence?.modelsStatus === 403 && !hasCoreChat403) ||
+    (checks.modelList?.evidence?.httpStatus === 403 && (checks.targetCall?.evidence?.httpStatus === 200)) ||
+    (checks.usageAudit?.evidence?.httpStatus === 403) ||
+    (checks.metadataAudit?.evidence?.httpStatus === 403) ||
+    (checks.cacheHitCheck?.evidence?.httpStatus === 403);
+  if (hasAnyAuxiliary403 && targetWorks) auxiliary403Floor = 60;
   if (!targetWorks && (checks.reachability?.score || 0) >= 3) cap = Math.min(cap, 55);
   const reachDeds = checks.reachability?.deductions || [];
   if (reachDeds.some(d => /html|cloudflare|waf|login|signin/i.test(d))) cap = Math.min(cap, 60);
@@ -2626,7 +2815,7 @@ function applyCaps(rawScore, checks, modelIdInfo) {
   if (!canBeB) cap = Math.min(cap, 89);
   if (!canBeA) cap = Math.min(cap, 94);
 
-  return Math.max(0, Math.min(rawScore, cap));
+  return Math.max(auxiliary403Floor, Math.min(Math.max(rawScore, 0), cap));
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -2801,7 +2990,7 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
   else if (stabilityRisk === 'high') verdictDesc = zh ? '稳定性波动较大，建议谨慎用于客户端' : 'Stability fluctuates significantly — use caution.';
   else if (identityCategory === 'wrong_family') verdictDesc = zh ? '模型家族不一致，存在降配风险' : 'Model family inconsistent — possible downgrade.';
   else if (identityCategory === 'hard_contamination') verdictDesc = zh ? '模型回答存在工具人格污染' : 'Model shows tool-persona contamination.';
-  else if (identityCategory === 'family_match') verdictDesc = zh ? '模型家族匹配，具体版本未确认' : 'Model family matched — exact version not confirmed.';
+  else if (identityCategory === 'family_match') verdictDesc = zh ? '已识别为 Claude 家族，但具体子版本未完全验证' : 'Claude family detected — exact sub-version not fully verified.';
   else if (identityCategory === 'ambiguous') verdictDesc = zh ? '模型身份未确认，建议结合 usage 和能力测试判断' : 'Model identity unconfirmed — evaluate with usage and capability tests.';
   else if (isProxyOrPlatform) verdictDesc = zh ? '检测到平台代理层，来源透明度降低' : 'Platform proxy layer detected — reduced source transparency.';
   else if (!hasUsage) verdictDesc = zh ? 'usage缺失，扣费不可审计' : 'usage missing — billing unauditable.';
@@ -3105,15 +3294,65 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
     </div>
 
     <!-- Verdict description (short, one line) -->
-    <div style="background:#fff;border-radius:12px;padding:8px 14px;margin-bottom:8px;font-size:11px;color:#374151;line-height:1.5">${escH(verdictDesc)}</div>
+    <div style="background:#fff;border-radius:12px;padding:8px 14px;margin-bottom:6px;font-size:11px;color:#374151;line-height:1.5">${escH(verdictDesc)}</div>
+
+    <!-- Score disclaimer + cap reason — near score card -->
+    ${(() => {
+      // capReason: only show when raw weighted score > final capped score by meaningful margin
+      const rawFinal = (() => {
+        const costNorm = Math.min(100, ((checks.costTransparency?.score||0)/30)*100);
+        const cacheNorm = Math.min(100, ((checks.cacheHitCheck?.score||0)/5)*100);
+        const modelNorm = Math.min(100, ((checks.modelIntegrity?.score||0)/40)*100);
+        const stabNorm  = Math.min(100, ((checks.stability?.score||0)/15)*100);
+        const compNorm  = Math.min(100, ((checks.basicCompatibility?.score||0)/7)*100);
+        const cliNorm   = Math.min(100, ((checks.clientConfig?.score||0)/3)*100);
+        return Math.round((costNorm*0.30 + cacheNorm*0.05 + modelNorm*0.40 + stabNorm*0.15 + compNorm*0.07 + cliNorm*0.03) * 10) / 10;
+      })();
+      const capMargin = rawFinal - score;
+      if (capMargin < 5) return '';
+      // Determine most severe cap reason
+      const reachScore = checks.reachability?.score || 0;
+      const has401 = checks.auth?.evidence?.modelsStatus === 401 || checks.auth?.evidence?.chatStatus === 401;
+      // Distinguish core_chat 403 from auxiliary 403 (model_list / usage_audit / metadata_audit / cache_check)
+      const hasCoreChat403 = checks.auth?.evidence?.chatStatus === 403 || (checks.targetCall?.evidence?.httpStatus === 403);
+      const hasAuxiliary403Only = !hasCoreChat403 && (
+        checks.auth?.evidence?.modelsStatus === 403 || checks.modelList?.evidence?.httpStatus === 403 ||
+        checks.usageAudit?.evidence?.httpStatus === 403 || checks.metadataAudit?.evidence?.httpStatus === 403 ||
+        checks.cacheHitCheck?.evidence?.httpStatus === 403
+      );
+      const targetWorks = (checks.targetCall?.score || 0) >= 11;
+      const costRiskL = getCostRiskLevel(checks.costTransparency?.score || 0);
+      const modelRiskL = getModelIntegrityRiskLevel(checks.modelIntegrity?.score || 0, checks.modelIntegrity?.evidence);
+      const stabRiskL  = getStabilityRiskLevel(checks.stability?.score || 0, checks);
+      const idCat = checks.modelIntegrity?.evidence?.modelIdentityLevel || 'exact_match';
+      let capReasonText = '';
+      if (reachScore < 3) capReasonText = zh ? '核心模型调用未成功' : 'Core model call unsuccessful';
+      else if (has401) capReasonText = zh ? 'API Key 无法调用目标模型（401）' : 'API Key cannot call target model (401)';
+      else if (hasCoreChat403) capReasonText = zh ? 'API Key 无法调用目标模型（403）' : 'API Key cannot call target model (403)';
+      else if (hasAuxiliary403Only) capReasonText = zh ? '部分辅助接口权限受限（403），核心调用正常' : 'Some auxiliary endpoints permissions restricted (403), core call normal';
+      else if (!targetWorks) capReasonText = zh ? '核心调用未成功' : 'Core call unsuccessful';
+      else if (idCat === 'wrong_family') capReasonText = zh ? '模型家族与目标不一致' : 'Model family inconsistent with target';
+      else if (idCat === 'hard_contamination') capReasonText = zh ? '模型人格污染信号' : 'Model persona contamination signal';
+      else if (idCat === 'platform_or_proxy_identity' || idCat === 'proxy_route_identity') capReasonText = zh ? '平台代理层身份暴露' : 'Platform proxy layer identity detected';
+      else if (modelRiskL === 'high') capReasonText = zh ? '模型能力测试异常' : 'Model ability test abnormal';
+      else if (costRiskL === 'high') capReasonText = zh ? 'usage 字段缺失或异常' : 'usage fields missing or abnormal';
+      else if (stabRiskL === 'high') capReasonText = zh ? '稳定性采样未通过' : 'Stability sampling failed';
+      if (!capReasonText) return '';
+      const capText = zh
+        ? `本次评分触发了关键风险上限：${capReasonText}，因此总分低于各单项加权结果。`
+        : `Key risk cap triggered: ${capReasonText} — final score below weighted sum.`;
+      return `<div style="background:#f1f5f9;border-radius:8px;padding:6px 12px;margin-bottom:6px;font-size:10px;color:#64748b;line-height:1.5;border:1px solid #e2e8f0">${escH(capText)}</div>`;
+    })()}
+    <div style="font-size:10px;color:#94a3b8;text-align:center;margin-bottom:6px">${zh ? '此分数不是模型能力评分，而是当前 Base URL / API Key / Model 配置在兼容性、透明度、稳定性和客户端接入方面的风险评分。' : 'This is not a model intelligence score. It measures API configuration risk across compatibility, transparency, stability, and client integration.'}</div>
 
     <!-- Failure summary — only shown when shouldShow -->
     ${failureSummary?.shouldShow ? (() => {
-      const isFailed = grade.grade === 'F' || grade.grade === 'E';
-      const bgColor = isFailed ? '#fff5f5' : '#fffbeb';
-      const borderColor = isFailed ? '#fecaca' : '#fde68a';
-      const textColor = isFailed ? '#991b1b' : '#92400e';
-      const label = zh ? '失败主因：' : 'Main failure reason: ';
+      const dl = failureSummary.displayLabel;
+      const isFailure = dl === '失败主因' || dl === 'Main failure reason';
+      const bgColor = isFailure ? '#fff5f5' : '#fffbeb';
+      const borderColor = isFailure ? '#fecaca' : '#fde68a';
+      const textColor = isFailure ? '#991b1b' : '#92400e';
+      const label = dl + (getDocLang() !== 'en' ? '：' : ': ');
       return `<div style="background:${bgColor};border:1px solid ${borderColor};border-radius:8px;padding:8px 14px;margin-bottom:8px;font-size:11px;color:${textColor};line-height:1.5"><b>${label}</b>${escH(failureSummary.shortText)}</div>`;
     })() : ''}
 
@@ -3121,17 +3360,17 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
     ${(() => {
       const g = grade.grade;
       const decisionMap = {
-        A: zh ? '可继续小额使用，并观察后台余额变化。' : 'Suitable for small-scale use while monitoring provider balance.',
-        B: zh ? '可继续小额使用，并观察后台余额变化。' : 'Suitable for small-scale use while monitoring provider balance.',
-        C: zh ? '可小额试用，不建议直接大额充值。' : 'Test with a small budget first; avoid large top-ups.',
-        D: zh ? '建议仅低成本测试，暂不建议用于高成本任务。' : 'Use only for low-cost testing; not recommended for high-cost tasks.',
-        E: zh ? '不建议继续使用该配置。' : 'Not recommended for continued use with this configuration.',
-        F: zh ? '不建议继续使用该配置。' : 'Not recommended for continued use with this configuration.',
+        A: zh ? '可用于日常开发；生产环境仍建议保留备用接口和限额保护。' : 'Suitable for daily development; keep a backup endpoint and quota limits for production.',
+        B: zh ? '适合日常开发和测试；生产使用前建议复核 usage、模型版本和稳定性。' : 'Good for daily dev and testing; review usage, model version and stability before production.',
+        C: zh ? '可用于测试或轻量开发；用于长期任务前建议完成复核。' : 'Usable for testing or light development; complete review before long-running tasks.',
+        D: zh ? '仅建议用于临时测试或轻量开发；不建议直接接入重要工作流。' : 'Only for temporary testing or light development; not recommended for critical workflows.',
+        E: zh ? '不建议直接用于生产或长期开发环境；如仅临时测试可继续观察，但应优先确认模型版本、返回格式和权限配置。' : 'Not recommended for production or long-term development. If only temporary testing, continue observing — but prioritise confirming model version, response format and permissions.',
+        F: zh ? '当前配置存在关键失败，不建议继续使用。请先修复 Key、Base URL、模型名、权限或接口兼容问题。' : 'Critical failure detected — do not continue. Fix key, base URL, model name, permissions or interface compatibility first.',
       };
       const decisionText = decisionMap[g] || '';
       const decisionColors = { A: { bg: '#dcfce7', color: '#166534' }, B: { bg: '#dcfce7', color: '#166534' }, C: { bg: '#fef9c3', color: '#92400e' }, D: { bg: '#fef3c7', color: '#b45309' }, E: { bg: '#fee2e2', color: '#991b1b' }, F: { bg: '#fee2e2', color: '#991b1b' } };
       const dc = decisionColors[g] || decisionColors.C;
-      return decisionText ? `<div style="background:${dc.bg};border-radius:8px;padding:6px 12px;margin-bottom:8px;font-size:11px;color:${dc.color};line-height:1.4"><b>${zh ? '决策：' : 'Decision: '}</b>${escH(decisionText)}</div>` : '';
+      return decisionText ? `<div style="background:${dc.bg};border-radius:8px;padding:6px 12px;margin-bottom:8px;font-size:11px;color:${dc.color};line-height:1.4"><b>${zh ? '使用建议：' : 'Recommendation: '}</b>${escH(decisionText)}</div>` : '';
     })()}
 
     <!-- 5 module sections -->
@@ -3364,7 +3603,8 @@ window.Doctor = {
       const grade = getScoreGrade(cappedScore);
       const judgment = getJudgment(cappedScore, checks);
       const failureSummary = generateFailureSummary(cappedScore, grade, checks);
-      this._result = { score: cappedScore, finalScore, grade, judgment, checks, deepMode, toolCallingResult, modelIdInfo, reportId: generateReportId(), timestamp: new Date().toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }), failureSummary };
+      const debugScoring = buildDebugScoring(finalScore, cappedScore, checks);
+      this._result = { score: cappedScore, finalScore, grade, judgment, checks, deepMode, toolCallingResult, modelIdInfo, reportId: generateReportId(), timestamp: new Date().toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }), failureSummary, debugScoring };
       this._refreshProgress(8, 'excellent', zh ? '生成报告' : 'Report ready');
       this.showResult(this._result);
     } catch (err) {
@@ -3523,21 +3763,24 @@ window.Doctor = {
     const cacheRateText = cacheRate != null ? ` (${(Math.round(cacheRate * 10000) / 100)}%)` : '';
     const g = grade?.grade || 'C';
     const decisionMap = {
-      A: zh ? '可继续小额使用，并观察后台余额变化。' : 'Suitable for small-scale use while monitoring provider balance.',
-      B: zh ? '可继续小额使用，并观察后台余额变化。' : 'Suitable for small-scale use while monitoring provider balance.',
-      C: zh ? '可小额试用，不建议直接大额充值。' : 'Test with a small budget first; avoid large top-ups.',
-      D: zh ? '建议仅低成本测试，暂不建议用于高成本任务。' : 'Use only for low-cost testing; not recommended for high-cost tasks.',
-      E: zh ? '不建议继续使用该配置。' : 'Not recommended for continued use with this configuration.',
-      F: zh ? '不建议继续使用该配置。' : 'Not recommended for continued use with this configuration.',
+      A: zh ? '可用于日常开发；生产环境仍建议保留备用接口和限额保护。' : 'Suitable for daily development; keep a backup endpoint and quota limits for production.',
+      B: zh ? '适合日常开发和测试；生产使用前建议复核 usage、模型版本和稳定性。' : 'Good for daily dev and testing; review usage, model version and stability before production.',
+      C: zh ? '可用于测试或轻量开发；用于长期任务前建议完成复核。' : 'Usable for testing or light development; complete review before long-running tasks.',
+      D: zh ? '仅建议用于临时测试或轻量开发；不建议直接接入重要工作流。' : 'Only for temporary testing or light development; not recommended for critical workflows.',
+      E: zh ? '不建议直接用于生产或长期开发环境；如仅临时测试可继续观察，但应优先确认模型版本、返回格式和权限配置。' : 'Not recommended for production or long-term development. If only temporary testing, continue observing — but prioritise confirming model version, response format and permissions.',
+      F: zh ? '当前配置存在关键失败，不建议继续使用。请先修复 Key、Base URL、模型名、权限或接口兼容问题。' : 'Critical failure detected — do not continue. Fix key, base URL, model name, permissions or interface compatibility first.',
     };
     const decisionText = decisionMap[g] || '';
     const maskedUrl = (typeof Doctor !== 'undefined' && Doctor._formData) ? maskBaseUrlForShare(Doctor._formData.baseUrl || '') : '';
     const failureLine = (failureSummary?.shouldShow && failureSummary.shortText)
-      ? (zh ? `\n失败主因：${failureSummary.shortText}` : `\nMain failure reason: ${failureSummary.shortText}`)
+      ? (zh ? `\n${failureSummary.displayLabel}：${failureSummary.shortText}` : `\n${failureSummary.displayLabel}: ${failureSummary.shortText}`)
       : '';
+    const scoreDisclaimer = zh
+      ? '\n此分数不是模型能力评分，而是当前 Base URL / API Key / Model 配置在兼容性、透明度、稳定性和客户端接入方面的风险评分。'
+      : '\nThis is not a model intelligence score. It measures API configuration risk across compatibility, transparency, stability, and client integration.';
     const text = zh
-      ? `AI API Doctor 验货报告\nURL: ${maskedUrl}\n验货分：${score}/100，${gradeLabel}\n扣费透明度：${costLabel}\n缓存命中检测：${cacheLabel}${cacheTimeoutSuffix}${cacheRateText}\n模型可信度：${modelLabel}\n稳定性：${stabilityLabel}\n来源透明度：${srcLabelCopy}${failureLine}\n主要建议：${suggestions[0] || '-'}\n决策：${decisionText}\n本报告仅基于可复现 API 信号，不构成最终证明。\nID：${reportId} · aiapidoctor.com`
-      : `AI API Doctor Report\nURL: ${maskedUrl}\nScore: ${score}/100, ${grade?.label || ''}\nCost: ${costLabel}\nCache Hit: ${cacheLabel}${cacheTimeoutSuffix}${cacheRateText}\nModel: ${modelLabel}\nStability: ${stabilityLabel}\nSource: ${srcLabelCopy}${failureLine}\nMain advice: ${suggestions[0] || '-'}\nDecision: ${decisionText}\nBased on reproducible API signals only.\nID: ${reportId} · aiapidoctor.com`;
+      ? `AI API Doctor 验货报告\nURL: ${maskedUrl}\n验货分：${score}/100，${gradeLabel}\n扣费透明度：${costLabel}\n缓存命中检测：${cacheLabel}${cacheTimeoutSuffix}${cacheRateText}\n模型可信度：${modelLabel}\n稳定性：${stabilityLabel}\n来源透明度：${srcLabelCopy}${failureLine}\n主要建议：${suggestions[0] || '-'}\n使用建议：${decisionText}${scoreDisclaimer}\nID：${reportId} · aiapidoctor.com`
+      : `AI API Doctor Report\nURL: ${maskedUrl}\nScore: ${score}/100, ${grade?.label || ''}\nCost: ${costLabel}\nCache Hit: ${cacheLabel}${cacheTimeoutSuffix}${cacheRateText}\nModel: ${modelLabel}\nStability: ${stabilityLabel}\nSource: ${srcLabelCopy}${failureLine}\nMain advice: ${suggestions[0] || '-'}\nRecommendation: ${decisionText}${scoreDisclaimer}\nID: ${reportId} · aiapidoctor.com`;
     copyToClipboard(text, zh ? '验货分已复制' : 'Score copied');
   }
 };
