@@ -2126,7 +2126,7 @@ function checkL_BasicCompatibility(reachResult, authResult, modelListResult, tar
   let status = totalScore < 1 ? 'failed' : totalScore < 3.5 ? 'poor' : totalScore < 5.5 ? 'warning' : totalScore < 6.5 ? 'good' : 'excellent';
   const summary = status === 'excellent' ? (zh ? '基础兼容性全部通过' : 'All basic compatibility checks passed') : (zh ? '基础兼容性基本通过，存在轻微问题' : 'Basic compatibility mostly passed — minor issues');
   if (reachCompat < 1) deductions.push(zh ? 'Base URL 不可达' : 'Base URL unreachable');
-  if (authCompat < 1) deductions.push(zh ? 'API Key 鉴权失败' : 'API Key authentication failed');
+  if (authCompat < 1) deductions.push(zh ? '核心调用鉴权失败' : 'Core call authentication failed');
   if (mlCompat < 0.5) details.push(zh ? '模型列表不可用或为空' : 'Model list unavailable or empty');
   if (tcCall < 1) deductions.push(zh ? '目标模型无法调用' : 'Target model cannot be called');
   return mkCheck({ id: 'basicCompatibility', label: { zh: '基础兼容性', en: 'Basic Compatibility' }, maxScore: 7, score: totalScore, status, summary, details, deductions, evidence: {
@@ -2352,7 +2352,7 @@ function generateFailureSummary(score, grade, checks) {
     // Only flag if target call at least partially succeeded but response format is wrong
     if (tcScore > 0) {
       addReason('NON_COMPATIBLE_RESPONSE',
-        zh ? '返回格式不兼容' : 'Response is not OpenAI-compatible',
+        zh ? '核心响应格式异常' : 'Core response format abnormal',
         'critical',
         zh ? '接口返回不符合 OpenAI-compatible chat/completions 格式' : 'Response does not conform to OpenAI-compatible chat/completions format',
         'response');
@@ -5700,7 +5700,7 @@ window.MockCases = {
   // Case FAIL-2: auth 401 -> AUTH_FAILED
   caseFAIL_2() {
     const checks = this._makeNormalChecks();
-    checks.auth = mkCheck({ id: 'auth', score: 0, status: 'failed', summary: 'API Key 鉴权失败' });
+    checks.auth = mkCheck({ id: 'auth', score: 0, status: 'failed', summary: '核心调用鉴权失败' });
     const { final } = calcFinalScore(checks);
     const capped = applyCaps(final, checks, {});
     const grade = getScoreGrade(capped);
