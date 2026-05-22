@@ -116,22 +116,22 @@ function extractCappedScore(capResult) {
   Max score is 98 — this is a CONFIGURATION risk score, not a model intelligence score.
   ═══════════════════════════════════════════════════════ */
 const GRADES = [
-  { min: 95, grade: 'A', label: 'Healthy integration', labelZh: '接入健康',   color: '#16a34a', bg: '#dcfce7',
+  { min: 95, grade: 'A', label: 'Excellent',           labelZh: '优秀',        color: '#16a34a', bg: '#dcfce7',
     desc: 'Configuration complete — compatibility, transparency and stability signals are all good. This does not mean the model is officially certified.',
     descZh: '配置完整，兼容性、透明度和稳定性表现良好。评分较高不代表模型来源、供应商或底层版本被官方认证。' },
-  { min: 90, grade: 'B', label: 'Mostly reliable',    labelZh: '基本可靠',   color: '#16a34a', bg: '#ecfeff',
+  { min: 80, grade: 'B', label: 'Good, review advised', labelZh: '良好',        color: '#16a34a', bg: '#ecfeff',
     desc: 'Core integration functional — only minor transparency or audit gaps. Suitable for daily development; review usage, model version and stability before production.',
     descZh: '主要接入能力正常，仅存在少量透明度或审计缺口。适合日常开发和测试；生产使用前建议复核 usage、模型版本和稳定性。' },
   { min: 70, grade: 'C', label: 'Usable, review needed', labelZh: '可用，需复核', color: '#d97706', bg: '#fef9c3',
     desc: 'Core calls work, but version transparency, usage, stability or compatibility risks exist. Suitable for testing or light development.',
     descZh: '核心调用可用，但存在版本透明度、usage、稳定性或兼容性风险。可用于测试或轻量开发；用于长期任务前建议完成复核。' },
-  { min: 60, grade: 'D', label: 'Test only',          labelZh: '测试可用',   color: '#ea580c', bg: '#ffedd5',
+  { min: 60, grade: 'D', label: 'Test only',            labelZh: '测试可用',    color: '#ea580c', bg: '#ffedd5',
     desc: 'Basic calls may work, but multiple auxiliary or compatibility checks are incomplete. Only for temporary testing.',
     descZh: '基础调用可能可用，但多个辅助检查或兼容性检查不完整。仅建议用于临时测试；不建议直接接入重要工作流。' },
-  { min: 40, grade: 'E', label: 'Manual review needed', labelZh: '需人工复核', color: '#dc2626', bg: '#fee2e2',
+  { min: 40, grade: 'E', label: 'High risk',            labelZh: '高风险',     color: '#dc2626', bg: '#fee2e2',
     desc: 'High integration risk detected — may affect client stability. If only temporary testing, continue observing; prioritise confirming model version, response format and permissions.',
     descZh: '存在较高接入风险，可能影响客户端稳定使用。如只是临时测试，可以继续观察，但应优先确认模型版本、返回格式和权限配置。' },
-  { min: 0,  grade: 'F', label: 'Critical failure',   labelZh: '关键失败',   color: '#dc2626', bg: '#fee2e2',
+  { min: 0,  grade: 'F', label: 'Critical failure',     labelZh: '关键失败',   color: '#dc2626', bg: '#fee2e2',
     desc: 'Core calls, auth, format or stability checks failed. Do not continue with current configuration — fix key, base URL, model name, permissions or interface compatibility first.',
     descZh: '关键调用、鉴权、格式或稳定性检查失败。当前配置不建议继续使用；请先修复 Key、Base URL、模型名、权限或接口兼容问题。' },
 ];
@@ -841,10 +841,17 @@ async function checkG_Stability(baseUrl, apiKey, model, interfaceType, signal, t
   else if (score < 15) status = 'warning';
   else if (avgLat > 5000 || latencyRatio > 4) status = 'warning';
 
-  const summary = status === 'excellent' ? (zh ? '完全稳定' : 'Fully stable') :
-    okCount === 5 ? (zh ? `响应正常` : 'Normal') :
-    okCount >= 4 ? (zh ? `轻微波动` : 'Slight fluctuation') :
-    status === 'warning' ? (zh ? '稳定性波动' : 'Stability fluctuating') : (zh ? '稳定性差' : 'Poor stability');
+  // Score-based summary (not status-based)
+  let summary = '';
+  if (score >= 22) {
+    summary = zh ? '完全稳定' : 'Fully stable';
+  } else if (score >= 18) {
+    summary = okCount === 5 ? (zh ? '存在轻微波动' : 'Slight fluctuation') : (zh ? '稳定性波动' : 'Stability fluctuating');
+  } else if (score >= 15) {
+    summary = zh ? '延迟波动较明显' : 'Notable latency fluctuation';
+  } else {
+    summary = okCount >= 4 ? (zh ? '稳定性波动' : 'Stability fluctuating') : (zh ? '稳定性差' : 'Poor stability');
+  }
   return mkCheck({ id: 'stability', label: { zh: '稳定性与延迟', en: 'Stability & Latency' }, maxScore: 25, score, status, summary, details, deductions, evidence });
 }
 
@@ -897,14 +904,15 @@ function checkI_ClientConfig(baseUrl, apiKey, model, modelListResult, targetCall
   else {
     const tcStatus = targetCallResult?.evidence?.httpStatus || 0;
     if (tcStatus >= 200 && tcStatus < 300) { c3 = 1; evidence.clineReady = true; evidence.continueReady = true; }
-    else if (tcStatus >= 400) { c3 = 0.5; details.push(zh ? '目标模型调用未成功，配置未验证' : 'Target model call not successful — config not verified'); }
-    else c3 = 0.5;
+    else if (tcStatus >= 400) { c3 = 0; details.push(zh ? '目标模型调用未成功，配置未验证' : 'Target model call not successful — config not verified'); status = 'warning'; }
+    else c3 = 0;
   }
-  const score = c1 + c2 + c3;
-  if (score < 1.5) status = 'warning';
-  if (score < 0.5) status = 'failed';
+  // Score based on 3 sub-checks, normalize to 5 in calcFinalScore
+  const rawScore = c1 + c2 + c3;
+  if (rawScore < 2) status = 'warning';
+  if (rawScore < 1) status = 'failed';
   const summary = status === 'excellent' ? (zh ? '配置完整可导出' : 'Config complete and exportable') : status === 'warning' ? (zh ? '配置部分可用' : 'Config partially available') : (zh ? '配置不可用' : 'Config not available');
-  return mkCheck({ id: 'clientConfig', label: { zh: '客户端配置', en: 'Client Config' }, maxScore: 5, score, status, summary, details, deductions, evidence });
+  return mkCheck({ id: 'clientConfig', label: { zh: '客户端配置', en: 'Client Config' }, maxScore: 3, score: rawScore, status, summary, details, deductions, evidence });
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -1112,7 +1120,8 @@ async function checkJ_CostTransparency(baseUrl, apiKey, model, interfaceType, si
       : `max_tokens=5 but completion_tokens(${mtComp}) clearly exceeds limit — usage abnormal`);
   } else if (mtComp > 10) {
     subScores.maxTokens = 1;
-    deductions.push(zh ? 'max_tokens 限制未完全生效' : 'max_tokens limit not fully enforced');
+    // Downgrade to info message, not red deduction
+    details.push(zh ? 'max_tokens 限制未完全生效' : 'max_tokens limit not fully enforced');
   } else if (mtComp > 5) {
     subScores.maxTokens = 2.5;
     details.push(zh ? 'max_tokens 基本受控' : 'max_tokens mostly controlled');
@@ -2711,18 +2720,18 @@ function generateFailureSummary(score, grade, checks) {
       'source');
   }
 
-  // ── P8: Model ability abnormal ──
+  // ── P8: Model identity high risk ──
   const modelRisk = checks.modelIntegrity?.evidence
     ? getModelIntegrityRiskLevel(checks.modelIntegrity.score || 0, checks.modelIntegrity.evidence)
     : getModelIntegrityRiskLevel(checks.modelIntegrity?.score || 0, null);
   const caf = checks.modelIntegrity?.evidence?.coreAbilityFailures || 0;
   if (modelRisk === 'high' || caf >= 3 || idCat === 'wrong_family' || idCat === 'hard_contamination') {
     addReason('MODEL_ABILITY_FAILED',
-      zh ? '模型能力测试异常' : 'Model ability checks failed',
+      zh ? '模型身份风险较高' : 'Model identity risk high',
       'high',
       zh
-        ? `核心能力测试异常（${caf} 项失败）${idCat === 'wrong_family' ? '，模型家族不一致' : idCat === 'hard_contamination' ? '，工具人格污染' : ''}`
-        : `Core ability tests abnormal (${caf} failures)${idCat === 'wrong_family' ? ', model family inconsistent' : idCat === 'hard_contamination' ? ', tool persona contamination' : ''}`,
+        ? `模型家族或版本不一致（${caf} 项失败）${idCat === 'wrong_family' ? '，模型家族与目标不一致' : idCat === 'hard_contamination' ? '，工具人格污染信号' : ''}`
+        : `Model family or version inconsistent (${caf} failures)${idCat === 'wrong_family' ? ', model family does not match target' : idCat === 'hard_contamination' ? ', tool persona contamination signal' : ''}`,
       'model');
   } else if (idCat === 'family_match') {
     // family_match is not high risk - show a medium risk message
@@ -3611,9 +3620,9 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
       const caf = checkData.evidence?.coreAbilityFailures ?? 0;
       // Priority: hard conditions first, then identity category
       if (caf >= 3) {
-        summaryText = zh ? '模型能力测试异常' : 'Model capability test abnormal';
+        summaryText = zh ? '模型身份风险较高' : 'Model identity risk high';
       } else if (idCat === 'wrong_family') {
-        summaryText = zh ? '模型家族不一致' : 'Model family inconsistent';
+        summaryText = zh ? '模型家族与目标不一致' : 'Model family does not match target';
       } else if (idCat === 'hard_contamination') {
         summaryText = zh ? '工具人格污染信号' : 'Tool persona contamination';
       } else if (caf >= 1) {
@@ -3780,7 +3789,7 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
       else if (idCat === 'wrong_family') capReasonText = zh ? '模型家族与目标不一致' : 'Model family inconsistent with target';
       else if (idCat === 'hard_contamination') capReasonText = zh ? '模型人格污染信号' : 'Model persona contamination signal';
       else if (idCat === 'platform_or_proxy_identity' || idCat === 'proxy_route_identity') capReasonText = zh ? '平台代理层身份暴露' : 'Platform proxy layer identity detected';
-      else if (modelRiskL === 'high') capReasonText = zh ? '模型能力测试异常' : 'Model ability test abnormal';
+      else if (modelRiskL === 'high') capReasonText = zh ? '模型身份风险较高' : 'Model identity risk high';
       else if (costRiskL === 'high') capReasonText = zh ? 'usage 字段缺失或异常' : 'usage fields missing or abnormal';
       else if (stabRiskL === 'high') capReasonText = zh ? '稳定性采样未通过' : 'Stability sampling failed';
       if (!capReasonText) return '';

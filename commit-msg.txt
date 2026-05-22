@@ -1,8 +1,8 @@
-Base URL input preserves user input
+v1.7 UI text consistency fixes
 
-- Fix: onConnectionInfoInput no longer calls normalizeBaseUrl when filling URL input
-- Add: getRawBaseUrl() returns user's original input
-- Add: getRequestBaseUrl() returns normalized URL for API requests only
-- Report now shows rawBaseUrl (user's original) instead of normalized URL
-- Add 6 Base URL normalization test cases
-- Cache bust: v=20260522-rc17g
+- Fix Grade: B starts at 80 (85.7 → B, not C)
+- Fix clientConfig: output rawScore with maxScore=3, normalize in calcFinalScore
+- Fix stability summary: score-based (22+ → 完全稳定, 18+ → 存在轻微波动)
+- Fix main risk text: replace 模型能力测试异常 with 模型身份风险较高
+- Downgrade max_tokens warning: change to info message, not red deduction
+- Cache bust: v=20260522-rc17h
