@@ -3858,7 +3858,7 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
     </div>
 
     <!-- Footer -->
-    <div style="text-align:center;font-size:11px;color:#94a3b8;padding:2px 0">${zh ? '报告 ID' : 'Report ID'}: ${reportId} &nbsp;|&nbsp; aiapidoctor.com</div>
+    <div style="text-align:center;font-size:11px;color:#94a3b8;padding:2px 0">${zh ? '报告 ID' : 'Report ID'}: ${reportId} &nbsp;|&nbsp; aiapidoctor.com &nbsp;|&nbsp; <a href="https://github.com/JustinXai/ai-api-doctor-site" target="_blank" rel="noopener noreferrer" style="color:#94a3b8">GitHub</a></div>
     <!-- Actions -->
     <div style="display:flex;gap:8px;margin-top:10px">
       <button onclick="Doctor.saveImage()" style="flex:1;padding:10px;background:#2563eb;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">${zh ? '保存图片' : 'Save Image'}</button>

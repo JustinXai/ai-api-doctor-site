@@ -1,8 +1,8 @@
-v1.7 UI text consistency fixes
+v1.7 trust and open source improvements
 
-- Fix Grade: B starts at 80 (85.7 → B, not C)
-- Fix clientConfig: output rawScore with maxScore=3, normalize in calcFinalScore
-- Fix stability summary: score-based (22+ → 完全稳定, 18+ → 存在轻微波动)
-- Fix main risk text: replace 模型能力测试异常 with 模型身份风险较高
-- Downgrade max_tokens warning: change to info message, not red deduction
-- Cache bust: v=20260522-rc17h
+- Add GitHub link to page footer (ZH and EN)
+- Add GitHub link to report footer
+- Add MIT LICENSE file
+- Add README.md with MIT License
+- Add sameAs GitHub URL to JSON-LD (ZH and EN)
+- Cache bust: v=20260522-rc17i
