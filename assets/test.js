@@ -2621,6 +2621,26 @@ function buildDebugScoring(rawScore, cappedScore, checks) {
     auxiliary403FloorApplied,
     visibleTitle,
     visibleSuggestion,
+    // Cache evidence fields
+    cacheEvidenceSource: checks.cacheHitCheck?.evidence?.fieldFound ? 'returned' : 'not_returned',
+    cachePromptTokens1: checks.cacheHitCheck?.evidence?.firstRequest?.promptTokens ?? null,
+    cachePromptTokens2: checks.cacheHitCheck?.evidence?.secondRequest?.promptTokens ?? null,
+    cacheCachedTokens1: checks.cacheHitCheck?.evidence?.firstRequest?.cachedTokens ?? null,
+    cacheCachedTokens2: checks.cacheHitCheck?.evidence?.secondRequest?.cachedTokens ?? null,
+    cacheHitRateRaw: checks.cacheHitCheck?.evidence?.cacheHitRate ?? null,
+    cacheHitRateDisplay: checks.cacheHitCheck?.evidence?.cacheHitRate != null
+      ? Math.round(checks.cacheHitCheck.evidence.cacheHitRate * 10000) / 100
+      : null,
+    // Usage evidence fields
+    usageEvidenceSource: hasUsage ? 'returned' : 'not_returned',
+    usagePromptTokens: tcEvidence.usage?.prompt_tokens ?? tcEvidence.usage?.input_tokens ?? null,
+    usageCompletionTokens: tcEvidence.usage?.completion_tokens ?? tcEvidence.usage?.output_tokens ?? null,
+    usageTotalTokens: tcEvidence.usage?.total_tokens ?? null,
+    // Response metadata
+    responseModel: tcEvidence.data?.model ?? null,
+    responseObject: tcEvidence.data ? Object.prototype.toString.call(tcEvidence.data) : null,
+    responseStatus: tcEvidence.httpStatus ?? 0,
+    evidenceVersion: '1.0',
   };
 }
 
