@@ -2089,27 +2089,38 @@ async function checkK_ModelIntegrity(baseUrl, apiKey, model, interfaceType, sign
   };
   evidence.sourceTransparency = {
     category: identityCategory,
-    label: sourceLabelMap[identityCategory] || zh ? '未知' : 'Unknown',
+    label: sourceLabelMap[identityCategory] || (zh ? '未知' : 'Unknown'),
     riskLevel: sourceRiskMap[identityCategory] || 'medium',
     detectedSource: detectedSource || null,
     evidenceText: identityText,
-    targetConsistency: result?.targetConsistency || null,
-    detectedVariant: result?.detectedVariant || null,
-    detectedVersion: result?.detectedVersion || null,
-    detectedFamily: result?.detectedFamily || null,
-    explanation: identityCategory === 'platform_or_proxy_identity'
-      ? (zh
-          ? `该模型自报为平台、网关、IDE、Agent 或反代层身份${detectedSource ? `（${detectedSource}）` : ''}。这通常说明接口经过 Kiro、Vertex、AWS Bedrock、Azure、Cursor、Cline、Windsurf、Continue、Copilot、Claude Code、Replit Agent、网关或反代包装。不等于模型不可用，但会降低模型来源透明度，建议结合 usage、token 和能力测试结果判断。${result?.targetConsistency && result.targetConsistency !== 'unknown' ? `\n目标一致性：${result.targetConsistency === 'match' ? '一致' : result.targetConsistency === 'family_match' ? '同家族' : result.targetConsistency === 'variant_mismatch' ? '变体不一致' : result.targetConsistency === 'version_mismatch' ? '版本不一致' : '无法确认'}` : ''}`
-          : `Model self-reported as platform/gateway/IDE/Agent/relay layer${detectedSource ? ` (${detectedSource})` : ''}. Interface may be wrapped by Kiro, Vertex, AWS Bedrock, Azure, Cursor, Cline, Windsurf, Continue, Copilot, Claude Code, Replit Agent, gateway or relay. Not equal to unusable — source transparency is reduced. Recommend evaluating with usage, token and capability test results.`)
-      : identityCategory === 'wrong_family'
-      ? (zh ? '模型自报家族与目标 Model ID 明显不一致，存在模型降配或路由错误疑似风险。' : 'Model self-reported family is clearly inconsistent with target Model ID — possible model downgrade or routing error.')
-      : identityCategory === 'hard_contamination'
-      ? (zh ? '模型回答中出现开发环境、工具人格或系统提示污染信号，可能影响原始模型行为。' : 'Model response shows development environment, tool persona or system prompt contamination — may affect original model behavior.')
-      : identityCategory === 'ambiguous'
-      ? (zh ? '模型身份未能明确确认，结论置信度降低。' : 'Model identity could not be confirmed — conclusion confidence reduced.')
-      : identityCategory === 'family_match'
-      ? (zh ? `模型自报与目标模型属于同一大模型家族${result?.targetConsistency && result.targetConsistency !== 'unknown' && result.targetConsistency !== 'family_match' ? `（${result.targetConsistency === 'variant_mismatch' || result.targetConsistency === 'version_mismatch' ? '但目标不一致' : '目标一致'}` : '，但具体版本未完全确认'}。这不等于降配，但具体版本仍需结合能力测试和 usage 信号判断。` : `Model self-reported as same model family as target,${result?.targetConsistency && result.targetConsistency !== 'unknown' ? ` target ${result.targetConsistency === 'variant_mismatch' || result.targetConsistency === 'version_mismatch' ? 'inconsistent' : 'consistent'}` : ', exact version not fully confirmed'}. Not equal to downgrade — evaluate with capability tests and usage signals.`)
-      : (zh ? '模型身份信号基本正常。' : 'Model identity signal is basically normal.'),
+    targetConsistency: typeof result !== 'undefined' ? result.targetConsistency : null,
+    detectedVariant: typeof result !== 'undefined' ? result.detectedVariant : null,
+    detectedVersion: typeof result !== 'undefined' ? result.detectedVersion : null,
+    detectedFamily: typeof result !== 'undefined' ? result.detectedFamily : null,
+    explanation: (() => {
+      if (identityCategory === 'platform_or_proxy_identity') {
+        const rc = typeof result !== 'undefined' ? result : {};
+        const tc = rc.targetConsistency || null;
+        const tcText = tc && tc !== 'unknown' ? `\n目标一致性：${tc === 'match' ? '一致' : tc === 'family_match' ? '同家族' : tc === 'variant_mismatch' ? '变体不一致' : tc === 'version_mismatch' ? '版本不一致' : '无法确认'}` : '';
+        return zh
+          ? `该模型自报为平台、网关、IDE、Agent 或反代层身份${detectedSource ? `（${detectedSource}）` : ''}。这通常说明接口经过 Kiro、Vertex、AWS Bedrock、Azure、Cursor、Cline、Windsurf、Continue、Copilot、Claude Code、Replit Agent、网关或反代包装。不等于模型不可用，但会降低模型来源透明度，建议结合 usage、token 和能力测试结果判断。${tcText}`
+          : `Model self-reported as platform/gateway/IDE/Agent/relay layer${detectedSource ? ` (${detectedSource})` : ''}. Interface may be wrapped by Kiro, Vertex, AWS Bedrock, Azure, Cursor, Cline, Windsurf, Continue, Copilot, Claude Code, Replit Agent, gateway or relay. Not equal to unusable — source transparency is reduced. Recommend evaluating with usage, token and capability test results.`;
+      } else if (identityCategory === 'wrong_family') {
+        return zh ? '模型自报家族与目标 Model ID 明显不一致，存在模型降配或路由错误疑似风险。' : 'Model self-reported family is clearly inconsistent with target Model ID — possible model downgrade or routing error.';
+      } else if (identityCategory === 'hard_contamination') {
+        return zh ? '模型回答中出现开发环境、工具人格或系统提示污染信号，可能影响原始模型行为。' : 'Model response shows development environment, tool persona or system prompt contamination — may affect original model behavior.';
+      } else if (identityCategory === 'ambiguous') {
+        return zh ? '模型身份未能明确确认，结论置信度降低。' : 'Model identity could not be confirmed — conclusion confidence reduced.';
+      } else if (identityCategory === 'family_match') {
+        const rc = typeof result !== 'undefined' ? result : {};
+        const tc = rc.targetConsistency || null;
+        const tcText = tc && tc !== 'unknown' && tc !== 'family_match' ? `（${tc === 'variant_mismatch' || tc === 'version_mismatch' ? '但目标不一致' : '目标一致'}` : '';
+        return zh
+          ? `模型自报与目标模型属于同一大模型家族${tcText}，但具体版本未完全确认。这不等于降配，但具体版本仍需结合能力测试和 usage 信号判断。`
+          : `Model self-reported as same model family as target${tc && tc !== 'unknown' ? `, target ${tc === 'variant_mismatch' || tc === 'version_mismatch' ? 'inconsistent' : 'consistent'}` : ', exact version not fully confirmed'}. Not equal to downgrade — evaluate with capability tests and usage signals.`;
+      }
+      return zh ? '模型身份信号基本正常。' : 'Model identity signal is basically normal.';
+    })(),
   };
 
   // K1: Model visibility (3 pts)
