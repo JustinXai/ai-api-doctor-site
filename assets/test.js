@@ -1632,9 +1632,10 @@ const NEGATIVE_IDENTITY_PATTERNS = [
  */
 const CONTAMINATION_PATTERNS = [
   'i am a kiro', 'i am cursor', 'i am cline', 'i am continue',
-  'i am an ide', 'i am a coding assistant', 'i am an ai coding assistant',
+  'i am an ide',
   'i am a plugin', 'i am an extension', 'i am a wrapper',
-  'i am windsurf', 'i am cascade',
+  // 'i am windsurf' and 'i am cascade' intentionally excluded from contamination:
+  // "I am Windsurf" should be platform_or_proxy_identity (platform keyword), not hard_contamination.
   'i am running in',
   'responsible for managing your project',
   'i can manage your project files',
@@ -1648,7 +1649,6 @@ const CONTAMINATION_PATTERNS = [
   'as a cline agent',
   'as a replit agent',
   'as a coding assistant i can',
-  'as a windsurf cascade',
   'tool personality',
   '系统提示', 'system prompt', 'wrapper prompt', 'tool prompt',
   '内部 wrapper', '人格污染', '开发环境污染',
@@ -1722,6 +1722,137 @@ function hasContamination(text) {
  *     Only becomes high risk when combined with token anomalies, max_tokens failures,
  *     or multiple ability failures.
  */
+/**
+ * Detect model family from text.
+ * Note: CLAUDE check must come BEFORE GPT to avoid "sonnet" → GPT false positive.
+ */
+function detectFamilyFromText(text) {
+  const t = text.toLowerCase();
+  if (t.includes('claude') || t.includes('anthropic')) return 'claude';
+  if (t.includes('gpt') || t.includes('chatgpt') || t.includes('openai')) return 'gpt';
+  if (t.includes('gemini') || t.includes('google')) return 'gemini';
+  if (t.includes('llama') || t.includes('meta')) return 'llama';
+  if (t.includes('qwen') || t.includes('alibaba')) return 'qwen';
+  if (t.includes('deepseek')) return 'deepseek';
+  if (t.includes('mistral') || t.includes('mixtral')) return 'mistral';
+  if (t.includes('grok') || t.includes('xai')) return 'grok';
+  if (/^o[1-4]/.test(t)) return 'oai';
+  return 'unknown';
+}
+
+/**
+ * Extract variant string from a model ID or response text.
+ * e.g. "claude-opus-4-7" → "opus", "claude-3-5-sonnet-20241022" → "sonnet",
+ * "gpt-4o-mini" → "4o-mini", "gpt-5.2" → "5.2"
+ */
+function extractVariant(text) {
+  const t = text.toLowerCase();
+  // Claude variants
+  if (t.includes('opus')) return 'opus';
+  if (t.includes('sonnet')) return 'sonnet';
+  if (t.includes('haiku')) return 'haiku';
+  // GPT variants
+  if (/\b4o(?:-mini)?/.test(t)) return '4o-mini';
+  if (/\bgpt-4\b/.test(t) && !/\b4o\b/.test(t)) return '4';
+  if (/\bgpt-3/.test(t)) return '3';
+  if (/\b5\.\d+(?:-pro|-mini|-codex)?/.test(t)) {
+    const m = t.match(/\b(5\.\d+(?:-pro|-mini|-codex)?)/);
+    if (m) return m[1];
+  }
+  if (/[qo]\d(?:\.\d+)?/.test(t)) {
+    const m = t.match(/([qo]\d(?:\.\d+)?)/);
+    if (m) return m[1];
+  }
+  if (t.includes('gemini')) {
+    if (t.includes('flash')) return 'flash';
+    if (t.includes('pro')) return 'pro';
+    if (t.includes('ultra')) return 'ultra';
+    return 'gemini'; // response says "gemini" without specific variant
+  }
+  if (t.includes('deepseek')) return 'deepseek';
+  if (t.includes('qwen')) return 'qwen';
+  // Response says "Claude" / "GPT" / "Anthropic" without variant → no variant detected
+  return null;
+}
+
+/**
+ * Compute target consistency between the model's response and the target model.
+ * Returns { targetConsistency, detectedVariant, detectedVersion, detectedFamily }
+ */
+function computeTargetConsistency(t, targetLower) {
+  const respFamily = detectFamilyFromText(t);
+  const targetFamily = detectFamilyFromText(targetLower);
+  const respVariant = extractVariant(t);
+  const targetVariant = extractVariant(targetLower);
+  const respVersion = t.match(/\d+(?:\.\d+)+/)?.[0] || null;
+  const targetVersion = targetLower.match(/\d+(?:\.\d+)+/)?.[0] || null;
+
+  // Family mismatch → fail
+  if (respFamily !== 'unknown' && targetFamily !== 'unknown' && respFamily !== targetFamily) {
+    return {
+      targetConsistency: 'version_mismatch',
+      detectedVariant: respVariant,
+      detectedVersion: respVersion,
+      detectedFamily: respFamily,
+    };
+  }
+
+  // Same family, check variant
+  if (respVariant && targetVariant) {
+    const sameVariant = respVariant === targetVariant ||
+      respVariant.includes(targetVariant) ||
+      targetVariant.includes(respVariant) ||
+      (respFamily === 'gpt' && respVariant.startsWith('4') && targetVariant.startsWith('4')) ||
+      (respFamily === 'gpt' && respVariant.startsWith('5') && targetVariant.startsWith('5')) ||
+      (respFamily === 'gemini' && respVariant === 'gemini' && targetVariant === 'gemini');
+    if (!sameVariant) {
+      return {
+        targetConsistency: 'variant_mismatch',
+        detectedVariant: respVariant,
+        detectedVersion: respVersion,
+        detectedFamily: respFamily,
+      };
+    }
+  }
+
+  // Variant matches, check version number
+  if (respVersion && targetVersion && respVersion !== targetVersion) {
+    return {
+      targetConsistency: 'version_mismatch',
+      detectedVariant: respVariant,
+      detectedVersion: respVersion,
+      detectedFamily: respFamily,
+    };
+  }
+
+  // Variant matches, no version or same version
+  if (respVariant && targetVariant) {
+    return {
+      targetConsistency: 'match',
+      detectedVariant: respVariant,
+      detectedVersion: respVersion,
+      detectedFamily: respFamily,
+    };
+  }
+
+  // Family only
+  if (respFamily !== 'unknown' && targetFamily !== 'unknown') {
+    return {
+      targetConsistency: 'family_match',
+      detectedVariant: respVariant,
+      detectedVersion: respVersion,
+      detectedFamily: respFamily,
+    };
+  }
+
+  return {
+    targetConsistency: 'unknown',
+    detectedVariant: respVariant,
+    detectedVersion: respVersion,
+    detectedFamily: respFamily,
+  };
+}
+
 function evaluateModelIdentity(identityText, finalTestModelId) {
   const zh = getDocLang() !== 'en';
   const t = identityText.toLowerCase().trim();
@@ -1730,6 +1861,7 @@ function evaluateModelIdentity(identityText, finalTestModelId) {
 
   // ── Step 1: Hard contamination ──
   if (hasContamination(rawResponse)) {
+    const tc = computeTargetConsistency(t, targetLower);
     return {
       category: 'hard_contamination',
       score: 0,
@@ -1737,14 +1869,16 @@ function evaluateModelIdentity(identityText, finalTestModelId) {
         ? '模型回答中出现开发环境、工具人格或系统提示污染信号'
         : 'Model response shows development environment, tool persona or system prompt contamination',
       detectedSource: extractDetectedSource(rawResponse),
+      targetConsistency: tc.targetConsistency,
+      detectedVariant: tc.detectedVariant,
+      detectedVersion: tc.detectedVersion,
+      detectedFamily: tc.detectedFamily,
     };
   }
 
   // ── Step 2: Negative "don't know / can't access" framing ──
-  // Must check BEFORE platform keyword detection to avoid misclassification.
-  // "I don't have access to the exact model name, model family, or serving platform"
-  // → ambiguous, NOT platform_or_proxy_identity.
   if (isNegativeUnknownResponse(rawResponse)) {
+    const tc = computeTargetConsistency(t, targetLower);
     return {
       category: 'ambiguous',
       score: 1.5,
@@ -1752,36 +1886,17 @@ function evaluateModelIdentity(identityText, finalTestModelId) {
         ? `模型身份未确认：${rawResponse}`
         : `Model self-reported identity is vague: ${rawResponse}`,
       detectedSource: null,
+      targetConsistency: tc.targetConsistency,
+      detectedVariant: tc.detectedVariant,
+      detectedVersion: tc.detectedVersion,
+      detectedFamily: tc.detectedFamily,
     };
   }
 
   // ── Step 3: Wrong family ──
-  const GPT_FAMILY = ['gpt', 'chatgpt', 'openai'];
-  const CLAUDE_FAMILY = ['claude', 'anthropic'];
-  const GEMINI_FAMILY = ['gemini', 'google'];
-  const LLAMA_FAMILY = ['llama', 'meta'];
-  const QWEN_FAMILY = ['qwen', 'alibaba'];
-  const DEEPSEEK_FAMILY = ['deepseek'];
-  const OAI_FAMILY = ['o1', 'o2', 'o3', 'o4', 'openai'];
-  const MISTRAL_FAMILY = ['mistral', 'mixtral'];
-  const GROK_FAMILY = ['grok', 'xai'];
-
-  const detectFamily = (text) => {
-    if (GPT_FAMILY.some(f => text.includes(f))) return 'gpt';
-    if (CLAUDE_FAMILY.some(f => text.includes(f))) return 'claude';
-    if (GEMINI_FAMILY.some(f => text.includes(f))) return 'gemini';
-    if (LLAMA_FAMILY.some(f => text.includes(f))) return 'llama';
-    if (QWEN_FAMILY.some(f => text.includes(f))) return 'qwen';
-    if (DEEPSEEK_FAMILY.some(f => text.includes(f))) return 'deepseek';
-    if (OAI_FAMILY.some(f => text.includes(f))) return 'openai';
-    if (MISTRAL_FAMILY.some(f => text.includes(f))) return 'mistral';
-    if (GROK_FAMILY.some(f => text.includes(f))) return 'grok';
-    return 'unknown';
-  };
-
-  const respFamily = detectFamily(t);
-  const targetFamily = detectFamily(targetLower);
-  const isWrongFamily = targetFamily !== 'unknown' && respFamily !== 'unknown' && respFamily !== targetFamily;
+  const respFamily = detectFamilyFromText(t);
+  const targetFamily = detectFamilyFromText(targetLower);
+  const isWrongFamily = respFamily !== 'unknown' && targetFamily !== 'unknown' && respFamily !== targetFamily;
   const explicitFamilyConflict = (
     (targetLower.includes('claude') && (t.includes('gpt') || t.includes('openai') || t.includes('gemini'))) ||
     (targetLower.includes('gpt') && (t.includes('claude') || t.includes('anthropic'))) ||
@@ -1791,6 +1906,7 @@ function evaluateModelIdentity(identityText, finalTestModelId) {
   );
 
   if (isWrongFamily || explicitFamilyConflict) {
+    const tc = computeTargetConsistency(t, targetLower);
     return {
       category: 'wrong_family',
       score: 0,
@@ -1798,6 +1914,10 @@ function evaluateModelIdentity(identityText, finalTestModelId) {
         ? '模型自报家族与目标 Model ID 明显不一致，存在模型降配或路由错误疑似风险'
         : 'Model self-reported family conflicts with target Model ID — possible downgrade or routing error',
       detectedSource: extractDetectedSource(rawResponse),
+      targetConsistency: tc.targetConsistency,
+      detectedVariant: tc.detectedVariant,
+      detectedVersion: tc.detectedVersion,
+      detectedFamily: tc.detectedFamily,
     };
   }
 
@@ -1806,60 +1926,85 @@ function evaluateModelIdentity(identityText, finalTestModelId) {
     targetLower.includes(t) ||
     (targetLower.startsWith('gpt') && (t.startsWith('gpt') || t.includes('gpt') || t.includes('chatgpt'))) ||
     (targetLower.includes('claude') && t.includes('claude')) ||
-    (targetLower.startsWith('o1') && (t.includes('o1') || t.includes('openai'))) ||
-    (targetLower.startsWith('o3') && (t.includes('o3') || t.includes('openai'))) ||
-    (targetLower.startsWith('o4') && (t.includes('o4') || t.includes('openai'))) ||
-    (targetLower.startsWith('gemini') && (t.includes('gemini') || t.includes('google'))) ||
+    (targetLower.startsWith('o') && t.includes(targetLower.split(/\s/)[0])) ||
+    (targetLower.includes('gemini') && t.includes('gemini')) ||
     (targetLower.includes('gpt') && t.includes('openai') && !hasStrongEntity(rawResponse) && !hasWeakPlatformWord(rawResponse)) ||
     t.split(/\s/)[0].split('-')[0] === targetLower.split(/\s/)[0].split('-')[0];
 
   if (exactMatch) {
-    const respFirst = t.split(/\s/)[0].split('-')[0];
-    const tgtFirst = targetLower.split(/\s/)[0].split('-')[0];
-    if (respFirst === tgtFirst) {
+    const tc = computeTargetConsistency(t, targetLower);
+    if (tc.targetConsistency === 'match') {
       return {
         category: 'exact_match',
         score: 6,
         reason: zh ? '模型身份与目标一致' : 'Model identity matches target',
         detectedSource: null,
+        targetConsistency: tc.targetConsistency,
+        detectedVariant: tc.detectedVariant,
+        detectedVersion: tc.detectedVersion,
+        detectedFamily: tc.detectedFamily,
       };
     } else {
       return {
         category: 'family_match',
         score: 4,
-        reason: zh ? '模型属于同一家族但不够精确' : 'Model in same family but not exact match',
+        reason: zh ? '模型属于同一家族但版本不一致' : 'Model in same family but version inconsistent',
         detectedSource: null,
+        targetConsistency: tc.targetConsistency,
+        detectedVariant: tc.detectedVariant,
+        detectedVersion: tc.detectedVersion,
+        detectedFamily: tc.detectedFamily,
       };
     }
   }
 
   // ── Step 5: Platform / proxy / IDE / Agent identity ──
-  // Rules:
-  // - MUST have a STRONG entity keyword (Windsurf, Cursor, AWS Bedrock, etc.)
-  // - MUST NOT be a negative/unknown framing (avoid "I don't know... serving platform")
-  // - Weak platform words (gateway, relay, serving platform, etc.) alone → ambiguous
+  // Only triggered by STRONG entity keywords (Windsurf, Cursor, AWS Bedrock, etc.)
+  // NOT triggered by Claude/GPT/Gemini/Anthropic/OpenAI/Google model names alone
   const hasStrong = hasStrongEntity(rawResponse);
 
-  if (hasStrong && !isNegativeUnknownResponse(rawResponse)) {
+  if (hasStrong) {
+    const tc = computeTargetConsistency(t, targetLower);
     return {
       category: 'platform_or_proxy_identity',
       score: 3,
       reason: zh
-        ? `检测到平台代理层身份暴露，不等于模型不可用，但来源透明度较低`
-        : `Platform proxy layer identity detected — source transparency reduced, not necessarily unusable`,
+        ? `检测到平台代理层身份暴露（${extractDetectedSource(rawResponse)}），不等于模型不可用，但来源透明度较低`
+        : `Platform proxy layer identity detected (${extractDetectedSource(rawResponse)}) — source transparency reduced, not necessarily unusable`,
       detectedSource: extractDetectedSource(rawResponse),
+      targetConsistency: tc.targetConsistency,
+      detectedVariant: tc.detectedVariant,
+      detectedVersion: tc.detectedVersion,
+      detectedFamily: tc.detectedFamily,
     };
   }
-  // Weak platform words without a strong entity → ambiguous (identity unconfirmed)
-  // e.g. "served through OpenAI-compatible gateway" → ambiguous, not platform proxy
-  // This prevents "平台代理层暴露" from appearing without explicit platform entity
 
-  // ── Step 6: Fallback ambiguous ──
+  // ── Step 6: Family match (no strong entity, same family) ──
+  if (respFamily !== 'unknown') {
+    const tc = computeTargetConsistency(t, targetLower);
+    return {
+      category: 'family_match',
+      score: 4,
+      reason: zh ? '模型自报属于同一家族' : 'Model self-reported as same family',
+      detectedSource: null,
+      targetConsistency: tc.targetConsistency,
+      detectedVariant: tc.detectedVariant,
+      detectedVersion: tc.detectedVersion,
+      detectedFamily: tc.detectedFamily,
+    };
+  }
+
+  // ── Step 7: Fallback ambiguous ──
+  const tc = computeTargetConsistency(t, targetLower);
   return {
     category: 'ambiguous',
     score: 1.5,
     reason: zh ? `模型自报身份不明确：${rawResponse}` : `Model self-reported identity unclear: ${rawResponse}`,
     detectedSource: null,
+    targetConsistency: tc.targetConsistency,
+    detectedVariant: tc.detectedVariant,
+    detectedVersion: tc.detectedVersion,
+    detectedFamily: tc.detectedFamily,
   };
 }
 
@@ -1934,9 +2079,13 @@ async function checkK_ModelIntegrity(baseUrl, apiKey, model, interfaceType, sign
     riskLevel: sourceRiskMap[identityCategory] || 'medium',
     detectedSource: detectedSource || null,
     evidenceText: identityText,
+    targetConsistency: result?.targetConsistency || null,
+    detectedVariant: result?.detectedVariant || null,
+    detectedVersion: result?.detectedVersion || null,
+    detectedFamily: result?.detectedFamily || null,
     explanation: identityCategory === 'platform_or_proxy_identity'
       ? (zh
-          ? `该模型自报为平台、网关、IDE、Agent 或反代层身份${detectedSource ? `（${detectedSource}）` : ''}。这通常说明接口经过 Kiro、Vertex、AWS Bedrock、Azure、Cursor、Cline、Windsurf、Continue、Copilot、Claude Code、Replit Agent、网关或反代包装。不等于模型不可用，但会降低模型来源透明度，建议结合 usage、token 和能力测试结果判断。`
+          ? `该模型自报为平台、网关、IDE、Agent 或反代层身份${detectedSource ? `（${detectedSource}）` : ''}。这通常说明接口经过 Kiro、Vertex、AWS Bedrock、Azure、Cursor、Cline、Windsurf、Continue、Copilot、Claude Code、Replit Agent、网关或反代包装。不等于模型不可用，但会降低模型来源透明度，建议结合 usage、token 和能力测试结果判断。${result?.targetConsistency && result.targetConsistency !== 'unknown' ? `\n目标一致性：${result.targetConsistency === 'match' ? '一致' : result.targetConsistency === 'family_match' ? '同家族' : result.targetConsistency === 'variant_mismatch' ? '变体不一致' : result.targetConsistency === 'version_mismatch' ? '版本不一致' : '无法确认'}` : ''}`
           : `Model self-reported as platform/gateway/IDE/Agent/relay layer${detectedSource ? ` (${detectedSource})` : ''}. Interface may be wrapped by Kiro, Vertex, AWS Bedrock, Azure, Cursor, Cline, Windsurf, Continue, Copilot, Claude Code, Replit Agent, gateway or relay. Not equal to unusable — source transparency is reduced. Recommend evaluating with usage, token and capability test results.`)
       : identityCategory === 'wrong_family'
       ? (zh ? '模型自报家族与目标 Model ID 明显不一致，存在模型降配或路由错误疑似风险。' : 'Model self-reported family is clearly inconsistent with target Model ID — possible model downgrade or routing error.')
@@ -1945,7 +2094,7 @@ async function checkK_ModelIntegrity(baseUrl, apiKey, model, interfaceType, sign
       : identityCategory === 'ambiguous'
       ? (zh ? '模型身份未能明确确认，结论置信度降低。' : 'Model identity could not be confirmed — conclusion confidence reduced.')
       : identityCategory === 'family_match'
-      ? (zh ? '模型自报与目标模型属于同一大模型家族，但未能精确确认具体版本。这不等于降配，但具体版本仍需结合能力测试和 usage 信号判断。' : 'Model self-reported as same model family as target, but exact version not confirmed. Not equal to downgrade — evaluate with capability tests and usage signals.')
+      ? (zh ? `模型自报与目标模型属于同一大模型家族${result?.targetConsistency && result.targetConsistency !== 'unknown' && result.targetConsistency !== 'family_match' ? `（${result.targetConsistency === 'variant_mismatch' || result.targetConsistency === 'version_mismatch' ? '但目标不一致' : '目标一致'}` : '，但具体版本未完全确认'}。这不等于降配，但具体版本仍需结合能力测试和 usage 信号判断。` : `Model self-reported as same model family as target,${result?.targetConsistency && result.targetConsistency !== 'unknown' ? ` target ${result.targetConsistency === 'variant_mismatch' || result.targetConsistency === 'version_mismatch' ? 'inconsistent' : 'consistent'}` : ', exact version not fully confirmed'}. Not equal to downgrade — evaluate with capability tests and usage signals.`)
       : (zh ? '模型身份信号基本正常。' : 'Model identity signal is basically normal.'),
   };
 
@@ -2584,6 +2733,16 @@ function buildDebugScoring(rawScore, cappedScore, checks) {
   } else if (identityCategory === 'wrong_family') {
     visibleTitle = '模型家族不一致';
     visibleSuggestion = '建议谨慎使用该配置。';
+  } else if (identityCategory === 'family_match') {
+    const tc = checks.modelIntegrity?.evidence?.sourceTransparency;
+    const tc_status = tc?.targetConsistency || null;
+    if (tc_status === 'variant_mismatch' || tc_status === 'version_mismatch') {
+      visibleTitle = '模型身份不一致';
+      visibleSuggestion = '来源信息清晰，但与目标模型存在不一致，建议小额复测。';
+    } else {
+      visibleTitle = '部分信号存在异常';
+      visibleSuggestion = '建议小额继续验证模型质量。';
+    }
   } else if (!hasUsage) {
     visibleTitle = 'usage 缺失';
     visibleSuggestion = '测试可用，需复核。建议小额验证扣费后再用于重要任务。';
@@ -2640,7 +2799,42 @@ function buildDebugScoring(rawScore, cappedScore, checks) {
     responseModel: tcEvidence.data?.model ?? null,
     responseObject: tcEvidence.data ? Object.prototype.toString.call(tcEvidence.data) : null,
     responseStatus: tcEvidence.httpStatus ?? 0,
-    evidenceVersion: '1.0',
+    evidenceVersion: '1.1',
+    // Identity debug fields
+    identityStatus: identityCategory,
+    targetModel: checks.targetCall?.evidence?.model || null,
+    identityOriginalAnswer: (() => {
+      const t = checks.modelIntegrity?.evidence?.modelIdentityResponse || '';
+      return t.length > 160 ? t.substring(0, 160) + '...' : t;
+    })(),
+    detectedFamily: checks.modelIntegrity?.evidence?.sourceTransparency?.detectedFamily || null,
+    detectedVariant: checks.modelIntegrity?.evidence?.sourceTransparency?.detectedVariant || null,
+    detectedVersion: checks.modelIntegrity?.evidence?.sourceTransparency?.detectedVersion || null,
+    targetFamily: (() => {
+      const tm = checks.targetCall?.evidence?.model || checks.modelIntegrity?.evidence?.modelIdentityTest?.targetModel || '';
+      const t = tm.toLowerCase();
+      if (t.includes('claude')) return 'claude';
+      if (t.includes('gpt')) return 'gpt';
+      if (t.includes('gemini')) return 'gemini';
+      return 'unknown';
+    })(),
+    targetVariant: (() => {
+      const tm = checks.targetCall?.evidence?.model || checks.modelIntegrity?.evidence?.modelIdentityTest?.targetModel || '';
+      const t = tm.toLowerCase();
+      if (t.includes('opus')) return 'opus';
+      if (t.includes('sonnet')) return 'sonnet';
+      if (t.includes('haiku')) return 'haiku';
+      if (/\b4o/.test(t)) return '4o-mini';
+      if (/\b4\b/.test(t)) return '4';
+      return null;
+    })(),
+    targetConsistency: checks.modelIntegrity?.evidence?.sourceTransparency?.targetConsistency || null,
+    platformProxyMatchedKeyword: checks.modelIntegrity?.evidence?.sourceTransparency?.detectedSource || null,
+    identityEvidenceVersion: '1.0',
+    // Model connectivity summary
+    modelConnectivityCount: Array.isArray(checks.modelList?.evidence?.models) ? checks.modelList.evidence.models.length : 0,
+    modelConnectivitySuccessCount: null,
+    modelConnectivityFailedCount: null,
   };
 }
 
@@ -3473,7 +3667,10 @@ window.Doctor = {
     const btn = document.getElementById('find-models-btn');
     if (btn) btn.addEventListener('click', () => this.findModels());
     const modelInput = document.getElementById('doctor-model');
-    if (modelInput) modelInput.addEventListener('input', () => { if (!this._isProgrammaticModelUpdate) this._userInputModelId = modelInput.value; });
+    if (modelInput) modelInput.addEventListener('input', () => {
+      if (!this._isProgrammaticModelUpdate) this._userInputModelId = modelInput.value;
+      if (!modelInput.value.trim()) this._autoDetectedModelId = '';
+    });
     this.setMode('quick');
   },
 
@@ -3529,7 +3726,9 @@ window.Doctor = {
   },
 
   normalizeBaseUrl(url) {
+    if (!url) return url;
     url = url.replace(/\/$/, '');
+    if (!url) return url;
     if (!/^https?:\/\//.test(url)) url = 'https://' + url;
     if (!url.match(/\/v1$/) && !url.endsWith('/chat/completions') && !url.endsWith('/models')) url = url + '/v1';
     return url;
@@ -3641,7 +3840,9 @@ window.Doctor = {
 
   clear() {
     ['doctor-base-url', 'doctor-api-key', 'doctor-model'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-    this._result = null; this._formData = null; this._modelIdInfo = null; this._userInputModelId = ''; this._autoDetectedModelId = ''; this.setMode('quick');
+    this._result = null; this._formData = null; this._modelIdInfo = null;
+    this._userInputModelId = ''; this._autoDetectedModelId = ''; this._autoDetectedOrigin = '';
+    this.setMode('quick');
     if (this._controller) this._controller.abort();
     showToast(getDocLang() !== 'en' ? '已清空' : 'Cleared');
   },
