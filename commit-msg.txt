@@ -1,8 +1,0 @@
-v1.7 trust and open source improvements
-
-- Add GitHub link to page footer (ZH and EN)
-- Add GitHub link to report footer
-- Add MIT LICENSE file
-- Add README.md with MIT License
-- Add sameAs GitHub URL to JSON-LD (ZH and EN)
-- Cache bust: v=20260522-rc17i

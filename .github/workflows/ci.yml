@@ -1,0 +1,40 @@
+name: AI API Doctor CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify local checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Show Node version
+        run: node --version
+
+      - name: Verify scoring v1.7
+        run: node assets/verify-scoring-v17.js
+
+      - name: Verify mock logic
+        run: node assets/test-mock-verify.js
+
+      - name: Verify evidence chain
+        run: node assets/verify-evidence.js
+
+      - name: Verify identity logic
+        run: node assets/verify-identity.js

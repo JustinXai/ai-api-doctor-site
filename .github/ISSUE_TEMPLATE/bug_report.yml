@@ -1,0 +1,57 @@
+name: Bug report
+description: Report a UI bug, input issue, or broken behavior
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Do not paste full API keys or secrets.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Base URL input
+        - API Key input
+        - Auto-detect model
+        - One-click test
+        - Report display
+        - Copy summary
+        - Language / i18n
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: What did you do?
+      placeholder: |
+        1. Open ...
+        2. Fill ...
+        3. Click ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser
+      placeholder: Chrome 134 / Edge / Firefox
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: Screenshot
+      description: Please mask API keys and sensitive Base URLs.

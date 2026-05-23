@@ -1,0 +1,62 @@
+name: Scoring feedback
+description: Report a score, risk label, or explanation that looks wrong
+title: "[Scoring] "
+labels: ["scoring", "feedback"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please mask API keys. Do not paste full secrets.
+  - type: input
+    id: masked_base_url
+    attributes:
+      label: Masked Base URL
+      placeholder: https://api***.example.com/v1
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Model ID
+      placeholder: gpt-5.5 / claude-opus-4-7 / gemini-2.5-pro
+    validations:
+      required: true
+  - type: input
+    id: score
+    attributes:
+      label: Score and grade
+      placeholder: 88.1 / B
+    validations:
+      required: true
+  - type: dropdown
+    id: module
+    attributes:
+      label: Which module looks wrong?
+      options:
+        - Usage transparency
+        - Cache signal
+        - Model identity
+        - Stability and latency
+        - Core compatibility
+        - Client config
+        - Final grade
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why does it look wrong?
+      placeholder: Explain what you expected and what the report showed.
+    validations:
+      required: true
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: Screenshot
+      description: Please mask API keys and sensitive information.
+  - type: textarea
+    id: debug
+    attributes:
+      label: Optional debugScoring
+      description: Paste only after confirming it contains no API key or sensitive data.

@@ -1,0 +1,61 @@
+name: Provider case
+description: Share an anonymized provider / gateway test case
+title: "[Provider Case] "
+labels: ["provider-case"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Share only anonymized provider cases. Do not paste full API keys.
+  - type: dropdown
+    id: provider_type
+    attributes:
+      label: Provider type
+      options:
+        - New API
+        - One API
+        - OpenAI-compatible gateway
+        - Self-hosted gateway
+        - Relay / middleman API
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: masked_base_url
+    attributes:
+      label: Masked Base URL
+      placeholder: https://api***.example.com/v1
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Model ID
+    validations:
+      required: true
+  - type: dropdown
+    id: usage
+    attributes:
+      label: Was usage returned?
+      options:
+        - Full usage returned
+        - Partial usage returned
+        - No usage returned
+        - Not sure
+  - type: dropdown
+    id: cache
+    attributes:
+      label: Was cache signal returned?
+      options:
+        - Cache field returned
+        - No cache field
+        - Not sure
+  - type: textarea
+    id: stability
+    attributes:
+      label: Stability / latency sample
+      placeholder: 5/5 success, avg 2200ms, max 3500ms
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: What should API Doctor improve?
