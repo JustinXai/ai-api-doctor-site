@@ -33,6 +33,39 @@
 </head>
 <body>
 
+<script>
+// Language auto-detection and redirect
+(function() {
+  try {
+    var path = window.location.pathname || '/';
+    var isRoot = path === '/' || path === '/index.html';
+    if (!isRoot) return;
+
+    var saved = localStorage.getItem('ai_api_doctor_lang');
+    if (saved === 'zh') return;
+
+    if (saved === 'en') {
+      window.location.replace('/en/');
+      return;
+    }
+
+    var langs = Array.isArray(navigator.languages) && navigator.languages.length
+      ? navigator.languages
+      : [navigator.language || ''];
+    var isChinese = langs.some(function(lang) {
+      var normalized = String(lang || '').toLowerCase();
+      return normalized === 'zh' || normalized.startsWith('zh-');
+    });
+
+    if (!isChinese) {
+      window.location.replace('/en/');
+    }
+  } catch (err) {
+    // Fail open: keep current page.
+  }
+})();
+</script>
+
 <!-- Header -->
 <header class="site-header">
   <div class="container site-header__inner">
@@ -52,7 +85,7 @@
       <span class="lang-switcher">
         <span class="lang-switcher__current">中文</span>
         <span class="lang-switcher__sep">|</span>
-        <a href="/en/" class="lang-switcher__link">English</a>
+        <a href="/en/" class="lang-switcher__link" onclick="localStorage.setItem('ai_api_doctor_lang','en');">English</a>
       </span>
     </nav>
   </div>
@@ -150,7 +183,7 @@ OPENAI_API_KEY=sk-..."
 <div id="toast" class="toast" style="display:none"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.min.js"></script>
-<script src="/assets/test.js?v=20260523-rc17j"></script>
+<script src="/assets/test.js?v=20260523-rc17k"></script>
 
 </body>
 </html>
