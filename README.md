@@ -31,7 +31,7 @@ It is **not** a model authenticity judge, nor a long-term monitoring system.
 - OpenAI-compatible response shape
 - usage / token fields
 - cache signal fields
-- model self-claim and target consistency
+- model self-claim, target consistency, and capability smoke tests
 - stability and latency sampling
 - Cline / Continue client config export
 
@@ -43,7 +43,7 @@ It is **not** a model authenticity judge, nor a long-term monitoring system.
 - 返回格式是否基本兼容 OpenAI-compatible
 - usage / token 字段是否返回
 - 缓存命中信号字段是否返回
-- 模型响应自称与目标模型是否一致
+- 模型自报身份、目标一致性及能力冒烟测试
 - 轻量请求下的稳定性与延迟
 - 是否能导出 Cline / Continue 配置
 
@@ -91,20 +91,36 @@ AI API Doctor 读取的是目标 API 响应中的 usage/cache 字段。这些字
 
 ## Scoring model
 
-v1.7 score breakdown:
+v1.8 score breakdown:
 
 | Component | Weight |
 |-----------|--------|
 | Core compatibility | 25 |
 | Usage transparency | 25 |
 | Stability and latency | 25 |
-| Model identity signal | 15 |
+| Model signal | 15 |
 | Cache signal | 5 |
 | Client config | 5 |
 
-The score is based mainly on real request data. Model identity is treated as a risk signal, not as a definitive authenticity proof.
+The score is based mainly on real request data. Model signal is treated as a risk signal, not as a definitive authenticity proof.
 
-**中文：** 评分以真实请求数据为主，模型身份只作为风险信号，不作为真假证明。
+**中文：** 评分以真实请求数据为主，模型信号只作为风险信号，不作为真假证明。
+
+### Model Signal (15 pts)
+
+Model Signal includes 3 sub-parts:
+- **Self-claim (6 pts):** Evaluates how the model self-reports its identity
+- **Target consistency (4 pts):** Checks if the self-reported identity matches the target model
+- **Capability smoke tests (5 pts):** Quick tests for JSON output, basic reasoning, and code identification
+
+**Note:** Capability smoke tests are lightweight signal checks, NOT official benchmarks.
+
+**中文：** 模型信号包括3个子项：
+- **自报身份 (6分)：** 评估模型如何自报身份
+- **目标一致性 (4分)：** 检查自报身份与目标模型是否一致
+- **能力冒烟测试 (5分)：** JSON输出、基本推理、代码识别的快速测试
+
+**注意：** 能力冒烟测试是轻量信号检查，不是官方基准测试。
 
 ## Local verification
 
@@ -115,6 +131,7 @@ node assets/verify-scoring-v17.js
 node assets/test-mock-verify.js
 node assets/verify-evidence.js
 node assets/verify-identity.js
+node assets/verify-model-signal-v18.js
 ```
 
 These scripts are deterministic local checks and do not require real API keys.
