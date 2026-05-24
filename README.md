@@ -63,6 +63,14 @@ It is **not** a model authenticity judge, nor a long-term monitoring system.
 - 不替代长期监控
 - 当前版本仅展示目标接口的真实请求证据和配置风险
 
+## Cache and billing note
+
+AI API Doctor reads usage/cache fields returned by the target API. These fields are evidence from the response, not proof of official Prompt Cache billing or final dashboard billing. Actual balance changes may depend on provider pricing, cache read/write rates, model multipliers, and gateway-specific rules.
+
+**中文：**
+
+AI API Doctor 读取的是目标 API 响应中的 usage/cache 字段。这些字段是响应证据，不等于证明官方 Prompt Cache 计费，也不等于供应商后台最终扣费。实际余额变化还可能受到模型倍率、缓存读写价格、分组倍率和平台规则影响。
+
 ## Privacy
 
 - API Key is used only in the current browser session for the test request.

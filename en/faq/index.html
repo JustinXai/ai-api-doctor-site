@@ -176,6 +176,14 @@
           "@type": "Answer",
           "text": "Many AI API services pre-charge quota at the start of a request and settle after based on actual usage. If failed requests, empty replies, or upstream errors are not handled correctly, billing anomalies may occur that are difficult for users to notice."
         }
+      },
+      {
+        "@type": "Question",
+        "name": "What is the difference between cache signal, usage, and actual billing?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "usage is the token consumption data returned by the API response, such as prompt_tokens, completion_tokens, and total_tokens. Cache signal refers to cache-related fields such as cached_tokens or cache_read_input_tokens. Actual billing is the final balance deduction shown in the provider dashboard. These are related but not identical. AI API Doctor can check whether usage/cache evidence is returned by the API, but it does not prove official cache billing behavior and does not replace provider balance reconciliation."
+        }
       }
     ]
   }

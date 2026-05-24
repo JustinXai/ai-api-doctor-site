@@ -3549,6 +3549,12 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
         </div>` : ''}
         ${cacheStatus === 'unknown' && !ev.fieldFound ? `<div style="font-size:10px;color:#64748b;line-height:1.5;margin-bottom:4px">${escH(checkData.summary || '')}</div>
         <div style="font-size:10px;color:#64748b;line-height:1.5;border-top:1px solid #e2e8f0;padding-top:4px">${zh ? '未暴露字段不等于没有缓存。' : 'Missing fields do not necessarily mean caching is unavailable.'}</div>` : ''}
+        ${cacheStatus !== 'skipped' ? `<div style="margin-top:6px;padding:6px 8px;background:#f8fafc;border-radius:6px;font-size:10px;color:#64748b;border:1px solid #e2e8f0;line-height:1.5">
+          <div style="font-weight:600;margin-bottom:3px">${zh ? '💡 缓存与扣费说明' : '💡 Cache & Billing Note'}</div>
+          <div>${zh
+            ? '本项检测的是接口响应中的 usage/cache 字段，例如 cached_tokens、cache_read_input_tokens。它只能说明 API 响应中出现了缓存命中信号，不代表底层一定按官方 Prompt Cache 计费，也不代表缓存部分免费。官方缓存读取通常仍会计费，只是可能按折扣价或特殊规则计费；中转站或反代看板中的"缓存"也可能是展示口径或分组口径。建议结合后台余额变化复核。'
+            : 'This check only reads cache-related fields in the API response, such as cached_tokens or cache_read_input_tokens. It indicates a cache signal was returned, but it does not prove official Prompt Cache billing behavior and does not mean cached tokens are free. Official cache reads may still be billed, often at a discounted or special rate. Cache labels in relay dashboards may reflect display or grouping logic. Verify with provider balance changes when needed.'}</div>
+        </div>` : ''}
       </div>`;
     }
 
@@ -3652,6 +3658,16 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
 
     const hasDetailContent = detailDeductions || subItemsHtml || stabilitySamplesHtml || cacheHitHtml || sourceTransparencyHtml;
 
+    // Usage & billing note — shown in expand detail for all modules
+    const usageNoteHtml = `
+      <div style="margin-top:8px;padding:6px 8px;background:#f8fafc;border-radius:6px;font-size:10px;color:#64748b;border:1px solid #e2e8f0;line-height:1.5">
+        <div style="font-weight:600;margin-bottom:3px">${zh ? '💰 usage 与实际扣费说明' : '💰 Usage & Billing Note'}</div>
+        <div>${zh
+          ? 'usage 字段可以帮助估算本次请求的 token 消耗，但它不等同于供应商后台最终扣费。实际余额变化还可能受到模型倍率、缓存读写价格、平台折扣、分组倍率、四舍五入、最小计费单位等影响。建议首次使用中转站时，用小额请求对照后台余额变化。'
+          : 'The usage field helps estimate token consumption for this request, but it is not the same as the final balance deduction in the provider dashboard. Actual billing may also depend on model multipliers, cache read/write pricing, gateway discounts, group rates, rounding, or minimum billing units. For first-time use, compare a small test request with the provider dashboard balance change.'}</div>
+      </div>
+    `;
+
     return `<div class="rc-check-block">
       <div class="rc-check-header" id="${rowId}" onclick="(function(){
         var c=document.getElementById('${contentId}');
@@ -3675,6 +3691,7 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
         ${stabilityRetryHint}
         ${cacheHitHtml}
         ${sourceTransparencyHtml}
+        ${usageNoteHtml}
       </div>` : ''}
     </div>`;
   }
@@ -3855,6 +3872,14 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo) {
         <div><span style="font-weight:600;color:#374151">Model:</span> ${escH(finalModel)}</div>
       </div>
       <div style="margin-top:4px;font-size:10px;color:#94a3b8">${zh ? '检测模式：' : 'Check mode: '}${deepMode ? (zh ? '深度验货' : 'Deep Check') : (zh ? '一键验货' : 'One-Click')}</div>
+    </div>
+
+    <!-- First-time use suggestion -->
+    <div style="margin-top:8px;padding:8px 12px;background:#eff6ff;border-radius:8px;font-size:11px;color:#1d4ed8;line-height:1.5;border:1px solid #bfdbfe">
+      <div style="font-weight:600;margin-bottom:2px">${zh ? '💡 首次使用建议' : '💡 First-time Use Tip'}</div>
+      <div>${zh
+        ? '首次使用中转站时，建议使用临时 Key 和小额请求测试，并对照供应商后台余额变化。'
+        : 'When testing a new relay or gateway for the first time, use a temporary key and small requests, then compare the result with provider dashboard balance changes.'}</div>
     </div>
 
     <!-- Footer -->

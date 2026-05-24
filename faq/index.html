@@ -87,6 +87,14 @@
           "@type": "Answer",
           "text": "不能。网页不能读取中转站控制台的原始额度，也不能跨站读取余额。真实扣费以后由 Chrome 插件检测。"
         }
+      },
+      {
+        "@type": "Question",
+        "name": "缓存命中、usage 和实际扣费有什么区别？",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "usage 是 API 响应返回的 token 消耗字段，例如 prompt_tokens、completion_tokens、total_tokens。缓存命中信号是 usage 中可能出现的 cached_tokens 或 cache_read_input_tokens 等字段。实际扣费则是供应商后台余额最终减少的金额。三者有关联，但不是同一个概念。AI API Doctor 可以检查接口是否返回 usage/cache 证据，但不能证明底层一定使用官方缓存计费，也不能替代后台余额对账。"
+        }
       }
     ]
   }
