@@ -56,11 +56,27 @@ function calcOperationalRiskScore(domainSignal, certSignal) {
   const MAX_VERIFIABILITY = 2;
   const MAX_SCORE = MAX_DOMAIN + MAX_CERT + MAX_VERIFIABILITY;
 
+  const domainAvailable = domainSignal && domainSignal.available === true;
+  const certAvailable = certSignal && certSignal.available === true;
+
+  // Both unavailable → not scored
+  if (!domainAvailable && !certAvailable) {
+    return {
+      score: null,
+      max: MAX_SCORE,
+      domainScore: 0,
+      certScore: 0,
+      verifiabilityScore: 0,
+      level: 'unknown',
+      scored: false
+    };
+  }
+
   let domainScore = 0;
   let certScore = 0;
   let verifiabilityScore = 0;
 
-  if (domainSignal.available && domainSignal.ageDays !== null) {
+  if (domainAvailable && domainSignal.ageDays !== null) {
     const days = domainSignal.ageDays;
     if (days >= 1095) domainScore = 10;
     else if (days >= 365) domainScore = 8;
@@ -69,10 +85,10 @@ function calcOperationalRiskScore(domainSignal, certSignal) {
     else if (days >= 30) domainScore = 2;
     else domainScore = 0;
   } else {
-    domainScore = 5;
+    domainScore = 0;
   }
 
-  if (certSignal.available && certSignal.firstSeenDays !== null) {
+  if (certAvailable && certSignal.firstSeenDays !== null) {
     const days = certSignal.firstSeenDays;
     if (days >= 365) certScore = 8;
     else if (days >= 180) certScore = 6;
@@ -80,29 +96,21 @@ function calcOperationalRiskScore(domainSignal, certSignal) {
     else if (days >= 30) certScore = 2;
     else certScore = 0;
   } else {
-    certScore = 4;
+    certScore = 0;
   }
 
-  const domainAvailable = domainSignal.available;
-  const certAvailable = certSignal.available;
   if (domainAvailable && certAvailable) {
     verifiabilityScore = 2;
   } else if (domainAvailable || certAvailable) {
     verifiabilityScore = 1;
-  } else {
-    verifiabilityScore = 0;
   }
 
   const totalScore = domainScore + certScore + verifiabilityScore;
 
   let level = 'unknown';
-  if (domainAvailable || certAvailable) {
-    if (totalScore >= 16) level = 'low';
-    else if (totalScore >= 10) level = 'medium';
-    else level = 'high';
-  } else {
-    level = 'unknown';
-  }
+  if (totalScore >= 16) level = 'low';
+  else if (totalScore >= 10) level = 'medium';
+  else level = 'high';
 
   return {
     score: totalScore,
@@ -110,7 +118,8 @@ function calcOperationalRiskScore(domainSignal, certSignal) {
     domainScore,
     certScore,
     verifiabilityScore,
-    level
+    level,
+    scored: true
   };
 }
 
@@ -253,7 +262,8 @@ console.log('\n--- Case 9: Medium Risk (domain 200 days, cert 100 days) ---');
 const mediumRiskDomain = { available: true, ageDays: 200 };
 const mediumRiskCert = { available: true, firstSeenDays: 100 };
 const mediumRiskResult = calcOperationalRiskScore(mediumRiskDomain, mediumRiskCert);
-assertEqual(mediumRiskResult.level, 'medium', 'Level should be medium (200+100+2=6, >=10 and <16)');
+// 200 days=6, 100 days=4, both=2 → 12 >= 10 & < 16 = medium
+assertEqual(mediumRiskResult.level, 'medium', 'Level should be medium (6+4+2=12 >= 10 and < 16)');
 assertEqual(mediumRiskResult.domainScore, 6, 'Domain 200 days should score 6');
 assertEqual(mediumRiskResult.certScore, 4, 'Cert 100 days should score 4');
 assertEqual(mediumRiskResult.verifiabilityScore, 2, 'Verifiability should be 2');
@@ -276,7 +286,8 @@ const unknownDomain = { available: false, ageDays: null };
 const unknownCert = { available: false, firstSeenDays: null };
 const unknownResult = calcOperationalRiskScore(unknownDomain, unknownCert);
 assertEqual(unknownResult.level, 'unknown', 'Level should be unknown');
-assertEqual(unknownResult.score, 9, 'Score should be 9 (5+4 neutral) when both unavailable');
+assertEqual(unknownResult.score, null, 'Score should be null (not scored) when both unavailable');
+assertEqual(unknownResult.scored, false, 'scored should be false when both unavailable');
 const unknownSummary = buildOperationalRiskSummary('unknown', unknownDomain, unknownCert, true);
 assertContains(unknownSummary.summary, '未能自动获取', 'Summary should mention auto-retrieval failed');
 
@@ -285,9 +296,10 @@ console.log('\n--- Case 12: Only Domain Available (400 days) ---');
 const domainOnly = { available: true, ageDays: 400 };
 const certUnavailable = { available: false, firstSeenDays: null };
 const domainOnlyResult = calcOperationalRiskScore(domainOnly, certUnavailable);
-assertEqual(domainOnlyResult.level, 'medium', 'Level should be medium with only domain');
-assertEqual(domainOnlyResult.certScore, 4, 'Cert score should be neutral 4 when unavailable');
+assertEqual(domainOnlyResult.level, 'high', 'Level should be high with 400-day domain only (8+0+1=9 < 10)');
+assertEqual(domainOnlyResult.certScore, 0, 'Cert score should be 0 when unavailable (not neutral)');
 assertEqual(domainOnlyResult.verifiabilityScore, 1, 'Verifiability should be 1 when only one available');
+assertEqual(domainOnlyResult.scored, true, 'scored should be true when one is available');
 
 // Case 13: Score boundaries
 console.log('\n--- Case 13: Score Boundaries ---');
