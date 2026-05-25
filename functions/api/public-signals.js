@@ -476,15 +476,36 @@ export async function onRequestGet(context) {
 
   const url = new URL(request.url);
   const hostname = url.searchParams.get('hostname');
+  const noCache = url.searchParams.get('nocache') === '1';
+  const debugMode = url.searchParams.get('debug') === '1';
+
+  // Build debug info skeleton (populated during execution)
+  const debug = debugMode ? {
+    version: VERSION,
+    cacheKeyPrefix: CACHE_KEY_PREFIX,
+    domain: null,
+    hostname: null,
+    normalizedHostname: null,
+    cacheBypass: noCache,
+    cacheKey: null,
+    cached: false,
+    rdapUrlsTried: [],
+    rdapSelectedSource: null,
+    crtshTried: false,
+    crtshSuccess: false
+  } : null;
 
   // Validate hostname
   const validation = normalizeHostname(hostname);
   if (!validation.ok) {
-    return new Response(JSON.stringify({
+    const resp = {
       ok: false,
       status: 'invalid_hostname',
-      error: validation.error || 'Invalid hostname'
-    }), {
+      error: validation.error || 'Invalid hostname',
+      version: VERSION
+    };
+    if (debug) resp.debug = debug;
+    return new Response(JSON.stringify(resp), {
       status: 400,
       headers: {
         'Content-Type': 'application/json',
@@ -497,17 +518,35 @@ export async function onRequestGet(context) {
   const normalizedHostname = validation.hostname;
   const registrableDomain = guessRegistrableDomain(normalizedHostname);
 
-  // Check cache
+  if (debug) {
+    debug.domain = registrableDomain;
+    debug.hostname = hostname;
+    debug.normalizedHostname = normalizedHostname;
+  }
+
+  // Check cache (skip if noCache)
   const cacheKey = getCacheKey(registrableDomain);
-  const cachedResponse = await cache.match(cacheKey);
+  if (debug) debug.cacheKey = cacheKey;
+
+  let cachedResponse = null;
+  if (!noCache) {
+    cachedResponse = await cache.match(cacheKey);
+  } else if (debug) {
+    debug.cacheBypass = true;
+  }
 
   if (cachedResponse) {
     const cachedData = await cachedResponse.json();
-    return new Response(JSON.stringify({
+    const resp = {
       ...cachedData,
       cached: true,
       fetchedAt: new Date().toISOString()
-    }), {
+    };
+    if (debug) {
+      debug.cached = true;
+      resp.debug = debug;
+    }
+    return new Response(JSON.stringify(resp), {
       headers: {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',
@@ -516,6 +555,8 @@ export async function onRequestGet(context) {
       }
     });
   }
+
+  if (debug) debug.cached = false;
 
   // Execute queries with overall timeout
   const errors = [];
@@ -565,6 +606,7 @@ export async function onRequestGet(context) {
         lookupUrl: `https://lookup.icann.org/en/lookup?name=${encodeURIComponent(registrableDomain)}`,
         rdapUrl: `https://rdap.org/domain/${encodeURIComponent(registrableDomain)}`
       };
+      if (debug) debug.rdapSelectedSource = domainRegistration.source || 'unknown';
       if (!domainRegistration.available && domainRegistration.error) {
         errors.push({ source: 'rdap', code: 'lookup_failed', message: domainRegistration.error });
       }
@@ -578,6 +620,7 @@ export async function onRequestGet(context) {
         ...certResult.value,
         lookupUrl: `https://crt.sh/?q=${encodeURIComponent(registrableDomain)}`
       };
+      if (debug) debug.crtshSuccess = certificateHistory.available === true;
       if (!certificateHistory.available && certificateHistory.error) {
         errors.push({ source: 'crt.sh', code: 'lookup_failed', message: certificateHistory.error });
       }
@@ -617,7 +660,9 @@ export async function onRequestGet(context) {
     version: VERSION
   };
 
-  // Cache response
+  if (debug) responseData.debug = debug;
+
+  // Cache response (skip if noCache)
   const response = new Response(JSON.stringify(responseData), {
     headers: {
       'Content-Type': 'application/json',
@@ -626,7 +671,9 @@ export async function onRequestGet(context) {
     }
   });
 
-  waitUntil(cache.put(cacheKey, response.clone()));
+  if (!noCache) {
+    waitUntil(cache.put(cacheKey, response.clone()));
+  }
 
   return response;
 }
