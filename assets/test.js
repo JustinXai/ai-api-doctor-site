@@ -3892,10 +3892,27 @@ function buildDebugScoring(rawScore, cappedScore, checks, breakdown, extra = {})
     visibleSuggestion = '建议小额继续验证。';
   }
   return {
-    rawWeightedScore: Math.round(rawScore * 10) / 10,
+    rawModuleScore: Math.round(breakdownTotalRaw * 10) / 10,
     finalScore: Math.round(cappedScore * 10) / 10,
-    capApplied: cappedScore < rawScore,
-    capReason: cappedScore < rawScore ? getCapReason(cappedScore, checks) : null,
+    capApplied: capApplied,
+    capReason: capReason,
+    capLimit: capApplied ? (cappedScore < rawScore ? (() => {
+      // Determine cap limit from capReason
+      const capMap = {
+        reachability_failed: 25, auth_401: 35, core_chat_403: 45, response_not_json: 45,
+        model_not_found: 50, stability_failed: 60, auxiliary_403_only: null
+      };
+      return capMap[capReason] ?? null;
+    })() : null) : null,
+    capAppliedBool: cappedScore < rawScore,
+    moduleScores: {
+      usageTransparency: breakdown?.usageTransparency?.score ?? null,
+      cacheSignal: breakdown?.cacheSignal?.score ?? null,
+      modelSignal: breakdown?.modelSignal?.score ?? null,
+      stabilityLatency: breakdown?.stabilityLatency?.score ?? null,
+      coreCompatibility: breakdown?.coreCompatibility?.score ?? null,
+      clientConfig: breakdown?.clientConfig?.score ?? null,
+    },
     coreChatSuccess: targetWorks,
     coreChatStatus: tcEvidence.httpStatus || 0,
     coreAuthFailed: hasCoreChat403,
@@ -4308,10 +4325,11 @@ function generateSuggestions(checks, modelIdInfo) {
    ═══════════════════════════════════════════════════════ */
 function buildReportCardHTML(result, formData, lang, modelIdInfo, operationalRisk) {
   const zh = lang !== 'en';
-  const { score, totalScore, breakdown, checks, reportId, deepMode, toolCallingResult, failureSummary } = result;
-  // Use totalScore (sum of breakdown) for display, gradeScore for grade
+  const { score, totalScore, breakdown, checks, reportId, deepMode, toolCallingResult, failureSummary, capApplied, capReason, capLimit, breakdownTotalRaw } = result;
   const grade = getScoreGrade(result.gradeScore || score);
-  const displayScore = totalScore || score;
+  // v1.10.8: display the same score as module sum (capped or uncapped)
+  const displayScore = score;
+  const rawModuleScore = breakdownTotalRaw != null ? breakdownTotalRaw : totalScore;
   const escH = s => esc(String(s || ''));
   const riskColors = { low: { color: '#16a34a', bg: '#dcfce7' }, medium: { color: '#d97706', bg: '#fef9c3' }, high: { color: '#dc2626', bg: '#fee2e2' } };
   // Use breakdown risk if available, fallback to computed values
@@ -4844,35 +4862,6 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo, operationalRis
         : `Key risk cap triggered: ${capReasonText} — final score below weighted sum.`;
       return `<div style="background:#f1f5f9;border-radius:8px;padding:6px 12px;margin-bottom:6px;font-size:10px;color:#64748b;line-height:1.5;border:1px solid #e2e8f0">${escH(capText)}</div>`;
     })()}
-    <div style="font-size:10px;color:#94a3b8;text-align:center;margin-bottom:6px">${zh ? '此分数不是模型能力评分，而是当前 Base URL / API Key / Model 配置在兼容性、透明度、稳定性和客户端接入方面的风险评分。' : 'This is not a model intelligence score. It measures API configuration risk across compatibility, transparency, stability, and client integration.'}</div>
-
-    <!-- Failure summary — only shown when shouldShow -->
-    ${failureSummary?.shouldShow ? (() => {
-      const dl = failureSummary.displayLabel;
-      const isFailure = dl === '失败主因' || dl === 'Main failure reason';
-      const bgColor = isFailure ? '#fff5f5' : '#fffbeb';
-      const borderColor = isFailure ? '#fecaca' : '#fde68a';
-      const textColor = isFailure ? '#991b1b' : '#92400e';
-      const label = dl + (getDocLang() !== 'en' ? '：' : ': ');
-      return `<div style="background:${bgColor};border:1px solid ${borderColor};border-radius:8px;padding:8px 14px;margin-bottom:8px;font-size:11px;color:${textColor};line-height:1.5"><b>${label}</b>${escH(failureSummary.shortText)}</div>`;
-    })() : ''}
-
-    <!-- Grade-based decision recommendation (one line, compact) -->
-    ${(() => {
-      const g = grade.grade;
-      const decisionMap = {
-        A: zh ? '可用于日常开发；生产环境仍建议保留备用接口和限额保护。' : 'Suitable for daily development; keep a backup endpoint and quota limits for production.',
-        B: zh ? '适合日常开发和测试；生产使用前建议复核 usage、模型版本和稳定性。' : 'Good for daily dev and testing; review usage, model version and stability before production.',
-        C: zh ? '可用于测试或轻量开发；用于长期任务前建议完成复核。' : 'Usable for testing or light development; complete review before long-running tasks.',
-        D: zh ? '仅建议用于临时测试或轻量开发；不建议直接接入重要工作流。' : 'Only for temporary testing or light development; not recommended for critical workflows.',
-        E: zh ? '不建议直接用于生产或长期开发环境；如仅临时测试可继续观察，但应优先确认模型版本、返回格式和权限配置。' : 'Not recommended for production or long-term development. If only temporary testing, continue observing — but prioritise confirming model version, response format and permissions.',
-        F: zh ? '当前配置存在关键失败，不建议继续使用。请先修复 Key、Base URL、模型名、权限或接口兼容问题。' : 'Critical failure detected — do not continue. Fix key, base URL, model name, permissions or interface compatibility first.',
-      };
-      const decisionText = decisionMap[g] || '';
-      const decisionColors = { A: { bg: '#dcfce7', color: '#166534' }, B: { bg: '#dcfce7', color: '#166534' }, C: { bg: '#fef9c3', color: '#92400e' }, D: { bg: '#fef3c7', color: '#b45309' }, E: { bg: '#fee2e2', color: '#991b1b' }, F: { bg: '#fee2e2', color: '#991b1b' } };
-      const dc = decisionColors[g] || decisionColors.C;
-      return decisionText ? `<div style="background:${dc.bg};border-radius:8px;padding:6px 12px;margin-bottom:8px;font-size:11px;color:${dc.color};line-height:1.4"><b>${zh ? '使用建议：' : 'Recommendation: '}</b>${escH(decisionText)}</div>` : '';
-    })()}
 
     <!-- Short-term Operational Risk Signals (v1.10.7 — compact) -->
     ${(() => {
@@ -4926,7 +4915,6 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo, operationalRis
             <a href="${links.crtShLookup}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:2px 6px;background:#f8fafc;border-radius:4px;font-size:9px;color:#2563eb;text-decoration:none;border:1px solid #e2e8f0">crt.sh</a>
             <a href="${links.waybackLookup}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:2px 6px;background:#f8fafc;border-radius:4px;font-size:9px;color:#2563eb;text-decoration:none;border:1px solid #e2e8f0">Wayback</a>
           </div>
-          <div style="font-size:8px;color:#94a3b8;margin-top:3px">${zh ? '公开查询链接仅供人工复核，不参与 API 技术评分。' : 'Public lookup links for manual review only.'}</div>
         </div>
       ` : '';
 
@@ -4945,30 +4933,26 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo, operationalRis
             ${!domainAvailable ? `<div style="font-size:9px;color:#94a3b8">${zh ? '无法自动获取域名注册时间，建议手动复核。' : 'Domain registration age could not be retrieved automatically. Manual review is recommended.'}</div>` : ''}
             ${linksHtml}
           </div>
-          <div style="margin-top:4px;font-size:8px;color:#94a3b8">${zh ? '仅基于公开域名注册时间，不影响 API 技术评分。' : 'Based only on public domain registration age. Does not affect the API technical score.'}</div>
         </div>
       `;
     })()}
 
-    <!-- 5 module sections - use breakdown for normalized scores -->
+    <!-- v1.10.8: Cap notice (short label) — shown when cap is applied -->
+    ${capApplied ? `<div style="font-size:9px;color:#dc2626;font-weight:600;margin-bottom:4px;text-align:center">${zh ? '⚠ 关键失败封顶' : '⚠ Capped by critical failure'}</div>` : ''}
+
+    <!-- 6 module sections — use breakdown for labels and normalized scores -->
     <div style="background:#fff;border-radius:16px;padding:12px 16px;margin-bottom:10px">
       <div style="font-size:11px;font-weight:700;color:#0f172a;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #f1f5f9">${zh ? '6项检测（点击展开详情）' : '6 Modules (tap to expand)'}</div>
-      ${moduleSection('usageTransparency', { ...checks.costTransparency, score: breakdown?.usageTransparency?.score ?? checks.costTransparency?.score, maxScore: breakdown?.usageTransparency?.max ?? 25 }, breakdown?.usageTransparency?.risk)}
-      ${moduleSection('cacheSignal', { ...checks.cacheHitCheck, score: breakdown?.cacheSignal?.score ?? checks.cacheHitCheck?.score, maxScore: breakdown?.cacheSignal?.max ?? 5 }, breakdown?.cacheSignal?.risk)}
-      ${moduleSection('modelSignal', { ...checks.modelSignal, score: breakdown?.modelSignal?.score ?? checks.modelSignal?.score, maxScore: breakdown?.modelSignal?.max ?? 15 }, breakdown?.modelSignal?.risk)}
-      ${moduleSection('stabilityLatency', { ...checks.stability, score: breakdown?.stabilityLatency?.score ?? checks.stability?.score, maxScore: breakdown?.stabilityLatency?.max ?? 25 }, breakdown?.stabilityLatency?.risk)}
-      ${moduleSection('coreCompatibility', { ...checks.basicCompatibility, score: breakdown?.coreCompatibility?.score ?? checks.basicCompatibility?.score, maxScore: breakdown?.coreCompatibility?.max ?? 25 }, breakdown?.coreCompatibility?.risk)}
-      ${moduleSection('clientConfig', { ...checks.clientConfig, score: breakdown?.clientConfig?.score ?? checks.clientConfig?.score, maxScore: breakdown?.clientConfig?.max ?? 5 }, breakdown?.clientConfig?.risk)}
+      ${moduleSection('usageTransparency', { label: breakdown?.usageTransparency?.label ?? checks.costTransparency?.label, score: breakdown?.usageTransparency?.score ?? checks.costTransparency?.score, maxScore: breakdown?.usageTransparency?.max ?? 25 }, breakdown?.usageTransparency?.risk)}
+      ${moduleSection('cacheSignal', { label: breakdown?.cacheSignal?.label ?? checks.cacheHitCheck?.label, score: breakdown?.cacheSignal?.score ?? checks.cacheHitCheck?.score, maxScore: breakdown?.cacheSignal?.max ?? 5 }, breakdown?.cacheSignal?.risk)}
+      ${moduleSection('modelSignal', { label: breakdown?.modelSignal?.label ?? checks.modelSignal?.label, score: breakdown?.modelSignal?.score ?? checks.modelSignal?.score, maxScore: breakdown?.modelSignal?.max ?? 15 }, breakdown?.modelSignal?.risk)}
+      ${moduleSection('stabilityLatency', { label: breakdown?.stabilityLatency?.label ?? checks.stability?.label, score: breakdown?.stabilityLatency?.score ?? checks.stability?.score, maxScore: breakdown?.stabilityLatency?.max ?? 25 }, breakdown?.stabilityLatency?.risk)}
+      ${moduleSection('coreCompatibility', { label: breakdown?.coreCompatibility?.label ?? checks.basicCompatibility?.label, score: breakdown?.coreCompatibility?.score ?? checks.basicCompatibility?.score, maxScore: breakdown?.coreCompatibility?.max ?? 25 }, breakdown?.coreCompatibility?.risk)}
+      ${moduleSection('clientConfig', { label: breakdown?.clientConfig?.label ?? checks.clientConfig?.label, score: breakdown?.clientConfig?.score ?? checks.clientConfig?.score, maxScore: breakdown?.clientConfig?.max ?? 5 }, breakdown?.clientConfig?.risk)}
     </div>
 
     ${toolCallingHtml}
     ${suggestionHtml}
-
-    <!-- Official baseline comparison placeholder -->
-    <div style="background:#f8fafc;border-radius:12px;padding:10px 14px;margin-bottom:10px;font-size:10px;color:#94a3b8;border:1px dashed #cbd5e1">
-      <div style="font-weight:600;color:#64748b;margin-bottom:4px">${zh ? '官方基准线对比（规划中）' : 'Official Baseline Comparison (Planned)'}</div>
-      <div>${zh ? '规划中：未来可选择使用用户自己的官方 API Key 做同题对照测试。该模式会产生额外请求费用，并且只在当前浏览器内运行，不上传或保存 API Key。当前版本仅展示目标接口的真实请求证据，不进行官方对照评分。' : 'Planned: Future option to use your own official API key for parallel testing. This mode will incur additional request costs and runs only in your browser — no API key upload or storage. Current version shows real request evidence from the target endpoint only, without official baseline scoring.'}</div>
-    </div>
 
     <!-- Test config -->
     <div style="background:#fff;border-radius:12px;padding:10px 14px;margin-bottom:10px;font-size:11px;color:#64748b">
@@ -4977,14 +4961,6 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo, operationalRis
         <div><span style="font-weight:600;color:#374151">Model:</span> ${escH(finalModel)}</div>
       </div>
       <div style="margin-top:4px;font-size:10px;color:#94a3b8">${zh ? '检测模式：' : 'Check mode: '}${deepMode ? (zh ? '深度验货' : 'Deep Check') : (zh ? '一键验货' : 'One-Click')}</div>
-    </div>
-
-    <!-- First-time use suggestion -->
-    <div style="margin-top:8px;padding:8px 12px;background:#eff6ff;border-radius:8px;font-size:11px;color:#1d4ed8;line-height:1.5;border:1px solid #bfdbfe">
-      <div style="font-weight:600;margin-bottom:2px">${zh ? '💡 首次使用建议' : '💡 First-time Use Tip'}</div>
-      <div>${zh
-        ? '首次使用中转站时，建议使用临时 Key 和小额请求测试，并对照供应商后台余额变化。'
-        : 'When testing a new relay or gateway for the first time, use a temporary key and small requests, then compare the result with provider dashboard balance changes.'}</div>
     </div>
 
     <!-- Footer -->
@@ -5443,7 +5419,7 @@ window.Doctor = {
       // Add step timing to debugScoring
       let debugScoring;
       try {
-        debugScoring = buildDebugScoring(totalScore, cappedGradeScore, checks, breakdown, {
+        debugScoring = buildDebugScoring(totalScore, cappedScore, checks, breakdown, {
         scoreConsistencyCheck,
         breakdownTotalRaw,
         gradeScore,
@@ -5472,10 +5448,13 @@ window.Doctor = {
         score: cappedScore,
         totalScore,
         breakdown,
+        // v1.10.8: Always include breakdownTotalRaw for score consistency
+        breakdownTotalRaw: breakdownTotalRaw ?? totalScore,
         capApplied,
         capReason: capResult?.capReason || null,
         capLimit: capResult?.capLimit || null,
         grade,
+        gradeScore: cappedGradeScore,
         judgment,
         checks,
         deepMode,
@@ -5745,12 +5724,13 @@ window.Doctor = {
     const failureLine = (failureSummary?.shouldShow && failureSummary.shortText)
       ? (zh ? `\n${failureSummary.displayLabel}：${failureSummary.shortText}` : `\n${failureSummary.displayLabel}: ${failureSummary.shortText}`)
       : '';
-    const scoreDisclaimer = zh
-      ? '\n此分数不是模型能力评分，而是当前 Base URL / API Key / Model 配置在兼容性、透明度、稳定性和客户端接入方面的风险评分。'
-      : '\nThis is not a model intelligence score. It measures API configuration risk across compatibility, transparency, stability, and client integration.';
+    // v1.10.8: cap notice (short), no long disclaimer
+    const capNotice = (this._result?.capApplied && this._result?.capReason)
+      ? (zh ? `\n⚠ 关键失败封顶` : `\n⚠ Capped by critical failure`)
+      : '';
     const text = zh
-      ? `AI API Doctor 验货报告\nURL: ${maskedUrl}\n验货分：${score}/100，${gradeLabel}\n扣费透明度：${costLabel}\n缓存命中检测：${cacheLabel}${cacheTimeoutSuffix}${cacheRateText}\n模型可信度：${modelLabel}\n稳定性：${stabilityLabel}\n来源透明度：${srcLabelCopy}${failureLine}\n主要建议：${suggestions[0] || '-'}\n使用建议：${decisionText}${scoreDisclaimer}\nID：${reportId} · aiapidoctor.com`
-      : `AI API Doctor Report\nURL: ${maskedUrl}\nScore: ${score}/100, ${grade?.label || ''}\nCost: ${costLabel}\nCache Hit: ${cacheLabel}${cacheTimeoutSuffix}${cacheRateText}\nModel: ${modelLabel}\nStability: ${stabilityLabel}\nSource: ${srcLabelCopy}${failureLine}\nMain advice: ${suggestions[0] || '-'}\nRecommendation: ${decisionText}${scoreDisclaimer}\nID: ${reportId} · aiapidoctor.com`;
+      ? `AI API Doctor 验货报告\nURL: ${maskedUrl}\n验货分：${score}/100，${gradeLabel}${capNotice}\n扣费透明度：${costLabel}\n缓存命中检测：${cacheLabel}${cacheTimeoutSuffix}${cacheRateText}\n模型可信度：${modelLabel}\n稳定性：${stabilityLabel}\n来源透明度：${srcLabelCopy}${failureLine}\n主要建议：${suggestions[0] || '-'}\nID：${reportId} · aiapidoctor.com`
+      : `AI API Doctor Report\nURL: ${maskedUrl}\nScore: ${score}/100, ${grade?.label || ''}${capNotice}\nCost: ${costLabel}\nCache Hit: ${cacheLabel}${cacheTimeoutSuffix}${cacheRateText}\nModel: ${modelLabel}\nStability: ${stabilityLabel}\nSource: ${srcLabelCopy}${failureLine}\nMain advice: ${suggestions[0] || '-'}\nID: ${reportId} · aiapidoctor.com`;
     copyToClipboard(text, zh ? '验货分已复制' : 'Score copied');
   }
 };
