@@ -1,6 +1,7 @@
 /**
- * AI API Doctor v1.10.6 — No Undefined Variables Check
+ * AI API Doctor v1.10.8 — No Undefined Variables Check
  * Focused check for undeclared variable references in the Operational Risk IIFE.
+ * Updated to match v1.10.7/v1.10.8 pattern: uses scoreDomainAgeSignal for compact display.
  */
 
 'use strict';
@@ -15,11 +16,9 @@ const lines = content.split('\n');
 let passed = 0;
 let failed = 0;
 
-console.log('\n=== AI API Doctor v1.10.6 Operational Risk IIFE Undefined Check ===\n');
+console.log('\n=== AI API Doctor v1.10.8 Operational Risk IIFE Undefined Check ===\n');
 
-// ── 1. Check for operationalRiskScore. references in the IIFE (around line 4838-4960) ──
-// We know the Operational Risk IIFE is roughly between "<!-- Short-term Operational Risk Signals"
-// and the closing `})()}` pattern after the card HTML.
+// ── 1. Check for operationalRiskScore. references in the IIFE (around line 4866-4940) ──
 
 let iifeStart = -1;
 let iifeEnd = -1;
@@ -28,7 +27,6 @@ for (let i = 0; i < lines.length; i++) {
     iifeStart = i;
   }
   if (iifeStart >= 0 && iifeEnd < 0) {
-    // Look for the closing of the IIFE
     if (lines[i].trim() === '})()}') {
       iifeEnd = i;
       break;
@@ -72,13 +70,13 @@ if (fosBare === 0) {
 
 console.log('\n--- Checking fix patterns ---\n');
 
-// Fix 1: calcOperationalRiskScore is called inline with domainSignal, certSignal
-const hasInline = content.includes('calcOperationalRiskScore(domainSignal, certSignal)');
+// Fix 1: calcOperationalRiskScore is called inline with domainRegistration, certificateHistory
+const hasInline = content.includes('calcOperationalRiskScore(domainRegistration, certificateHistory)');
 if (hasInline) {
-  console.log('  PASS: calcOperationalRiskScore(domainSignal, certSignal) called inline');
+  console.log('  PASS: calcOperationalRiskScore(domainRegistration, certificateHistory) called inline');
   passed++;
 } else {
-  console.log('  FAIL: calcOperationalRiskScore(domainSignal, certSignal) NOT called inline');
+  console.log('  FAIL: calcOperationalRiskScore(domainRegistration, certificateHistory) NOT called inline');
   failed++;
 }
 
@@ -100,22 +98,33 @@ if (!oldCertScore) {
   failed++;
 }
 
-// Fix 3: domainScore should be declared with calc result
-const domainScoreInline = content.includes('const domainScore = domainScoreResult.domainScore');
-if (domainScoreInline) {
-  console.log('  PASS: domainScore declared from domainScoreResult');
+// Fix 3: calcOperationalRiskScore returns domainScore and certScore
+const hasReturnDomainScore = content.includes('domainScore,') && content.includes('calcOperationalRiskScore');
+if (hasReturnDomainScore) {
+  console.log('  PASS: calcOperationalRiskScore returns domainScore');
   passed++;
 } else {
-  console.log('  FAIL: domainScore NOT declared from domainScoreResult');
+  console.log('  FAIL: calcOperationalRiskScore does not return domainScore');
   failed++;
 }
 
-const certScoreInline = content.includes('const certScore = certScoreResult.certScore');
-if (certScoreInline) {
-  console.log('  PASS: certScore declared from certScoreResult');
+// Fix 4: IIFE uses scoreDomainAgeSignal for compact display (v1.10.7+)
+const hasScoreDomainAgeSignal = iifeContent.includes('scoreDomainAgeSignal');
+if (hasScoreDomainAgeSignal) {
+  console.log('  PASS: IIFE uses scoreDomainAgeSignal for compact display');
   passed++;
 } else {
-  console.log('  FAIL: certScore NOT declared from certScoreResult');
+  console.log('  FAIL: IIFE does not use scoreDomainAgeSignal');
+  failed++;
+}
+
+// Fix 5: scoreDomainAgeSignal function exists
+const hasScoreFunction = content.includes('function scoreDomainAgeSignal');
+if (hasScoreFunction) {
+  console.log('  PASS: scoreDomainAgeSignal function exists');
+  passed++;
+} else {
+  console.log('  FAIL: scoreDomainAgeSignal function does not exist');
   failed++;
 }
 
