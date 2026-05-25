@@ -184,6 +184,14 @@
           "@type": "Answer",
           "text": "usage is the token consumption data returned by the API response, such as prompt_tokens, completion_tokens, and total_tokens. Cache signal refers to cache-related fields such as cached_tokens or cache_read_input_tokens. Actual billing is the final balance deduction shown in the provider dashboard. These are related but not identical. AI API Doctor can check whether usage/cache evidence is returned by the API, but it does not prove official cache billing behavior and does not replace provider balance reconciliation."
         }
+      },
+      {
+        "@type": "Question",
+        "name": "Can AI API Doctor detect whether a relay provider will exit or disappear?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "No. An API key can only test the current technical configuration. It cannot predict whether a provider will exit in the future. AI API Doctor can try to query domain registration age and first-seen HTTPS certificate records from the Base URL and show a separate short-term operational risk signal. If the domain or certificate history is very short, use small test top-ups first and avoid large prepaid balances."
+        }
       }
     ]
   }

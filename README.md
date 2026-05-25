@@ -47,6 +47,16 @@ It is **not** a model authenticity judge, nor a long-term monitoring system.
 - 轻量请求下的稳定性与延迟
 - 是否能导出 Cline / Continue 配置
 
+### Short-term Operational Risk Signals (v1.9)
+
+- Domain registration age (via RDAP)
+- HTTPS certificate first-seen date (via crt.sh)
+- Wayback Machine historical snapshot links
+
+**中文：**
+
+短期运营风险信号：根据 Base URL 自动尝试查询域名注册时间和 HTTPS 证书首次发现时间，并给出独立的预充值风险提示。该模块不证明平台一定会跑路或一定不会跑路，也不影响 API 技术评分。
+
 ## What it does not prove
 
 - It does not prove that a model is exactly the same as the official model.
@@ -132,6 +142,7 @@ node assets/test-mock-verify.js
 node assets/verify-evidence.js
 node assets/verify-identity.js
 node assets/verify-model-signal-v18.js
+node assets/verify-operational-risk-v19.js
 ```
 
 These scripts are deterministic local checks and do not require real API keys.
