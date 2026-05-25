@@ -4873,7 +4873,7 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo, operationalRis
         </div>
       ` : '';
 
-      // Score display — v1.10.5: partial shows domain age signal instead of x/20
+      // Score display — v1.10.6: compute score inline, no external variable refs
       const scored = operationalRisk.scored !== false;
       const confidence = operationalRisk.confidence || 'none';
       const isPartial = confidence === 'partial';
@@ -4893,8 +4893,9 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo, operationalRis
             <span style="color:#94a3b8">${zh ? '未评分' : 'Not available'}</span>
           </div>`;
       } else if (isPartial && domainAvailable && !certAvailable) {
-        // Partial: domain only — show domain age signal (3/10), not full score
-        const domainScore = operationalRiskScore ? (operationalRiskScore.domainScore || 0) : 0;
+        // Partial: domain only — show domain age signal (2/10 for 65 days), not full score
+        const domainScoreResult = calcOperationalRiskScore(domainSignal, certSignal);
+        const domainScore = domainScoreResult.domainScore || 0;
         scoreDisplay = `<span style="font-weight:700;color:#d97706">${zh ? '部分证据' : 'Partial Evidence'}</span>`;
         signalDetails = `
           <div style="margin-bottom:3px">
@@ -4906,8 +4907,9 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo, operationalRis
             <span style="color:#94a3b8">${zh ? '未评分（需证书历史）' : 'Not available (cert history required)'}</span>
           </div>`;
       } else if (isPartial && !domainAvailable && certAvailable) {
-        // Partial: cert only — show cert signal (4/8), not full score
-        const certScore = operationalRiskScore ? (operationalRiskScore.certScore || 0) : 0;
+        // Partial: cert only — show cert signal (4/8 for 100 days), not full score
+        const certScoreResult = calcOperationalRiskScore(domainSignal, certSignal);
+        const certScore = certScoreResult.certScore || 0;
         scoreDisplay = `<span style="font-weight:700;color:#d97706">${zh ? '部分证据' : 'Partial Evidence'}</span>`;
         signalDetails = `
           <div style="margin-bottom:3px">
