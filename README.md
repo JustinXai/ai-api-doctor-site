@@ -47,15 +47,19 @@ It is **not** a model authenticity judge, nor a long-term monitoring system.
 - 轻量请求下的稳定性与延迟
 - 是否能导出 Cline / Continue 配置
 
-### Short-term Operational Risk Signals (v1.9)
+### Short-term Operational Risk Signals (v1.10)
 
-- Domain registration age (via RDAP)
-- HTTPS certificate first-seen date (via crt.sh)
+Since v1.10, short-term operational risk signals are fetched through the Cloudflare Pages Function `/api/public-signals`, which queries public domain registration, certificate transparency, and Wayback data with caching. The browser no longer directly calls RDAP or crt.sh, reducing CORS and slow-response failures.
+
+- Domain registration age (via RDAP, proxied through Worker)
+- HTTPS certificate first-seen date (via crt.sh, proxied through Worker)
 - Wayback Machine historical snapshot links
 
 **中文：**
 
 短期运营风险信号：根据 Base URL 自动尝试查询域名注册时间和 HTTPS 证书首次发现时间，并给出独立的预充值风险提示。该模块不证明平台一定会跑路或一定不会跑路，也不影响 API 技术评分。
+
+v1.10 起，短期运营风险信号通过 Cloudflare Pages Function `/api/public-signals` 查询公开域名注册、证书透明日志和 Wayback 信息，并缓存结果。浏览器端不再直接请求 RDAP / crt.sh，以减少 CORS 和慢响应问题。
 
 ## What it does not prove
 
@@ -143,6 +147,7 @@ node assets/verify-evidence.js
 node assets/verify-identity.js
 node assets/verify-model-signal-v18.js
 node assets/verify-operational-risk-v19.js
+node assets/verify-public-signals-v110.js
 ```
 
 These scripts are deterministic local checks and do not require real API keys.

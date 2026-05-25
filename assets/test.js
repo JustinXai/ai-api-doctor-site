@@ -771,6 +771,108 @@ function buildOperationalRiskSummary(level, domainSignal, certSignal, zh) {
   return { summary, recommendation, levelLabel: labels[level] };
 }
 
+/**
+ * AI API Doctor v1.10 — Fetch public signals via Worker proxy
+ * Replaces direct browser fetches to rdap.org / crt.sh with
+ * server-side Cloudflare Pages Function to avoid CORS issues.
+ */
+async function fetchPublicSignalsViaWorker(hostname, signal) {
+  const PUBLIC_SIGNALS_ENDPOINT = '/api/public-signals';
+  const WORKER_TIMEOUT_MS = 7000;
+
+  if (!hostname) {
+    return {
+      ok: false,
+      status: 'unknown',
+      domainRegistration: { available: false, error: 'No hostname' },
+      certificateHistory: { available: false, error: 'No hostname' },
+      wayback: { lookupUrl: null, available: false },
+      errors: [{ source: 'worker', message: 'No hostname provided' }]
+    };
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), WORKER_TIMEOUT_MS);
+
+  // If caller provides a signal, compose both
+  let effectiveSignal = controller.signal;
+  if (signal) {
+    // Race between our timeout and caller's abort signal
+    effectiveSignal = anySignal([signal, controller.signal]);
+  }
+
+  const startTime = Date.now();
+
+  try {
+    const resp = await fetch(
+      `${PUBLIC_SIGNALS_ENDPOINT}?hostname=${encodeURIComponent(hostname)}`,
+      { signal: effectiveSignal }
+    );
+
+    clearTimeout(timeoutId);
+
+    const durationMs = Date.now() - startTime;
+
+    if (!resp.ok) {
+      // Non-200 response
+      let errorBody = '';
+      try { errorBody = await resp.text(); } catch (_) {}
+
+      return {
+        ok: false,
+        status: 'unknown',
+        domainRegistration: { available: false, error: `Worker HTTP ${resp.status}` },
+        certificateHistory: { available: false, error: `Worker HTTP ${resp.status}` },
+        wayback: { lookupUrl: null, available: false },
+        errors: [{ source: 'worker', message: `HTTP ${resp.status}: ${errorBody}` }],
+        _durationMs: durationMs
+      };
+    }
+
+    const data = await resp.json();
+
+    return {
+      ok: data.ok === true,
+      status: data.status || 'unknown',
+      domainRegistration: data.domainRegistration || { available: false, error: 'Missing data' },
+      certificateHistory: data.certificateHistory || { available: false, error: 'Missing data' },
+      wayback: data.wayback || { lookupUrl: null, available: false },
+      errors: data.errors || [],
+      _cached: data.cached || false,
+      _durationMs: durationMs
+    };
+
+  } catch (err) {
+    clearTimeout(timeoutId);
+    const durationMs = Date.now() - startTime;
+    const isTimeout = err.name === 'AbortError';
+
+    return {
+      ok: false,
+      status: 'unknown',
+      domainRegistration: { available: false, error: isTimeout ? 'Worker timeout' : err.message },
+      certificateHistory: { available: false, error: isTimeout ? 'Worker timeout' : err.message },
+      wayback: { lookupUrl: null, available: false },
+      errors: [{ source: 'worker', message: isTimeout ? 'Worker timeout' : err.message }],
+      _durationMs: durationMs
+    };
+  }
+}
+
+/**
+ * Combine multiple AbortSignals into one.
+ * Returns a signal that aborts when ANY of the input signals abort.
+ */
+function anySignal(signals) {
+  const controller = new AbortController();
+  signals.forEach(sig => {
+    if (sig && sig.addEventListener) {
+      sig.addEventListener('abort', () => controller.abort(), { once: true });
+    }
+  });
+  return controller.signal;
+}
+
 function showToast(msg) {
   const toast = document.getElementById('toast');
   if (!toast) return;
@@ -5150,40 +5252,67 @@ window.Doctor = {
         } catch (_) {}
       }
 
-      // Operational Risk (v1.9) — parallel, separate from main flow
+      // Operational Risk (v1.10) — via Worker proxy, parallel with main flow
       const stepOrStart = Date.now();
       const hostname = extractHostnameFromBaseUrl(rawBaseUrl);
-      const [domainSignal, certSignal] = await Promise.all([
-        safeTimeoutPromise(
-          hostname ? fetchDomainRegistrationSignal(hostname, signal) : Promise.resolve({ available: false, hostname, domainQueried: null, createdAt: null, ageDays: null, source: 'rdap.org', lookupUrl: null, error: 'No hostname' }),
-          4000,
-          { available: false, error: 'timeout' },
-          'domainRegistration'
-        ),
-        safeTimeoutPromise(
-          hostname ? fetchCertificateFirstSeenSignal(hostname, signal) : Promise.resolve({ available: false, hostname: null, firstSeenAt: null, firstSeenDays: null, source: 'crt.sh', lookupUrl: null, error: 'No hostname' }),
-          5000,
-          { available: false, error: 'timeout' },
-          'certificateHistory'
-        )
-      ]);
+
+      // v1.10: Use Worker endpoint instead of direct browser fetches
+      let publicSignalsData = {
+        ok: false,
+        status: 'unknown',
+        domainRegistration: { available: false, hostname, domainQueried: null, createdAt: null, ageDays: null, source: 'rdap.org', lookupUrl: null, error: 'Worker not available' },
+        certificateHistory: { available: false, hostname, firstSeenAt: null, firstSeenDays: null, source: 'crt.sh', lookupUrl: null, error: 'Worker not available' },
+        wayback: { lookupUrl: hostname ? `https://web.archive.org/web/*/${hostname}` : null, available: false },
+        errors: [{ source: 'worker', message: 'Worker not called' }],
+        _durationMs: 0,
+        _cached: false
+      };
+
+      try {
+        publicSignalsData = await safeTimeoutPromise(
+          fetchPublicSignalsViaWorker(hostname, signal),
+          7000,
+          {
+            ok: false,
+            status: 'unknown',
+            domainRegistration: { available: false, hostname, error: 'Worker timeout' },
+            certificateHistory: { available: false, hostname, error: 'Worker timeout' },
+            wayback: { lookupUrl: hostname ? `https://web.archive.org/web/*/${hostname}` : null },
+            errors: [{ source: 'worker', message: 'Worker timeout' }],
+            _durationMs: 7000
+          },
+          'publicSignalsWorker'
+        );
+      } catch (_) {
+        // Worker call failed, use fallback
+      }
+
       stepTimings.operationalRisk = Date.now() - stepOrStart;
-      const operationalRiskScore = calcOperationalRiskScore(domainSignal, certSignal);
-      const waybackUrl = hostname ? `https://web.archive.org/web/*/${hostname}` : null;
+
+      const { domainRegistration, certificateHistory, wayback, errors } = publicSignalsData;
+      const operationalRiskScore = calcOperationalRiskScore(domainRegistration, certificateHistory);
+      const waybackUrl = wayback && wayback.lookupUrl ? wayback.lookupUrl : (hostname ? `https://web.archive.org/web/*/${hostname}` : null);
+
       const operationalRisk = {
         enabled: true,
         affectsApiScore: false,
         hostname,
-        domainQueried: domainSignal.domainQueried || null,
+        domainQueried: domainRegistration && domainRegistration.domainQueried ? domainRegistration.domainQueried : null,
         score: operationalRiskScore.score,
         max: operationalRiskScore.max,
         level: operationalRiskScore.level,
-        domainRegistration: domainSignal,
-        certificateHistory: certSignal,
+        domainRegistration: domainRegistration,
+        certificateHistory: certificateHistory,
         waybackUrl,
-        summary: buildOperationalRiskSummary(operationalRiskScore.level, domainSignal, certSignal, zh).summary,
-        recommendation: buildOperationalRiskSummary(operationalRiskScore.level, domainSignal, certSignal, zh).recommendation,
-        levelLabel: buildOperationalRiskSummary(operationalRiskScore.level, domainSignal, certSignal, zh).levelLabel
+        summary: buildOperationalRiskSummary(operationalRiskScore.level, domainRegistration, certificateHistory, zh).summary,
+        recommendation: buildOperationalRiskSummary(operationalRiskScore.level, domainRegistration, certificateHistory, zh).recommendation,
+        levelLabel: buildOperationalRiskSummary(operationalRiskScore.level, domainRegistration, certificateHistory, zh).levelLabel,
+        // v1.10 debug fields
+        _publicSignalsViaWorker: true,
+        _publicSignalsCached: publicSignalsData._cached || false,
+        _publicSignalsStatus: publicSignalsData.status || 'unknown',
+        _publicSignalsDurationMs: publicSignalsData._durationMs || 0,
+        _publicSignalsErrors: errors || []
       };
 
       // Build final result
@@ -5220,14 +5349,14 @@ window.Doctor = {
         checkFinishedAt,
         totalCheckDurationMs: checkFinishedAt - checkStartedAt,
         globalTimeoutApplied: globalTimeoutTriggered,
-        stuckPreventionVersion: 'v1.9.3-runtime-fix'
+        stuckPreventionVersion: 'v1.10-public-signals-worker'
       });
       } catch (err) {
         debugScoring = {
           error: 'debugScoring build failed',
           message: String(err && err.message ? err.message : err),
           fallback: true,
-          stuckPreventionVersion: 'v1.9.3-runtime-fix'
+          stuckPreventionVersion: 'v1.10-public-signals-worker'
         };
       }
 
@@ -5340,7 +5469,7 @@ window.Doctor = {
         failureSummary: null,
         debugScoring: {
           globalTimeoutApplied: true,
-          stuckPreventionVersion: 'v1.9.3-runtime-fix'
+          stuckPreventionVersion: 'v1.10-public-signals-worker'
         },
         operationalRisk: null
       };
