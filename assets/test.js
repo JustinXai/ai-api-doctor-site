@@ -1456,8 +1456,7 @@ async function makeApiCall(baseUrl, apiKey, model, interfaceType, prompt, maxTok
   const effectiveTimeout = timeoutMs || 12000;
   try {
     const req = buildRequest(baseUrl, apiKey, model, interfaceType, prompt, { maxTokens, temperature });
-    const resp = await fetchWithTimeout(req.endpoint, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body), signal }, effectiveTimeout)
-                            : await fetch(req.endpoint, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body), signal });
+    const resp = await fetchWithTimeout(req.endpoint, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body), signal }, effectiveTimeout);
     // Use safeReadJson to ensure JSON parsing doesn't block indefinitely
     const jsonResult = await safeReadJson(resp, 5000, {}, 'makeApiCall');
     const data = jsonResult.ok ? jsonResult.data : {};
