@@ -645,12 +645,28 @@ function calcOperationalRiskScore(domainSignal, certSignal) {
   const MAX_VERIFIABILITY = 2;
   const MAX_SCORE = MAX_DOMAIN + MAX_CERT + MAX_VERIFIABILITY; // 20
 
+  const domainAvailable = domainSignal && domainSignal.available === true;
+  const certAvailable = certSignal && certSignal.available === true;
+
+  // Both unavailable → not scored
+  if (!domainAvailable && !certAvailable) {
+    return {
+      score: null,
+      max: MAX_SCORE,
+      domainScore: 0,
+      certScore: 0,
+      verifiabilityScore: 0,
+      level: 'unknown',
+      scored: false
+    };
+  }
+
   let domainScore = 0;
   let certScore = 0;
   let verifiabilityScore = 0;
 
   // Domain registration score (10 pts)
-  if (domainSignal.available && domainSignal.ageDays !== null) {
+  if (domainAvailable && domainSignal.ageDays !== null) {
     const days = domainSignal.ageDays;
     if (days >= 1095) domainScore = 10;
     else if (days >= 365) domainScore = 8;
@@ -659,12 +675,11 @@ function calcOperationalRiskScore(domainSignal, certSignal) {
     else if (days >= 30) domainScore = 2;
     else domainScore = 0;
   } else {
-    // Neutral score when unavailable
-    domainScore = 5;
+    domainScore = 0;
   }
 
   // Certificate first-seen score (8 pts)
-  if (certSignal.available && certSignal.firstSeenDays !== null) {
+  if (certAvailable && certSignal.firstSeenDays !== null) {
     const days = certSignal.firstSeenDays;
     if (days >= 365) certScore = 8;
     else if (days >= 180) certScore = 6;
@@ -672,32 +687,23 @@ function calcOperationalRiskScore(domainSignal, certSignal) {
     else if (days >= 30) certScore = 2;
     else certScore = 0;
   } else {
-    // Neutral score when unavailable
-    certScore = 4;
+    certScore = 0;
   }
 
   // Verifiability score (2 pts)
-  const domainAvailable = domainSignal.available;
-  const certAvailable = certSignal.available;
   if (domainAvailable && certAvailable) {
     verifiabilityScore = 2;
   } else if (domainAvailable || certAvailable) {
     verifiabilityScore = 1;
-  } else {
-    verifiabilityScore = 0;
   }
 
   const totalScore = domainScore + certScore + verifiabilityScore;
 
   // Determine level
   let level = 'unknown';
-  if (domainAvailable || certAvailable) {
-    if (totalScore >= 16) level = 'low';
-    else if (totalScore >= 10) level = 'medium';
-    else level = 'high';
-  } else {
-    level = 'unknown';
-  }
+  if (totalScore >= 16) level = 'low';
+  else if (totalScore >= 10) level = 'medium';
+  else level = 'high';
 
   return {
     score: totalScore,
@@ -705,7 +711,8 @@ function calcOperationalRiskScore(domainSignal, certSignal) {
     domainScore,
     certScore,
     verifiabilityScore,
-    level
+    level,
+    scored: true
   };
 }
 
@@ -4825,16 +4832,29 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo, operationalRis
       ` : '';
 
       // Score display
-      const scoreDisplay = operationalRisk.score !== null
-        ? `<span style="font-weight:700">${operationalRisk.score}/${operationalRisk.max}</span>`
-        : `<span style="font-weight:700;color:#94a3b8">${zh ? '未确认' : 'Unconfirmed'}</span>`;
+      const scored = operationalRisk.scored !== false;
+      const confidence = operationalRisk.confidence || 'none';
+      const isPartial = confidence === 'partial';
+      const isUnknown = !scored || confidence === 'none';
+
+      let scoreDisplay = '';
+      if (isUnknown) {
+        scoreDisplay = `<span style="font-weight:700;color:#94a3b8">${zh ? '未评分' : 'Not Scored'}</span>`;
+      } else {
+        const suffix = isPartial ? `<span style="font-size:9px;color:#d97706"> ${zh ? '（仅基于部分公开信号）' : '(partial)'}</span>` : '';
+        scoreDisplay = `<span style="font-weight:700">${operationalRisk.score}/${operationalRisk.max}</span>${suffix}`;
+      }
+
+      // Title with partial indicator
+      const titleSuffix = isPartial ? (zh ? '（部分确认）' : ' (Partial)') : '';
+      const title = `${zh ? '短期运营风险信号' : 'Short-term Operational Risk Signals'}${titleSuffix}`;
 
       return `
         <div style="background:${lc.bg};border:1px solid ${lc.border};border-radius:12px;padding:12px 14px;margin-bottom:10px">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-            <div style="font-size:12px;font-weight:700;color:${lc.color}">${zh ? '短期运营风险信号' : 'Short-term Operational Risk Signals'}</div>
+            <div style="font-size:12px;font-weight:700;color:${lc.color}">${title}</div>
             <span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;color:${lc.color};background:#fff;border:1px solid ${lc.border}">${levelLabel}</span>
-            ${operationalRisk.score !== null ? `<span style="font-size:10px;color:#64748b">${scoreDisplay}</span>` : ''}
+            ${scoreDisplay}
           </div>
           <div style="font-size:10px;color:#374151;margin-bottom:6px">
             <div style="margin-bottom:3px"><span style="font-weight:600;color:#64748b">${zh ? '检测域名：' : 'Domain: '}</span>${escH(operationalRisk.hostname || '—')}</div>
@@ -5293,6 +5313,14 @@ window.Doctor = {
       const operationalRiskScore = calcOperationalRiskScore(domainRegistration, certificateHistory);
       const waybackUrl = wayback && wayback.lookupUrl ? wayback.lookupUrl : (hostname ? `https://web.archive.org/web/*/${hostname}` : null);
 
+      // Derive confidence from Worker status or availability
+      const workerStatus = publicSignalsData.status || 'unknown';
+      const domainAvailable = domainRegistration && domainRegistration.available === true;
+      const certAvailable = certificateHistory && certificateHistory.available === true;
+      const confidence = workerStatus === 'full' ? 'full'
+        : (workerStatus === 'partial' || domainAvailable || certAvailable) ? 'partial'
+        : 'none';
+
       const operationalRisk = {
         enabled: true,
         affectsApiScore: false,
@@ -5301,6 +5329,9 @@ window.Doctor = {
         score: operationalRiskScore.score,
         max: operationalRiskScore.max,
         level: operationalRiskScore.level,
+        scored: operationalRiskScore.scored !== false,
+        confidence,
+        status: workerStatus,
         domainRegistration: domainRegistration,
         certificateHistory: certificateHistory,
         waybackUrl,
