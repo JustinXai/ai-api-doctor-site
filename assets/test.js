@@ -252,6 +252,184 @@ function maskBaseUrlForShare(url) {
 }
 
 /* ═══════════════════════════════════════════════════════
+   Timeout Guard Utilities — v1.9.2
+   Prevent any step from blocking indefinitely
+   ═══════════════════════════════════════════════════════ */
+
+/**
+ * Wraps any promise with a timeout. Always resolves, never rejects.
+ * @param {Promise|Function} promiseOrFn - Promise or async function
+ * @param {number} ms - Timeout in milliseconds
+ * @param {object} fallback - Fallback result to return on timeout
+ * @param {string} label - Step label for debugging
+ * @returns {object} { ok, timeout, skipped, error, durationMs }
+ */
+function safeTimeoutPromise(promiseOrFn, ms, fallback = {}, label = 'step') {
+  const startedAt = Date.now();
+  const defaultFallback = {
+    ok: false,
+    timeout: false,
+    skipped: false,
+    error: null,
+    durationMs: 0,
+    ...fallback
+  };
+
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      const durationMs = Date.now() - startedAt;
+      resolve({
+        ...defaultFallback,
+        ok: false,
+        timeout: true,
+        error: `${label} timeout after ${ms}ms`,
+        durationMs
+      });
+    }, ms);
+
+    Promise.resolve()
+      .then(() => (typeof promiseOrFn === 'function' ? promiseOrFn() : promiseOrFn))
+      .then((result) => {
+        clearTimeout(timer);
+        // Normalize ok: if result already has an explicit ok, preserve it
+        const normalized = normalizeStepResult(result, true);
+        resolve({
+          ...defaultFallback,
+          ...normalized,
+          timeout: false,
+          durationMs: Date.now() - startedAt
+        });
+      })
+      .catch((err) => {
+        clearTimeout(timer);
+        const durationMs = Date.now() - startedAt;
+        resolve({
+          ...defaultFallback,
+          ok: false,
+          timeout: false,
+          error: err && err.name === 'AbortError' ? `${label} aborted` : `${label} error`,
+          durationMs
+        });
+      });
+  });
+}
+
+/**
+ * Normalize step result to preserve explicit ok values.
+ * If result.ok is explicitly set, keep it. Otherwise default to fallbackOk.
+ */
+function normalizeStepResult(result, fallbackOk = true) {
+  if (result && typeof result === 'object') {
+    return {
+      ...result,
+      ok: typeof result.ok === 'boolean' ? result.ok : fallbackOk,
+      timeout: Boolean(result.timeout)
+    };
+  }
+  return { ok: fallbackOk, timeout: false, value: result };
+}
+
+/**
+ * Safe JSON parsing with timeout.
+ */
+async function safeReadJson(response, timeoutMs = 8000, label = 'read json') {
+  return safeTimeoutPromise(
+    () => response.json(),
+    timeoutMs,
+    { ok: false, timeout: true, error: `${label} timeout after ${timeoutMs}ms`, data: null },
+    label
+  );
+}
+
+/**
+ * Safe text reading with truncation.
+ */
+async function safeReadText(response, timeoutMs = 8000, maxLength = 500, label = 'read text') {
+  return safeTimeoutPromise(
+    () => response.text().then(t => t.substring(0, maxLength)),
+    timeoutMs,
+    { ok: false, timeout: true, error: `${label} timeout after ${timeoutMs}ms`, data: null },
+    label
+  );
+}
+
+/**
+ * Safe fetch with automatic AbortController timeout.
+ * @param {string} url - URL to fetch
+ * @param {object} options - Fetch options (without signal)
+ * @param {number} timeoutMs - Timeout in milliseconds (default 20000)
+ * @param {string} label - Label for debugging
+ * @returns {Promise<Response>} - Fetch response
+ */
+async function safeFetch(url, options = {}, timeoutMs = 20000, label = 'fetch') {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const resp = await fetch(url, {
+      ...options,
+      signal: controller.signal
+    });
+    clearTimeout(timer);
+    return resp;
+  } catch (err) {
+    clearTimeout(timer);
+    if (err.name === 'AbortError') {
+      throw new Error(`${label} timeout after ${timeoutMs}ms`);
+    }
+    throw err;
+  }
+}
+
+/**
+ * Run a step with timeout protection.
+ * @param {string} stepName - Name of the step
+ * @param {number} stepIndex - Progress step index (0-based)
+ * @param {number} totalSteps - Total number of steps
+ * @param {Function} fn - Async function to execute
+ * @param {number} timeoutMs - Timeout in milliseconds
+ * @param {object} fallbackResult - Fallback result on timeout
+ * @returns {object} Step result with durationMs
+ */
+async function runStepWithTimeout(stepName, stepIndex, totalSteps, fn, timeoutMs, fallbackResult = {}) {
+  const startedAt = Date.now();
+  const zh = getDocLang() !== 'en';
+
+  // Update progress to running
+  if (typeof _refreshProgressTimeoutSafe === 'function') {
+    _refreshProgressTimeoutSafe(stepIndex, 'running', `${stepName}...`);
+  }
+
+  const result = await safeTimeoutPromise(
+    Promise.resolve().then(fn),
+    timeoutMs,
+    {
+      ok: false,
+      timeout: true,
+      skipped: false,
+      status: 'timeout',
+      summary: `${stepName} ${zh ? '超时未确认' : 'timeout — not confirmed'}`,
+      ...fallbackResult
+    },
+    stepName
+  );
+
+  const durationMs = Date.now() - startedAt;
+
+  // Update progress based on result
+  if (typeof _refreshProgressTimeoutSafe === 'function') {
+    const state = result.timeout ? 'timeout' : result.ok === false ? 'warning' : 'done';
+    _refreshProgressTimeoutSafe(stepIndex, state, result.summary || stepName);
+  }
+
+  return {
+    ...result,
+    durationMs,
+    stepName
+  };
+}
+
+/* ═══════════════════════════════════════════════════════
    Short-term Operational Risk Signals — v1.9
    Domain registration age and HTTPS certificate history
    ═══════════════════════════════════════════════════════ */
@@ -331,7 +509,14 @@ async function fetchDomainRegistrationSignal(hostname, signal) {
     if (!resp.ok) {
       return { available: false, hostname, domainQueried: domainToQuery, createdAt: null, ageDays: null, source: 'rdap.org', lookupUrl, error: `HTTP ${resp.status}` };
     }
-    const data = await resp.json();
+    // Use safeReadJson to ensure JSON parsing doesn't block indefinitely
+    const jsonResult = await safeReadJson(resp, 5000, null, 'rdapJson');
+    let data;
+    if (jsonResult.ok && jsonResult.data) {
+      data = jsonResult.data;
+    } else {
+      return { available: false, hostname, domainQueried: domainToQuery, createdAt: null, ageDays: null, source: 'rdap.org', lookupUrl, error: jsonResult.timeout ? 'JSON parse timeout' : 'JSON parse failed' };
+    }
 
     // Try to find registration date from events array
     let createdAt = null;
@@ -396,7 +581,14 @@ async function fetchCertificateFirstSeenSignal(hostname, signal) {
     if (!resp.ok) {
       return { available: false, hostname, firstSeenAt: null, firstSeenDays: null, source: 'crt.sh', lookupUrl, error: `HTTP ${resp.status}` };
     }
-    const rawText = await resp.text();
+    // Use safeReadText to ensure text reading doesn't block indefinitely
+    const textResult = await safeReadText(resp, 5000, 50000, 'certText');
+    let rawText;
+    if (textResult.ok && textResult.data) {
+      rawText = textResult.data;
+    } else {
+      return { available: false, hostname, firstSeenAt: null, firstSeenDays: null, source: 'crt.sh', lookupUrl, error: textResult.timeout ? 'Text read timeout' : 'Failed to read certificate data' };
+    }
 
     let entries = [];
     try {
@@ -1023,7 +1215,8 @@ async function checkE_TargetCall(baseUrl, apiKey, model, interfaceType, signal) 
   let status = 'excellent';
   try {
     const req = buildRequest(baseUrl, apiKey, model, interfaceType, PROMPT_SHORT, { maxTokens: 50 });
-    const resp = await fetch(req.endpoint, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body), signal });
+    // Use fetchWithTimeout to ensure request doesn't hang indefinitely
+    const resp = await fetchWithTimeout(req.endpoint, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body), signal }, 15000);
     evidence.latencyMs = Date.now() - t0;
     evidence.httpStatus = resp.status;
     evidence.endpoint = req.endpoint;
@@ -1035,9 +1228,21 @@ async function checkE_TargetCall(baseUrl, apiKey, model, interfaceType, signal) 
       else if (resp.status === 404) { status = 'warning'; deductions.push(zh ? '模型端点不存在' : 'Model endpoint not found'); }
       else status = 'warning';
     } else {
-      let data;
-      try { data = await resp.json(); evidence.data = data; evidence.responseParsed = true; }
-      catch (_) { evidence.responseParsed = false; tc3 = 0; deductions.push(zh ? '响应不是合法 JSON' : 'Response is not valid JSON'); status = 'warning'; }
+      // Use safeReadJson to ensure JSON parsing doesn't block indefinitely
+      const jsonResult = await safeReadJson(resp, 5000, null, 'targetCall');
+      const data = jsonResult.ok ? jsonResult.data : null;
+      if (data) {
+        evidence.responseParsed = true;
+        evidence.data = data;
+      } else {
+        evidence.responseParsed = false;
+        evidence.jsonTimeout = jsonResult.timeout;
+        tc3 = 0;
+        deductions.push(jsonResult.timeout 
+          ? (zh ? '响应 JSON 解析超时' : 'Response JSON parse timeout')
+          : (zh ? '响应不是合法 JSON' : 'Response is not valid JSON'));
+        status = 'warning';
+      }
       if (data) {
         const choices = data.choices;
         if (choices && Array.isArray(choices) && choices.length > 0) {
@@ -1247,14 +1452,17 @@ function checkI_ClientConfig(baseUrl, apiKey, model, modelListResult, targetCall
    NEW: makeApiCall helper
    ═══════════════════════════════════════════════════════ */
 async function makeApiCall(baseUrl, apiKey, model, interfaceType, prompt, maxTokens, temperature, signal, timeoutMs) {
+  // Default timeout: 12 seconds if not specified
+  const effectiveTimeout = timeoutMs || 12000;
   try {
     const req = buildRequest(baseUrl, apiKey, model, interfaceType, prompt, { maxTokens, temperature });
-    const resp = timeoutMs ? await fetchWithTimeout(req.endpoint, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body), signal }, timeoutMs)
-                             : await fetch(req.endpoint, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body), signal });
-    let data;
-    try { data = await resp.json(); }
-    catch (_) { data = {}; }
-    return { success: resp.ok, data, status: resp.status };
+    const resp = await fetchWithTimeout(req.endpoint, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body), signal }, effectiveTimeout)
+                            : await fetch(req.endpoint, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body), signal });
+    // Use safeReadJson to ensure JSON parsing doesn't block indefinitely
+    const jsonResult = await safeReadJson(resp, 5000, {}, 'makeApiCall');
+    const data = jsonResult.ok ? jsonResult.data : {};
+    const timeout = jsonResult.timeout;
+    return { success: resp.ok, data, status: resp.status, jsonTimeout: timeout };
   } catch (err) {
     const isTimeout = err.name === 'AbortError' || err.message && err.message.includes('timeout');
     return { success: false, data: {}, status: 0, error: err.message, timeout: isTimeout };
@@ -3144,6 +3352,9 @@ function generateFailureSummary(score, grade, checks) {
     }
   };
 
+  // Get identity category from checks with fallback
+  const identityCategory = getIdentityCategoryFromChecks(checks);
+
   // ── P1: Base URL unreachable ──
   const reachScore = checks.reachability?.score || 0;
   const reachStatus = checks.reachability?.status || 'unknown';
@@ -3294,7 +3505,7 @@ function generateFailureSummary(score, grade, checks) {
     costRisk === 'high' ||
     modelRisk === 'high' ||
     stabRisk === 'high' ||
-    idCat === 'failed' ||
+    identityCategory === 'failed' ||
     reachScore === 0 ||
     authScore === 0 ||
     tcScore < 5
@@ -3303,7 +3514,7 @@ function generateFailureSummary(score, grade, checks) {
   // Do not show when the only reason is cache_skipped / family_match / platform_or_proxy_identity alone
   const onlyLowSeverity = reasons.length > 0 && reasons.every(r =>
     r.code === 'CACHE_SKIPPED' ||
-    (r.code === 'IDENTITY_TEST_FAILED' && idCat !== 'failed' && idCat !== 'empty')
+    (r.code === 'IDENTITY_TEST_FAILED' && identityCategory !== 'failed' && identityCategory !== 'empty')
   );
   if (onlyLowSeverity) {
     return { shouldShow: false, primaryReason: null, secondaryReason: null, reasons: [], shortText: '', detailText: '', displayLabel: null };
@@ -3380,6 +3591,26 @@ function getConfidence(checks) {
    NEW: buildDebugScoring — lightweight debug info for development
    Does NOT expose API key or sensitive response body
    ═══════════════════════════════════════════════════════ */
+
+/**
+ * Get identity category from checks object.
+ * Returns the category from modelSignal, modelIntegrity, or sourceTransparency.
+ * Falls back to 'unknown' if not available.
+ */
+function getIdentityCategoryFromChecks(checks) {
+  if (!checks) return 'unknown';
+  return (
+    checks?.modelSignal?.selfClaim?.category ||
+    checks?.modelSignal?.selfClaim?.type ||
+    checks?.modelSignal?.evidence?.modelSignal?.selfClaim?.type ||
+    checks?.modelIntegrity?.selfClaim?.category ||
+    checks?.modelIntegrity?.evidence?.sourceTransparency?.category ||
+    checks?.modelIntegrity?.evidence?.modelIdentityLevel ||
+    checks?.sourceTransparency?.category ||
+    'unknown'
+  );
+}
+
 function buildDebugScoring(rawScore, cappedScore, checks, breakdown, extra = {}) {
   const { scoreConsistencyCheck, breakdownTotalRaw, gradeScore, capApplied, capReason, operationalRisk } = extra;
   const authEvidence = checks.auth?.evidence || {};
@@ -3409,6 +3640,7 @@ function buildDebugScoring(rawScore, cappedScore, checks, breakdown, extra = {})
   const stabilityRisk = getStabilityRiskLevel(checks.stability?.score || 0, checks);
   const successSamples = (checks.stability?.evidence?.samples || []).filter(s => s.ok && s.hasContent).length;
   const targetWorks = (checks.targetCall?.score || 0) >= 11;
+  const identityCategory = getIdentityCategoryFromChecks(checks);
   // Determine primary reason code
   let primaryReasonCode = 'OK';
   if (hasCoreChat401) primaryReasonCode = 'CORE_AUTH_401';
@@ -4608,6 +4840,7 @@ async function saveDiagnosticImage() {
 window.Doctor = {
   _result: null, _formData: null, _controller: null, _interfaceType: 'OpenAI Chat', _deepMode: false,
   _userInputModelId: '', _autoDetectedModelId: '', _autoDetectedOrigin: '', _isProgrammaticModelUpdate: false,
+  _runId: 0,
 
   init() {
     this._interfaceType = 'OpenAI Chat';
@@ -4706,6 +4939,9 @@ window.Doctor = {
     if (!apiKey) { showToast(zh ? '请填写 API Key' : 'Please fill in API Key'); return; }
     if (!model) { showToast(zh ? '请填写 Model ID' : 'Please fill in Model ID'); return; }
     const requestBaseUrl = this.getRequestBaseUrl();
+    // Increment runId to detect stale responses
+    this._runId = (this._runId || 0) + 1;
+    const runId = this._runId;
     if (this._controller) this._controller.abort();
     this._controller = new AbortController();
     const btn = document.getElementById('doctor-run-btn');
@@ -4715,17 +4951,70 @@ window.Doctor = {
     if (resultNode) resultNode.innerHTML = '';
     // Store both raw and normalized URLs
     this._formData = { baseUrl: requestBaseUrl, rawBaseUrl, model, interfaceType: this._interfaceType };
+    this._runId = runId; // Re-assign to ensure latest runId is stored
+
+    // Step timing tracking
+    const stepTimings = {};
+    const stepTimeouts = {};
+    const checkStartedAt = Date.now();
+    let globalTimeoutTriggered = false;
+
+    // Timeout budgets per step (ms)
+    const STEP_TIMEOUTS = {
+      reachability: 10000,
+      auth: 15000,
+      modelList: 12000,
+      modelSelection: 15000,
+      operationalRisk: 6000,
+      usageTransparency: 20000,
+      cacheSignal: 25000,
+      modelSignal: 30000,
+      stability: 45000
+    };
+    const GLOBAL_TIMEOUT = 90000; // 90 seconds total
+
+    // Global timeout controller
+    const globalController = new AbortController();
+    const globalTimer = setTimeout(() => {
+      globalTimeoutTriggered = true;
+      globalController.abort();
+      showToast(zh ? '检测总时长超时，正在生成部分报告...' : 'Global timeout — generating partial report...');
+    }, GLOBAL_TIMEOUT);
+
     this.showProgress('running', deepMode);
     try {
       const signal = this._controller.signal;
+
+      // Step 0 & 1: Reachability + Auth (parallel)
+      const step0Start = Date.now();
       this._refreshProgress(0, 'running');
       this._refreshProgress(1, 'running');
-      const [reachResult, authResult] = await Promise.all([checkA_Reachability(requestBaseUrl, apiKey, signal), checkB_Auth(requestBaseUrl, apiKey, signal)]);
-      this._refreshProgress(0, reachResult.status, reachResult.summary);
-      this._refreshProgress(1, authResult.status, authResult.summary);
+      const [reachResult, authResult] = await Promise.all([
+        safeTimeoutPromise(checkA_Reachability(requestBaseUrl, apiKey, signal), STEP_TIMEOUTS.reachability, { status: 'timeout', summary: zh ? 'API可达性检测超时' : 'Reachability timeout' }, 'reachability'),
+        safeTimeoutPromise(checkB_Auth(requestBaseUrl, apiKey, signal), STEP_TIMEOUTS.auth, { status: 'timeout', summary: zh ? '鉴权检测超时' : 'Auth timeout' }, 'auth')
+      ]);
+      stepTimings.reachability = Date.now() - step0Start;
+      stepTimings.auth = Date.now() - step0Start;
+      stepTimeouts.reachability = Boolean(reachResult.timeout);
+      stepTimeouts.auth = Boolean(authResult.timeout);
+      this._refreshProgress(0, reachResult.status || 'warning', reachResult.summary);
+      this._refreshProgress(1, authResult.status || 'warning', authResult.summary);
+
+      // Step 2: Model List
+      const step2Start = Date.now();
       this._refreshProgress(2, 'running');
-      const modelListResult = await checkC_ModelList(requestBaseUrl, apiKey, signal, model);
-      this._refreshProgress(2, modelListResult.status, modelListResult.summary);
+      const modelListResult = await safeTimeoutPromise(
+        checkC_ModelList(requestBaseUrl, apiKey, signal, model),
+        STEP_TIMEOUTS.modelList,
+        { status: 'timeout', summary: zh ? '模型列表获取超时' : 'Model list timeout' },
+        'modelList'
+      );
+      stepTimings.modelList = Date.now() - step2Start;
+      stepTimeouts.modelList = Boolean(modelListResult.timeout);
+      this._refreshProgress(2, modelListResult.status || 'warning', modelListResult.summary);
+
+      // Model Selection (step 3)
+      const step3Start = Date.now();
       let probedModelId = '';
       if (!this._userInputModelId && !this._autoDetectedModelId) {
         const allModels = extractModels(modelListResult?.data || {});
@@ -4734,58 +5023,152 @@ window.Doctor = {
           const probeModel = chatModels[0] || allModels[0];
           try {
             const req = buildRequest(requestBaseUrl, apiKey, probeModel, this._interfaceType, PROMPT_SHORT, { maxTokens: 10 });
-            const resp = await fetch(req.endpoint, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body), signal });
+            const resp = await safeFetch(req.endpoint, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body), signal }, 12000, 'modelProbe');
             if (resp.ok) probedModelId = probeModel;
           } catch (_) {}
         }
       }
       const modelIdInfo = determineFinalTestModelId(this._userInputModelId, this._autoDetectedModelId || probedModelId, modelListResult);
       this._modelIdInfo = modelIdInfo;
-      const autoModelResult = await checkD_AutoModel(requestBaseUrl, apiKey, modelIdInfo, authResult, signal, this._interfaceType);
-      this._refreshProgress(3, autoModelResult.status, autoModelResult.summary);
+      const autoModelResult = await safeTimeoutPromise(
+        checkD_AutoModel(requestBaseUrl, apiKey, modelIdInfo, authResult, signal, this._interfaceType),
+        STEP_TIMEOUTS.modelSelection,
+        { status: 'timeout', summary: zh ? '模型选择检测超时' : 'Model selection timeout' },
+        'modelSelection'
+      );
+      stepTimings.modelSelection = Date.now() - step3Start;
+      stepTimeouts.modelSelection = Boolean(autoModelResult.timeout);
+      this._refreshProgress(3, autoModelResult.status || 'warning', autoModelResult.summary);
+
+      // Check global timeout before continuing
+      if (globalTimeoutTriggered) {
+        throw new Error('Global timeout reached');
+      }
+
+      // Step 4: Target Call
+      const step4Start = Date.now();
       this._refreshProgress(4, 'running');
-      const targetCallResult = await checkE_TargetCall(requestBaseUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal);
-      this._refreshProgress(4, targetCallResult.status, targetCallResult.summary);
+      const targetCallResult = await safeTimeoutPromise(
+        checkE_TargetCall(requestBaseUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal),
+        20000,
+        { status: 'timeout', summary: zh ? '目标模型调用超时' : 'Target call timeout' },
+        'targetCall'
+      );
+      stepTimings.targetCall = Date.now() - step4Start;
+      stepTimeouts.targetCall = Boolean(targetCallResult.timeout);
+      this._refreshProgress(4, targetCallResult.status || 'warning', targetCallResult.summary);
+
+      // Step 5: Cost Transparency
+      const step5Start = Date.now();
       this._refreshProgress(5, 'running');
-      const costResult = await checkJ_CostTransparency(requestBaseUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult);
-      this._refreshProgress(5, costResult.status, costResult.summary);
+      const costResult = await safeTimeoutPromise(
+        checkJ_CostTransparency(requestBaseUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult),
+        STEP_TIMEOUTS.usageTransparency,
+        { status: 'timeout', summary: zh ? 'usage检测超时，无法确认扣费透明度' : 'Usage check timeout — cannot confirm billing transparency' },
+        'usageTransparency'
+      );
+      stepTimings.usageTransparency = Date.now() - step5Start;
+      stepTimeouts.usageTransparency = Boolean(costResult.timeout);
+      this._refreshProgress(5, costResult.status || 'warning', costResult.summary);
+
+      // Check global timeout before expensive operations
+      if (globalTimeoutTriggered) {
+        throw new Error('Global timeout reached');
+      }
+
+      // Cache Check (part of step 5)
+      const cacheStart = Date.now();
       const cacheInitMsg = zh ? '缓存命中检测中，超时将自动跳过...' : 'Checking cache hit signal. This step will auto-skip on timeout...';
       const elCache = document.getElementById('prog-detail-5');
       if (elCache) elCache.textContent = cacheInitMsg;
-      let cacheSlowTimer;
-      const slowMsg = zh ? '缓存检测较慢，正在等待上游响应...' : 'Cache probe is slower than expected. Waiting for upstream response...';
-      cacheSlowTimer = setTimeout(() => {
-        const el = document.getElementById('prog-detail-5');
-        if (el) el.textContent = slowMsg;
-      }, 8000);
-      const cacheResult = await checkN_CacheHitCheck(requestBaseUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult);
-      clearTimeout(cacheSlowTimer);
-      this._refreshProgress(5, cacheResult.status, cacheResult.summary);
+      const cacheResult = await safeTimeoutPromise(
+        checkN_CacheHitCheck(requestBaseUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult),
+        STEP_TIMEOUTS.cacheSignal,
+        { status: 'skipped', summary: zh ? '缓存命中检测超时，无法确认缓存信号' : 'Cache check timeout — cannot confirm cache signal' },
+        'cacheSignal'
+      );
+      stepTimings.cacheSignal = Date.now() - cacheStart;
+      stepTimeouts.cacheSignal = Boolean(cacheResult.timeout);
+      this._refreshProgress(5, cacheResult.status || 'warning', cacheResult.summary);
+
+      // Step 6: Model Signal
+      const step6Start = Date.now();
       this._refreshProgress(6, 'running');
-      const modelSignalResult = await checkK_ModelSignal(requestBaseUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult, modelIdInfo);
-      this._refreshProgress(6, modelSignalResult.status, modelSignalResult.summary);
+      const modelSignalResult = await safeTimeoutPromise(
+        checkK_ModelSignal(requestBaseUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult, modelIdInfo),
+        STEP_TIMEOUTS.modelSignal,
+        { status: 'timeout', summary: zh ? '轻量能力烟测部分超时，建议稍后复测' : 'Model capability smoke tests partial timeout — retest later' },
+        'modelSignal'
+      );
+      stepTimings.modelSignal = Date.now() - step6Start;
+      stepTimeouts.modelSignal = Boolean(modelSignalResult.timeout);
+      this._refreshProgress(6, modelSignalResult.status || 'warning', modelSignalResult.summary);
+
+      // Check global timeout before stability
+      if (globalTimeoutTriggered) {
+        throw new Error('Global timeout reached');
+      }
+
+      // Step 7: Stability
+      const step7Start = Date.now();
       this._refreshProgress(7, 'running');
-      const stabilityResult = await checkG_Stability(requestBaseUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult);
-      this._refreshProgress(7, stabilityResult.status, stabilityResult.summary);
-      // Internal: usage audit (no visible progress)
-      const usageResult = await checkH_UsageAudit(requestBaseUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult);
+      const stabilityResult = await safeTimeoutPromise(
+        checkG_Stability(requestBaseUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult),
+        STEP_TIMEOUTS.stability,
+        { status: 'timeout', summary: zh ? '部分稳定性采样超时，结果仅基于已完成样本' : 'Some stability samples timed out — results based on completed samples only' },
+        'stability'
+      );
+      stepTimings.stability = Date.now() - step7Start;
+      stepTimeouts.stability = Boolean(stabilityResult.timeout);
+      this._refreshProgress(7, stabilityResult.status || 'warning', stabilityResult.summary);
+
+      // Usage Audit (internal)
+      const usageResult = await safeTimeoutPromise(
+        checkH_UsageAudit(requestBaseUrl, apiKey, modelIdInfo.finalTestModelId, this._interfaceType, signal, targetCallResult),
+        15000,
+        { status: 'skipped' },
+        'usageAudit'
+      );
+
+      // Step 8: Basic Compatibility + Client Config
       this._refreshProgress(8, 'running');
       const basicCompatResult = checkL_BasicCompatibility(reachResult, authResult, modelListResult, targetCallResult);
       const clientResult = checkI_ClientConfig(requestBaseUrl, apiKey, modelIdInfo.finalTestModelId, modelListResult, targetCallResult);
       const combinedState = basicCompatResult.status === 'excellent' && clientResult.status === 'excellent' ? 'excellent' : basicCompatResult.status === 'failed' || clientResult.status === 'failed' ? 'warning' : 'good';
+      stepTimings.basicCompat = 0;
       this._refreshProgress(8, combinedState, `${basicCompatResult.summary} / ${clientResult.summary}`);
-      // Tool calling is tested internally (deep mode) but not a visible progress step
+
+      // Tool calling (deep mode)
       let toolCallingResult = null;
       if (deepMode) {
-        try { toolCallingResult = await checkM_ToolCalling(requestBaseUrl, apiKey, modelIdInfo.finalTestModelId, signal); } catch (_) {}
+        try {
+          toolCallingResult = await safeTimeoutPromise(
+            checkM_ToolCalling(requestBaseUrl, apiKey, modelIdInfo.finalTestModelId, signal),
+            20000,
+            { status: 'skipped' },
+            'toolCalling'
+          );
+        } catch (_) {}
       }
 
-      // Short-term operational risk checks (v1.9) — parallel, non-blocking
+      // Operational Risk (v1.9) — parallel, separate from main flow
+      const stepOrStart = Date.now();
       const hostname = extractHostnameFromBaseUrl(rawBaseUrl);
       const [domainSignal, certSignal] = await Promise.all([
-        hostname ? fetchDomainRegistrationSignal(hostname, signal) : Promise.resolve({ available: false, hostname, domainQueried: null, createdAt: null, ageDays: null, source: 'rdap.org', lookupUrl: null, error: 'No hostname extracted' }),
-        hostname ? fetchCertificateFirstSeenSignal(hostname, signal) : Promise.resolve({ available: false, hostname: null, firstSeenAt: null, firstSeenDays: null, source: 'crt.sh', lookupUrl: null, error: 'No hostname extracted' })
+        safeTimeoutPromise(
+          hostname ? fetchDomainRegistrationSignal(hostname, signal) : Promise.resolve({ available: false, hostname, domainQueried: null, createdAt: null, ageDays: null, source: 'rdap.org', lookupUrl: null, error: 'No hostname' }),
+          4000,
+          { available: false, error: 'timeout' },
+          'domainRegistration'
+        ),
+        safeTimeoutPromise(
+          hostname ? fetchCertificateFirstSeenSignal(hostname, signal) : Promise.resolve({ available: false, hostname: null, firstSeenAt: null, firstSeenDays: null, source: 'crt.sh', lookupUrl: null, error: 'No hostname' }),
+          5000,
+          { available: false, error: 'timeout' },
+          'certificateHistory'
+        )
       ]);
+      stepTimings.operationalRisk = Date.now() - stepOrStart;
       const operationalRiskScore = calcOperationalRiskScore(domainSignal, certSignal);
       const waybackUrl = hostname ? `https://web.archive.org/web/*/${hostname}` : null;
       const operationalRisk = {
@@ -4804,31 +5187,166 @@ window.Doctor = {
         levelLabel: buildOperationalRiskSummary(operationalRiskScore.level, domainSignal, certSignal, zh).levelLabel
       };
 
+      // Build final result
+      const checkFinishedAt = Date.now();
+      // Check if this run is still the current one (not superseded by a newer run)
+      if (runId !== this._runId) {
+        clearTimeout(globalTimer);
+        return; // Silently ignore stale results
+      }
       const checks = { reachability: reachResult, auth: authResult, modelList: modelListResult, autoModel: autoModelResult, targetCall: targetCallResult, stability: stabilityResult, usageAudit: usageResult, costTransparency: costResult, cacheHitCheck: cacheResult, modelSignal: modelSignalResult, basicCompatibility: basicCompatResult, clientConfig: clientResult };
       const { totalScore, gradeScore, breakdown, breakdownTotalRaw, scoreConsistencyCheck } = calcFinalScore(checks);
-      // Apply cap based on normalized gradeScore, then convert to sum-based capped score
       const capResult = applyCaps(gradeScore, checks, modelIdInfo);
       const cappedGradeScore = extractCappedScore(capResult);
       const capApplied = capResult && capResult.capApplied === true;
-      // Convert capped grade score back to sum-based (same ratio as original)
       const cappedScore = capApplied ? Math.round((cappedGradeScore / 100) * breakdownTotalRaw * 10) / 10 : totalScore;
       const grade = getScoreGrade(cappedGradeScore);
       const judgment = getJudgment(cappedGradeScore, checks);
       const failureSummary = generateFailureSummary(cappedGradeScore, grade, checks);
-      const debugScoring = buildDebugScoring(totalScore, cappedGradeScore, checks, breakdown, { scoreConsistencyCheck, breakdownTotalRaw, gradeScore, cappedGradeScore, capApplied, capReason: capResult?.capReason });
-      this._result = { score: cappedScore, totalScore, breakdown, capApplied, capReason: capResult?.capReason || null, capLimit: capResult?.capLimit || null, grade, judgment, checks, deepMode, toolCallingResult, modelIdInfo, reportId: generateReportId(), timestamp: new Date().toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }), failureSummary, debugScoring, operationalRisk };
+
+      // Add step timing to debugScoring
+      let debugScoring;
+      try {
+        debugScoring = buildDebugScoring(totalScore, cappedGradeScore, checks, breakdown, {
+        scoreConsistencyCheck,
+        breakdownTotalRaw,
+        gradeScore,
+        cappedGradeScore,
+        capApplied,
+        capReason: capResult?.capReason,
+        operationalRisk,
+        stepTimings,
+        stepTimeouts,
+        checkStartedAt,
+        checkFinishedAt,
+        totalCheckDurationMs: checkFinishedAt - checkStartedAt,
+        globalTimeoutApplied: globalTimeoutTriggered,
+        stuckPreventionVersion: 'v1.9.3-runtime-fix'
+      });
+      } catch (err) {
+        debugScoring = {
+          error: 'debugScoring build failed',
+          message: String(err && err.message ? err.message : err),
+          fallback: true,
+          stuckPreventionVersion: 'v1.9.3-runtime-fix'
+        };
+      }
+
+      this._result = {
+        score: cappedScore,
+        totalScore,
+        breakdown,
+        capApplied,
+        capReason: capResult?.capReason || null,
+        capLimit: capResult?.capLimit || null,
+        grade,
+        judgment,
+        checks,
+        deepMode,
+        toolCallingResult,
+        modelIdInfo,
+        reportId: generateReportId(),
+        timestamp: new Date().toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
+        failureSummary,
+        debugScoring,
+        operationalRisk,
+        _runId: runId
+      };
+
+      clearTimeout(globalTimer);
       this._refreshProgress(8, 'excellent', zh ? '生成报告' : 'Report ready');
-      this.showResult(this._result);
+      try {
+        this.showResult(this._result);
+      } catch (err) {
+        // Report rendering failed - try to show minimal result
+        console.error('Report rendering error:', err);
+        this._showMinimalResult(this._result, err);
+      }
     } catch (err) {
-      if (err.name === 'AbortError') showToast(zh ? '检测超时，请重试' : 'Check timed out, please retry');
-      else showToast(zh ? '检测失败：' + err.message : 'Check failed: ' + err.message);
+      clearTimeout(globalTimer);
+      if (runId !== this._runId) return; // Ignore stale errors
+      if (err.name === 'AbortError' || err.message === 'Global timeout reached') {
+        showToast(zh ? '检测超时，正在生成部分报告...' : 'Timeout — generating partial report...');
+        // Try to generate partial report with what we have
+        try {
+          this._generatePartialReport();
+        } catch (partialErr) {
+          console.error('Partial report generation failed:', partialErr);
+          this._showMinimalResult(this._result, err);
+        }
+      } else {
+        showToast(zh ? '检测失败：' + err.message : 'Check failed: ' + err.message);
+      }
     } finally {
+      clearTimeout(globalTimer);
+      if (runId !== this._runId) return; // Ignore stale cleanup
       if (btn) {
         btn.disabled = false;
         btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> ${deepMode ? (zh ? '深度验货' : 'Deep Check') : (zh ? '一键验货' : 'One-Click')}`;
       }
       this.showProgress('done');
     }
+  },
+
+  // Show minimal result when full rendering fails
+  _showMinimalResult(result, err) {
+    const zh = getDocLang() !== 'en';
+    const resultNode = document.getElementById('result-card');
+    if (!resultNode) return;
+
+    // Build minimal HTML that always renders
+    const score = result?.score != null ? result.score : '?';
+    const gradeLabel = result?.grade?.labelZh || result?.grade?.label || (zh ? '未知' : 'Unknown');
+    const baseUrl = this._formData?.baseUrl || '';
+    const model = this._formData?.model || '';
+
+    resultNode.innerHTML = `
+      <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:12px;padding:16px;margin:16px 0;text-align:center">
+        <div style="font-size:14px;color:#856404;margin-bottom:8px">${zh ? '报告部分生成' : 'Report partially generated'}</div>
+        <div style="font-size:12px;color:#856404">${zh ? '部分 UI 渲染失败' : 'Some UI rendering failed'}</div>
+      </div>
+      <div style="background:#f8fafc;border-radius:12px;padding:24px;margin:16px;text-align:center">
+        <div style="font-size:48px;font-weight:700;color:#1e40af">${score}</div>
+        <div style="font-size:16px;color:#64748b;margin-top:4px">${gradeLabel}</div>
+        <div style="font-size:13px;color:#94a3b8;margin-top:12px">${baseUrl}</div>
+        <div style="font-size:13px;color:#94a3b8">${model}</div>
+      </div>
+      <div style="text-align:center;padding:16px">
+        <div style="font-size:12px;color:#f59e0b">${zh ? '错误：' : 'Error:'} ${err && err.message ? err.message : String(err || '')}</div>
+      </div>
+    `;
+  },
+
+  // Generate partial report when global timeout is reached
+  _generatePartialReport() {
+    const zh = getDocLang() !== 'en';
+    if (!this._result) {
+      // Minimal partial result
+      const reportId = generateReportId();
+      this._result = {
+        score: null,
+        totalScore: null,
+        breakdown: null,
+        capApplied: false,
+        capReason: 'partial_timeout',
+        capLimit: null,
+        grade: { grade: 'U', label: '未完成', labelZh: '未完成', color: '#94a3b8', bg: '#f1f5f9' },
+        judgment: null,
+        checks: {},
+        deepMode: this._deepMode,
+        toolCallingResult: null,
+        modelIdInfo: this._modelIdInfo,
+        reportId,
+        timestamp: new Date().toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
+        failureSummary: null,
+        debugScoring: {
+          globalTimeoutApplied: true,
+          stuckPreventionVersion: 'v1.9.3-runtime-fix'
+        },
+        operationalRisk: null
+      };
+    }
+    this.showResult(this._result);
   },
 
   clear() {
@@ -4843,6 +5361,8 @@ window.Doctor = {
   showResult(result) {
     const resultNode = document.getElementById('result-card');
     if (!resultNode) return;
+    // Ignore stale results
+    if (result && result._runId !== undefined && result._runId !== this._runId) return;
     const html = buildReportCardHTML(result, this._formData, getDocLang(), this._modelIdInfo, result.operationalRisk);
     resultNode.innerHTML = html;
     const rect = resultNode.getBoundingClientRect();
@@ -4877,9 +5397,9 @@ window.Doctor = {
 
   _refreshProgress(index, state, detail) {
     const zh = getDocLang() !== 'en';
-    const statusColorMap = { excellent: { icon: '#16a34a', bar: '#16a34a', cls: 'prog-row--done' }, good: { icon: '#16a34a', bar: '#16a34a', cls: 'prog-row--done' }, warning: { icon: '#f59e0b', bar: '#f59e0b', cls: 'prog-row--done prog-row--warn' }, failed: { icon: '#dc2626', bar: '#dc2626', cls: 'prog-row--done prog-row--fail' }, skipped: { icon: '#94a3b8', bar: '#94a3b8', cls: 'prog-row--done' }, pending: { icon: '#e2e8f0', bar: '#e2e8f0', cls: '' }, running: { icon: '#2563eb', bar: '#2563eb', cls: 'prog-row--running' }, error: { icon: '#f59e0b', bar: '#f59e0b', cls: 'prog-row--done prog-row--warn' } };
-    const defaultBarWidth = { excellent: '100%', good: '100%', warning: '65%', failed: '25%', skipped: '40%', pending: '0%', running: '30%', error: '40%' };
-    const defaultDetail = { excellent: zh?'优秀':'Excellent', good: zh?'良好':'Good', warning: zh?'注意':'Warning', failed: zh?'失败':'Failed', skipped: zh?'未验证':'Not verified', pending: '', running: zh?'检测中...':'Checking...', error: zh?'未验证':'Not verified' };
+    const statusColorMap = { excellent: { icon: '#16a34a', bar: '#16a34a', cls: 'prog-row--done' }, good: { icon: '#16a34a', bar: '#16a34a', cls: 'prog-row--done' }, warning: { icon: '#f59e0b', bar: '#f59e0b', cls: 'prog-row--done prog-row--warn' }, failed: { icon: '#dc2626', bar: '#dc2626', cls: 'prog-row--done prog-row--fail' }, skipped: { icon: '#94a3b8', bar: '#94a3b8', cls: 'prog-row--done' }, pending: { icon: '#e2e8f0', bar: '#e2e8f0', cls: '' }, running: { icon: '#2563eb', bar: '#2563eb', cls: 'prog-row--running' }, error: { icon: '#f59e0b', bar: '#f59e0b', cls: 'prog-row--done prog-row--warn' }, timeout: { icon: '#f59e0b', bar: '#f59e0b', cls: 'prog-row--done prog-row--warn' } };
+    const defaultBarWidth = { excellent: '100%', good: '100%', warning: '65%', failed: '25%', skipped: '40%', pending: '0%', running: '30%', error: '40%', timeout: '40%' };
+    const defaultDetail = { excellent: zh?'优秀':'Excellent', good: zh?'良好':'Good', warning: zh?'注意':'Warning', failed: zh?'失败':'Failed', skipped: zh?'未验证':'Not verified', pending: '', running: zh?'检测中...':'Checking...', error: zh?'未验证':'Not verified', timeout: zh?'超时':'Timeout' };
     const cfg = statusColorMap[state] || statusColorMap.pending;
     const barW = defaultBarWidth[state] || '0%';
     const dtl = detail || defaultDetail[state] || '';
@@ -4942,7 +5462,7 @@ window.Doctor = {
     const modelRisk = getModelIntegrityRiskLevel(checks?.modelIntegrity?.score || 0, checks?.modelIntegrity?.evidence);
     const stabilityScore = checks?.stability?.score || 0;
     const stabilityRisk = getStabilityRiskLevel(stabilityScore, checks);
-    const identityCategory = checks?.modelIntegrity?.evidence?.modelIdentityLevel || 'exact_match';
+    const identityCategory = getIdentityCategoryFromChecks(checks);
     const isProxyOrPlatform = identityCategory === 'proxy_route_identity' || identityCategory === 'platform_or_proxy_identity';
     const srcLabelMap = {
       exact_match: {zh:'清晰',en:'Clear'}, family_match: {zh:'家族匹配',en:'Family Match'},
