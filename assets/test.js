@@ -717,6 +717,45 @@ function calcOperationalRiskScore(domainSignal, certSignal) {
 }
 
 /**
+ * v1.10.7: Domain age signal scoring — independent of cert signal.
+ * 65 days = 2/10 = medium risk.
+ * Separate from calcOperationalRiskScore which handles the combined 20-point scale.
+ */
+function scoreDomainAgeSignal(ageDays) {
+  if (ageDays == null || !Number.isFinite(ageDays)) {
+    return {
+      score: null,
+      max: 10,
+      level: 'unknown',
+      zhLabel: '未确认',
+      enLabel: 'Unconfirmed'
+    };
+  }
+
+  if (ageDays < 30) {
+    return { score: 0, max: 10, level: 'high', zhLabel: '高风险', enLabel: 'High Risk' };
+  }
+
+  if (ageDays < 60) {
+    return { score: 1, max: 10, level: 'elevated', zhLabel: '偏高风险', enLabel: 'Elevated Risk' };
+  }
+
+  if (ageDays < 120) {
+    return { score: 2, max: 10, level: 'medium', zhLabel: '中等风险', enLabel: 'Medium Risk' };
+  }
+
+  if (ageDays < 365) {
+    return { score: 5, max: 10, level: 'medium_low', zhLabel: '中低风险', enLabel: 'Medium-Low Risk' };
+  }
+
+  if (ageDays < 1095) {
+    return { score: 8, max: 10, level: 'low', zhLabel: '低风险', enLabel: 'Low Risk' };
+  }
+
+  return { score: 10, max: 10, level: 'stable', zhLabel: '较稳定', enLabel: 'More Established' };
+}
+
+/**
  * Generate operational risk summary and recommendation text.
  * v1.10.5: handles partial signals (domain only or cert only) separately
  * from full signals (both available) and unknown (neither available).
@@ -4835,130 +4874,78 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo, operationalRis
       return decisionText ? `<div style="background:${dc.bg};border-radius:8px;padding:6px 12px;margin-bottom:8px;font-size:11px;color:${dc.color};line-height:1.4"><b>${zh ? '使用建议：' : 'Recommendation: '}</b>${escH(decisionText)}</div>` : '';
     })()}
 
-    <!-- Short-term Operational Risk Signals (v1.9) -->
+    <!-- Short-term Operational Risk Signals (v1.10.7 — compact) -->
     ${(() => {
       if (!operationalRisk || !operationalRisk.enabled) return '';
 
-      const level = operationalRisk.level || 'unknown';
-      const levelColors = {
-        high: { color: '#dc2626', bg: '#fee2e2', border: '#fecaca' },
-        medium: { color: '#d97706', bg: '#fef9c3', border: '#fde68a' },
-        low: { color: '#16a34a', bg: '#dcfce7', border: '#bbf7d0' },
-        unknown: { color: '#64748b', bg: '#f1f5f9', border: '#e2e8f0' }
-      };
-      const lc = levelColors[level] || levelColors.unknown;
-      const levelLabel = operationalRisk.levelLabel || level;
-
-      // Domain info
       const domainSignal = operationalRisk.domainRegistration || {};
-      const certSignal = operationalRisk.certificateHistory || {};
-      const domainText = domainSignal.available
-        ? `${domainSignal.ageDays} ${zh ? '天前' : 'days ago'}`
-        : (zh ? '自动查询失败，请手动复核' : 'Auto-lookup failed — please verify manually');
-      const certText = certSignal.available
-        ? `${certSignal.firstSeenDays} ${zh ? '天前' : 'days ago'}`
-        : (zh ? '自动查询失败，请手动复核' : 'Auto-lookup failed — please verify manually');
+      const hostname = operationalRisk.hostname || '';
+      const domainAvailable = domainSignal.available === true;
+      const certAvailable = (operationalRisk.certificateHistory || {}).available === true;
+      const ageDays = domainSignal.ageDays;
 
-      // External links
-      const links = buildOperationalRiskLinks(operationalRisk.hostname || '', operationalRisk.domainQueried || '');
-      const linksSection = operationalRisk.hostname ? `
-        <div style="margin-top:8px;padding-top:8px;border-top:1px dashed #e2e8f0">
-          <div style="font-size:10px;font-weight:600;color:#64748b;margin-bottom:4px">${zh ? '外部查询链接' : 'External Lookup Links'}</div>
-          <div style="display:flex;flex-wrap:wrap;gap:6px">
-            <a href="${links.icannLookup}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:3px 8px;background:#f1f5f9;border-radius:4px;font-size:9px;color:#2563eb;text-decoration:none">ICANN Lookup</a>
-            <a href="${links.rdapLookup}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:3px 8px;background:#f1f5f9;border-radius:4px;font-size:9px;color:#2563eb;text-decoration:none">RDAP</a>
-            <a href="${links.crtShLookup}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:3px 8px;background:#f1f5f9;border-radius:4px;font-size:9px;color:#2563eb;text-decoration:none">crt.sh</a>
-            <a href="${links.waybackLookup}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:3px 8px;background:#f1f5f9;border-radius:4px;font-size:9px;color:#2563eb;text-decoration:none">Wayback</a>
+      // v1.10.7: use scoreDomainAgeSignal for domain-only risk level
+      const domainAgeSignal = domainAvailable ? scoreDomainAgeSignal(ageDays) : null;
+
+      const ageLevel = domainAgeSignal ? domainAgeSignal.level : 'unknown';
+      const ageLabel = domainAgeSignal
+        ? (zh ? domainAgeSignal.zhLabel : domainAgeSignal.enLabel)
+        : (zh ? '未确认' : 'Unconfirmed');
+
+      const levelColors = {
+        high:       { tagColor: '#dc2626', tagBg: '#fee2e2', tagBorder: '#fecaca', cardBg: '#fff', cardBorder: '#fecaca' },
+        elevated:   { tagColor: '#ea580c', tagBg: '#fff7ed', tagBorder: '#fed7aa', cardBg: '#fff', cardBorder: '#fed7aa' },
+        medium:     { tagColor: '#d97706', tagBg: '#fef9c3', tagBorder: '#fde68a', cardBg: '#fff', cardBorder: '#fde68a' },
+        medium_low: { tagColor: '#0891b2', tagBg: '#ecfeff', tagBorder: '#a5f3fc', cardBg: '#fff', cardBorder: '#a5f3fc' },
+        low:        { tagColor: '#16a34a', tagBg: '#f0fdf4', tagBorder: '#bbf7d0', cardBg: '#fff', cardBorder: '#bbf7d0' },
+        stable:     { tagColor: '#15803d', tagBg: '#dcfce7', tagBorder: '#86efac', cardBg: '#fff', cardBorder: '#86efac' },
+        unknown:    { tagColor: '#64748b', tagBg: '#f8fafc', tagBorder: '#e2e8f0', cardBg: '#fff', cardBorder: '#e2e8f0' }
+      };
+      const lc = levelColors[ageLevel] || levelColors.unknown;
+
+      const domainAgeText = domainAvailable
+        ? `${ageDays} ${zh ? '天前' : 'days ago'}`
+        : (zh ? '自动查询失败' : 'Auto-lookup failed');
+
+      const scoreText = domainAgeSignal && domainAgeSignal.score !== null
+        ? `${domainAgeSignal.score}/10`
+        : '';
+
+      const isPartial = domainAvailable && !certAvailable;
+      const partialHint = isPartial ? (zh ? '（部分证据）' : ' (Partial Evidence)') : '';
+
+      // Collapsible links
+      const links = buildOperationalRiskLinks(hostname, operationalRisk.domainQueried || '');
+      const toggleId = `or-links-${reportId || 'r'}`;
+      const linksHtml = hostname ? `
+        <div style="margin-top:6px;padding-top:6px;border-top:1px dashed #e2e8f0">
+          <a href="javascript:void(0)" onclick="var el=document.getElementById('${toggleId}');if(el){el.style.display=el.style.display?'none':'';}" style="font-size:9px;color:#94a3b8;text-decoration:underline">${zh ? '[展开公开查询链接]' : '[Show public lookup links]'}</a>
+          <div id="${toggleId}" style="display:none;margin-top:4px;display:flex;flex-wrap:wrap;gap:4px">
+            <a href="${links.icannLookup}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:2px 6px;background:#f8fafc;border-radius:4px;font-size:9px;color:#2563eb;text-decoration:none;border:1px solid #e2e8f0">ICANN</a>
+            <a href="${links.rdapLookup}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:2px 6px;background:#f8fafc;border-radius:4px;font-size:9px;color:#2563eb;text-decoration:none;border:1px solid #e2e8f0">RDAP</a>
+            <a href="${links.crtShLookup}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:2px 6px;background:#f8fafc;border-radius:4px;font-size:9px;color:#2563eb;text-decoration:none;border:1px solid #e2e8f0">crt.sh</a>
+            <a href="${links.waybackLookup}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:2px 6px;background:#f8fafc;border-radius:4px;font-size:9px;color:#2563eb;text-decoration:none;border:1px solid #e2e8f0">Wayback</a>
           </div>
+          <div style="font-size:8px;color:#94a3b8;margin-top:3px">${zh ? '公开查询链接仅供人工复核，不参与 API 技术评分。' : 'Public lookup links for manual review only.'}</div>
         </div>
       ` : '';
 
-      // Score display — v1.10.6: compute score inline, no external variable refs
-      const scored = operationalRisk.scored !== false;
-      const confidence = operationalRisk.confidence || 'none';
-      const isPartial = confidence === 'partial';
-      const isUnknown = !scored || confidence === 'none';
-      const domainAvailable = domainSignal.available === true;
-      const certAvailable = certSignal.available === true;
-
-      let scoreDisplay = '';
-      let signalDetails = '';
-
-      if (isUnknown) {
-        // Unknown: no full score available
-        scoreDisplay = `<span style="font-weight:700;color:#94a3b8">${zh ? '未评分' : 'Not Scored'}</span>`;
-        signalDetails = `
-          <div style="margin-bottom:3px">
-            <span style="font-weight:600;color:#64748b">${zh ? '完整运营风险评分：' : 'Full Operational Score: '}</span>
-            <span style="color:#94a3b8">${zh ? '未评分' : 'Not available'}</span>
-          </div>`;
-      } else if (isPartial && domainAvailable && !certAvailable) {
-        // Partial: domain only — show domain age signal (2/10 for 65 days), not full score
-        const domainScoreResult = calcOperationalRiskScore(domainSignal, certSignal);
-        const domainScore = domainScoreResult.domainScore || 0;
-        scoreDisplay = `<span style="font-weight:700;color:#d97706">${zh ? '部分证据' : 'Partial Evidence'}</span>`;
-        signalDetails = `
-          <div style="margin-bottom:3px">
-            <span style="font-weight:600;color:#64748b">${zh ? '域名注册时间信号：' : 'Domain Age Signal: '}</span>
-            <span style="font-weight:700;color:${lc.color}">${domainScore}/10</span>
-          </div>
-          <div style="margin-bottom:3px">
-            <span style="font-weight:600;color:#64748b">${zh ? '完整运营风险评分：' : 'Full Operational Score: '}</span>
-            <span style="color:#94a3b8">${zh ? '未评分（需证书历史）' : 'Not available (cert history required)'}</span>
-          </div>`;
-      } else if (isPartial && !domainAvailable && certAvailable) {
-        // Partial: cert only — show cert signal (4/8 for 100 days), not full score
-        const certScoreResult = calcOperationalRiskScore(domainSignal, certSignal);
-        const certScore = certScoreResult.certScore || 0;
-        scoreDisplay = `<span style="font-weight:700;color:#d97706">${zh ? '部分证据' : 'Partial Evidence'}</span>`;
-        signalDetails = `
-          <div style="margin-bottom:3px">
-            <span style="font-weight:600;color:#64748b">${zh ? '证书历史信号：' : 'Cert History Signal: '}</span>
-            <span style="font-weight:700;color:${lc.color}">${certScore}/8</span>
-          </div>
-          <div style="margin-bottom:3px">
-            <span style="font-weight:600;color:#64748b">${zh ? '完整运营风险评分：' : 'Full Operational Score: '}</span>
-            <span style="color:#94a3b8">${zh ? '未评分（需域名注册时间）' : 'Not available (domain reg required)'}</span>
-          </div>`;
-      } else {
-        // Full: both available — show full x/20 score
-        const suffix = isPartial ? `<span style="font-size:9px;color:#d97706"> ${zh ? '（仅基于部分公开信号）' : '(partial)'}</span>` : '';
-        scoreDisplay = `<span style="font-weight:700">${operationalRisk.score}/${operationalRisk.max}</span>${suffix}`;
-      }
-
-      // Title: Partial Evidence indicator
-      const titleSuffix = isPartial ? (zh ? '（部分证据）' : ' (Partial Evidence)') : '';
-      const title = `${zh ? '短期运营风险信号' : 'Short-term Operational Risk Signals'}${titleSuffix}`;
-
-      // Bottom notice: make it more prominent with yellow background for partial
-      const noticeBg = isPartial ? '#fef9c3' : '#fff';
-      const noticeBorder = isPartial ? '#fde68a' : '#e2e8f0';
-      const noticeColor = isPartial ? '#92400e' : '#94a3b8';
+      // Title: compact single line
+      const title = `${zh ? '短期运营风险信号' : 'Short-term Operational Risk Signal'}`;
+      const scoreSuffix = scoreText ? ` ${scoreText}` : '';
 
       return `
-        <div style="background:${lc.bg};border:1px solid ${lc.border};border-radius:12px;padding:12px 14px;margin-bottom:10px">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-            <div style="font-size:12px;font-weight:700;color:${lc.color}">${title}</div>
-            <span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;color:${lc.color};background:#fff;border:1px solid ${lc.border}">${levelLabel}</span>
-            ${scoreDisplay}
+        <div style="background:${lc.cardBg};border:1px solid ${lc.cardBorder};border-radius:8px;padding:8px 10px;margin-bottom:8px">
+          <div style="font-size:10px;color:#374151;line-height:1.6">
+            <div>
+              <span style="font-weight:700;color:${lc.tagColor}">${title}：${ageLabel}${partialHint}${scoreSuffix}</span>
+            </div>
+            <div><span style="font-weight:600;color:#64748b;font-size:9px">${zh ? '检测域名：' : 'Domain: '}</span><span style="font-size:10px">${escH(hostname || '—')}</span></div>
+            <div><span style="font-weight:600;color:#64748b;font-size:9px">${zh ? '域名注册时间：' : 'Domain Registered: '}</span><span style="font-size:10px">${escH(domainAgeText)}</span></div>
+            ${!domainAvailable ? `<div style="font-size:9px;color:#94a3b8">${zh ? '无法自动获取域名注册时间，建议手动复核。' : 'Domain registration age could not be retrieved automatically. Manual review is recommended.'}</div>` : ''}
+            ${linksHtml}
           </div>
-          <div style="font-size:10px;color:#374151;margin-bottom:6px">
-            <div style="margin-bottom:3px"><span style="font-weight:600;color:#64748b">${zh ? '检测域名：' : 'Domain: '}</span>${escH(operationalRisk.hostname || '—')}</div>
-            ${domainAvailable || !certAvailable ? `<div style="margin-bottom:3px"><span style="font-weight:600;color:#64748b">${zh ? '域名注册时间：' : 'Domain Registered: '}</span>${escH(domainText)}</div>` : ''}
-            ${certAvailable || !domainAvailable ? `<div style="margin-bottom:3px"><span style="font-weight:600;color:#64748b">${zh ? '证书首次发现：' : 'Cert First Seen: '}</span>${escH(certText)}</div>` : ''}
-            ${signalDetails}
-          </div>
-          <div style="font-size:11px;color:#374151;line-height:1.5;margin-bottom:6px"><b>${zh ? '结论：' : 'Conclusion: '}</b>${escH(operationalRisk.summary || '')}</div>
-          ${operationalRisk.recommendation ? `<div style="font-size:11px;color:#374151;line-height:1.5;margin-bottom:6px"><b>${zh ? '建议：' : 'Recommendation: '}</b>${escH(operationalRisk.recommendation)}</div>` : ''}
-          ${linksSection}
-          <div style="margin-top:8px;padding:6px 8px;background:${noticeBg};border-radius:6px;font-size:9px;color:${noticeColor};line-height:1.4;border:1px solid ${noticeBorder}">
-            <b>${zh ? '注意：' : 'Note: '}</b>${zh
-              ? '本模块不影响 API 技术总分。'
-              : 'This module does not affect the API technical score.'}${zh
-              ? '' : ' '}${zh
-              ? '提供短期运营风险提示，不证明平台一定会或不会发生运营问题。首次使用仍建议小额测试。'
-              : 'It provides short-term operational risk hints only and does not prove whether a provider will or will not have operational issues. Small test top-ups are still recommended for first-time use.'}
-          </div>
+          <div style="margin-top:4px;font-size:8px;color:#94a3b8">${zh ? '仅基于公开域名注册时间，不影响 API 技术评分。' : 'Based only on public domain registration age. Does not affect the API technical score.'}</div>
         </div>
       `;
     })()}
