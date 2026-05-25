@@ -190,7 +190,7 @@
         "name": "Can AI API Doctor detect whether a relay provider will exit or disappear?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "No. An API key can only test the current technical configuration. It cannot predict whether a provider will exit in the future. AI API Doctor can try to query domain registration age and first-seen HTTPS certificate records from the Base URL and show a separate short-term operational risk signal. If the domain or certificate history is very short, use small test top-ups first and avoid large prepaid balances. Since v1.10, AI API Doctor fetches public domain and certificate signals through a server-side proxy for improved reliability."
+          "text": "No. An API key can only test the current technical configuration. It cannot predict whether a provider will exit in the future. AI API Doctor can try to query domain registration age and first-seen HTTPS certificate records from the Base URL and show a separate short-term operational risk signal. If the domain or certificate history is very short, use small test top-ups first and avoid large prepaid balances. Since v1.10, AI API Doctor fetches public domain and certificate signals through a server-side proxy for improved reliability. Since v1.10.1, the Worker uses registry RDAP for .com/.net and IANA bootstrap for other TLDs; crt.sh is best-effort only. If certificate history fails but domain registration succeeds, the system shows 'Partial' instead of 'Unknown'."
         }
       }
     ]

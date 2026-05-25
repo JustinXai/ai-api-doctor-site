@@ -1,113 +1,89 @@
 /**
- * API Doctor v1.10 — Public Signals Worker
- * Fetches domain registration, certificate history, and Wayback data
- * via server-side proxy to avoid browser CORS and reliability issues.
+ * API Doctor v1.10.1 — Public Signals Worker (Data Source Stability Fix)
  * 
- * Replaces direct browser fetches to rdap.org / crt.sh / archive.org.
+ * Improved RDAP strategy:
+ * 1. Verisign RDAP for .com/.net/.name/.cc (direct)
+ * 2. IANA bootstrap for other TLDs
+ * 3. rdap.org as fallback only
  * 
- * @version 1.10.0
+ * crt.sh is best-effort only, failures don't affect status.
  */
 
 'use strict';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const GLOBAL_TIMEOUT_MS = 7000;
-const RDAP_TIMEOUT_MS = 4000;
-const CRTSH_TIMEOUT_MS = 5000;
-const WAYBACK_TIMEOUT_MS = 2500;
+const VERSION = 'v1.10.1-public-signals-worker';
 
-const CACHE_TTL_SECONDS = 86400; // 24 hours
+// Cache TTLs (seconds)
+const TTL_FULL = 86400;      // 24 hours
+const TTL_PARTIAL = 21600;   // 6 hours
+const TTL_UNKNOWN = 1800;    // 30 minutes
+
+// Timeouts (ms)
+const GLOBAL_TIMEOUT_MS = 8000;
+const RDAP_DIRECT_TIMEOUT_MS = 3500;
+const RDAP_BOOTSTRAP_TIMEOUT_MS = 3000;
+const RDAP_FALLBACK_TIMEOUT_MS = 2500;
+const CRTSH_TIMEOUT_MS = 4000;
+const WAYBACK_TIMEOUT_MS = 2000;
+
+const IANA_BOOTSTRAP_URL = 'https://data.iana.org/rdap/dns.json';
+const IANA_BOOTSTRAP_TTL = 604800; // 7 days
+
 const CACHE_KEY_PREFIX = 'https://aiapidoctor.com/api/public-signals-cache/';
 
-const PUBLIC_SIGNALS_VERSION = 'v1.10-public-signals-worker';
+// ── SSRF Prevention ──────────────────────────────────────────────────────────
 
-// ── SSRF Prevention: hostname validation ─────────────────────────────────────
-
-/**
- * Normalize and validate a hostname for SSRF prevention.
- * @param {string} input
- * @returns {{ok: boolean, hostname: string|null, error: string|null}}
- */
 function normalizeHostname(input) {
   if (!input || typeof input !== 'string') {
     return { ok: false, hostname: null, error: 'Hostname is required' };
   }
 
   let hostname = input.trim().toLowerCase();
-
-  // Remove protocol if present
   hostname = hostname.replace(/^https?:\/\//, '');
-
-  // Remove path, query, fragment, auth
   hostname = hostname.replace(/[/?#].*$/, '');
-
-  // Remove port
   hostname = hostname.replace(/:\d+$/, '');
-
-  // Remove leading/trailing dots and spaces
   hostname = hostname.replace(/^\.+|\.+$/g, '');
 
   if (!hostname) {
-    return { ok: false, hostname: null, error: 'Hostname is empty after normalization' };
+    return { ok: false, hostname: null, error: 'Hostname is empty' };
   }
-
-  // Basic length check (hostname max 253 chars)
   if (hostname.length > 253) {
-    return { ok: false, hostname: null, error: 'Hostname too long (max 253 chars)' };
+    return { ok: false, hostname: null, error: 'Hostname too long' };
   }
-
-  // Check for illegal characters (only allow a-z, 0-9, -, .)
   if (!/^[a-z0-9.-]+$/.test(hostname)) {
-    return { ok: false, hostname: null, error: 'Hostname contains illegal characters' };
+    return { ok: false, hostname: null, error: 'Illegal characters' };
   }
-
-  // Check for spaces
   if (hostname.includes(' ')) {
-    return { ok: false, hostname: null, error: 'Hostname contains whitespace' };
+    return { ok: false, hostname: null, error: 'Contains whitespace' };
   }
-
-  // Block localhost and variations
   if (hostname === 'localhost' || hostname === '::1' || hostname === '0.0.0.0') {
     return { ok: false, hostname: null, error: 'Localhost not allowed' };
   }
-
-  // Block IP addresses
   if (/^(?:10\.|172\.(?:1[6-9]|2[0-9]|3[0-1])\.|192\.168\.|127\.)/.test(hostname)) {
-    return { ok: false, hostname: null, error: 'Private IP range not allowed' };
+    return { ok: false, hostname: null, error: 'Private IP not allowed' };
   }
-
-  // Block *.local
   if (hostname.endsWith('.local') || hostname === 'local') {
-    return { ok: false, hostname: null, error: '.local domain not allowed' };
+    return { ok: false, hostname: null, error: '.local not allowed' };
   }
-
-  // Block IPv4 addresses
   if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)) {
     return { ok: false, hostname: null, error: 'IP address not allowed' };
   }
 
-  // Validate each label (part between dots)
   const labels = hostname.split('.');
   for (const label of labels) {
-    if (!label) {
-      return { ok: false, hostname: null, error: 'Empty label in hostname' };
-    }
-    if (label.length > 63) {
-      return { ok: false, hostname: null, error: 'Label too long (max 63 chars)' };
-    }
+    if (!label) return { ok: false, hostname: null, error: 'Empty label' };
+    if (label.length > 63) return { ok: false, hostname: null, error: 'Label too long' };
     if (label.startsWith('-') || label.endsWith('-')) {
-      return { ok: false, hostname: null, error: 'Label cannot start or end with hyphen' };
-    }
-    if (!/^[a-z0-9-]+$/.test(label)) {
-      return { ok: false, hostname: null, error: 'Label contains illegal characters' };
+      return { ok: false, hostname: null, error: 'Label cannot start/end with hyphen' };
     }
   }
 
   return { ok: true, hostname, error: null };
 }
 
-// ── Domain extraction ─────────────────────────────────────────────────────────
+// ── Domain extraction ────────────────────────────────────────────────────────
 
 const MULTI_SEGMENT_TLDS = new Set([
   'com.cn', 'net.cn', 'org.cn', 'gov.cn', 'edu.cn',
@@ -118,60 +94,187 @@ const MULTI_SEGMENT_TLDS = new Set([
   'co.nz', 'net.nz', 'org.nz', 'com.tw', 'net.tw', 'org.tw'
 ]);
 
-/**
- * Extract registrable domain from hostname.
- * @param {string} hostname
- * @returns {string}
- */
 function guessRegistrableDomain(hostname) {
   if (!hostname) return '';
-
   const parts = hostname.split('.');
-
-  // Handle multi-segment TLDs (e.g., co.uk, com.cn)
   if (parts.length >= 3) {
     const lastTwo = parts.slice(-2).join('.');
     if (MULTI_SEGMENT_TLDS.has(lastTwo)) {
       return parts.slice(-3).join('.');
     }
   }
-
-  // Standard case: return last two parts
   if (parts.length >= 2) {
     return parts.slice(-2).join('.');
   }
-
   return hostname;
 }
 
-// ── RDAP Query ────────────────────────────────────────────────────────────────
+function getTld(hostname) {
+  const parts = hostname.split('.');
+  return parts.length > 0 ? parts[parts.length - 1] : '';
+}
 
-/**
- * Query RDAP for domain registration info.
- * @param {string} domain
- * @returns {Promise<object>}
- */
-async function queryRdap(domain) {
-  if (!domain) {
-    return {
-      available: false,
-      domainQueried: domain || '',
-      createdAt: null,
-      ageDays: null,
-      source: 'rdap.org',
-      error: 'No domain provided'
-    };
+// ── IANA Bootstrap Cache (in-memory, short-lived) ───────────────────────────
+
+let bootstrapCache = null;
+let bootstrapCacheTime = 0;
+
+// ── IANA Bootstrap ──────────────────────────────────────────────────────────
+
+async function getRdapBaseUrlsForTld(tld) {
+  if (!tld) return [];
+
+  // Check in-memory cache first
+  if (bootstrapCache && (Date.now() - bootstrapCacheTime) < IANA_BOOTSTRAP_TTL * 1000) {
+    return bootstrapCache[tld] || [];
   }
-
-  const rdapUrl = `https://rdap.org/domain/${encodeURIComponent(domain)}`;
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), RDAP_TIMEOUT_MS);
+    const timeoutId = setTimeout(() => controller.abort(), RDAP_BOOTSTRAP_TIMEOUT_MS);
 
-    const resp = await fetch(rdapUrl, {
+    const resp = await fetch(IANA_BOOTSTRAP_URL, {
       signal: controller.signal,
-      headers: { 'Accept': 'application/rdap+json' }
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'AI-API-Doctor/1.10.1 (+https://aiapidoctor.com)'
+      }
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!resp.ok) {
+      return [];
+    }
+
+    const data = await resp.json();
+
+    if (!data.services || !Array.isArray(data.services)) {
+      return [];
+    }
+
+    // Build lookup map
+    const lookup = {};
+    for (const [tlds, baseUrls] of data.services) {
+      if (Array.isArray(tlds) && Array.isArray(baseUrls)) {
+        for (const t of tlds) {
+          lookup[t] = baseUrls;
+        }
+      }
+    }
+
+    // Cache the result
+    bootstrapCache = lookup;
+    bootstrapCacheTime = Date.now();
+
+    return lookup[tld] || [];
+
+  } catch (err) {
+    // Bootstrap failed, return empty
+    return [];
+  }
+}
+
+// ── RDAP Query ──────────────────────────────────────────────────────────────
+
+function buildRdapHeaders() {
+  return {
+    'Accept': 'application/rdap+json, application/json;q=0.9, */*;q=0.8',
+    'User-Agent': 'AI-API-Doctor/1.10.1 (+https://aiapidoctor.com)'
+  };
+}
+
+function parseRdapCreatedAt(rdapJson) {
+  if (!rdapJson || typeof rdapJson !== 'object') return null;
+
+  // Try events array
+  if (rdapJson.events && Array.isArray(rdapJson.events)) {
+    const regEvents = rdapJson.events.filter(e => {
+      const action = (e.eventAction || '').toLowerCase();
+      return action.includes('registration') ||
+             action.includes('registered') ||
+             action.includes('domain creation');
+    });
+
+    if (regEvents.length > 0) {
+      regEvents.sort((a, b) => new Date(a.eventDate) - new Date(b.eventDate));
+      return regEvents[0].eventDate;
+    }
+
+    // Fallback: any event with "created"
+    const createdEvents = rdapJson.events.filter(e => {
+      const action = (e.eventAction || '').toLowerCase();
+      return action.includes('created');
+    });
+
+    if (createdEvents.length > 0) {
+      createdEvents.sort((a, b) => new Date(a.eventDate) - new Date(b.eventDate));
+      return createdEvents[0].eventDate;
+    }
+  }
+
+  return null;
+}
+
+async function queryRdap(domain) {
+  if (!domain) {
+    return { available: false, domainQueried: domain || '', createdAt: null, ageDays: null, source: 'rdap', error: 'No domain' };
+  }
+
+  const tld = getTld(domain);
+  const errors = [];
+
+  // Strategy A: Verisign direct for known TLDs
+  const verisignTlds = {
+    'com': 'https://rdap.verisign.com/com/v1/domain/',
+    'net': 'https://rdap.verisign.com/net/v1/domain/',
+    'name': 'https://rdap.verisign.com/name/v1/domain/',
+    'cc': 'https://rdap.nic.cc/cc/domain/'
+  };
+
+  if (verisignTlds[tld]) {
+    const result = await tryRdapUrl(verisignTlds[tld] + encodeURIComponent(domain), RDAP_DIRECT_TIMEOUT_MS, 'Verisign');
+    if (result.available) return result;
+    errors.push(result.error);
+  }
+
+  // Strategy B: IANA bootstrap
+  const bootstrapUrls = await getRdapBaseUrlsForTld(tld);
+  for (const baseUrl of bootstrapUrls) {
+    const cleanBase = baseUrl.replace(/\/$/, '');
+    const result = await tryRdapUrl(`${cleanBase}/domain/${encodeURIComponent(domain)}`, RDAP_BOOTSTRAP_TIMEOUT_MS, 'IANA bootstrap');
+    if (result.available) return result;
+    errors.push(result.error);
+  }
+
+  // Strategy C: rdap.org fallback (only if Verisign/bootstrap failed)
+  const fallbackResult = await tryRdapUrl(
+    `https://rdap.org/domain/${encodeURIComponent(domain)}`,
+    RDAP_FALLBACK_TIMEOUT_MS,
+    'rdap.org'
+  );
+  if (fallbackResult.available) return fallbackResult;
+  errors.push(fallbackResult.error);
+
+  // All strategies failed
+  return {
+    available: false,
+    domainQueried: domain,
+    createdAt: null,
+    ageDays: null,
+    source: 'rdap',
+    error: errors[errors.length - 1] || 'All RDAP strategies failed'
+  };
+}
+
+async function tryRdapUrl(url, timeoutMs, source) {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    const resp = await fetch(url, {
+      signal: controller.signal,
+      headers: buildRdapHeaders()
     });
 
     clearTimeout(timeoutId);
@@ -179,197 +282,109 @@ async function queryRdap(domain) {
     if (!resp.ok) {
       return {
         available: false,
-        domainQueried: domain,
+        domainQueried: '',
         createdAt: null,
         ageDays: null,
-        source: 'rdap.org',
+        source,
         error: `HTTP ${resp.status}`
       };
     }
 
     const data = await resp.json();
-
-    // Find registration date from events
-    let createdAt = null;
-    if (data.events && Array.isArray(data.events)) {
-      const regEvents = data.events.filter(e => {
-        const action = (e.eventAction || '').toLowerCase();
-        return action.includes('registration') ||
-               action.includes('registered') ||
-               action.includes('domain creation');
-      });
-
-      if (regEvents.length > 0) {
-        // Sort by date and take earliest
-        regEvents.sort((a, b) => new Date(a.eventDate) - new Date(b.eventDate));
-        createdAt = regEvents[0].eventDate;
-      }
-    }
-
-    // Also try "network" object for CIDR-based registrations
-    if (!createdAt && data.network && data.network.events) {
-      const regEvents = data.network.events.filter(e => {
-        const action = (e.eventAction || '').toLowerCase();
-        return action.includes('registration') || action.includes('registered');
-      });
-      if (regEvents.length > 0) {
-        regEvents.sort((a, b) => new Date(a.eventDate) - new Date(b.eventDate));
-        createdAt = regEvents[0].eventDate;
-      }
-    }
+    const createdAt = parseRdapCreatedAt(data);
 
     if (!createdAt) {
       return {
         available: false,
-        domainQueried: domain,
+        domainQueried: '',
         createdAt: null,
         ageDays: null,
-        source: 'rdap.org',
-        error: 'No registration date found in RDAP response'
+        source,
+        error: 'No registration date found'
       };
     }
 
     const createdDate = new Date(createdAt);
-    const ageMs = Date.now() - createdDate.getTime();
-    const ageDays = Math.floor(ageMs / (1000 * 60 * 60 * 24));
+    const ageDays = Math.floor((Date.now() - createdDate.getTime()) / (1000 * 60 * 60 * 24));
 
     return {
       available: true,
-      domainQueried: domain,
+      domainQueried: '',
       createdAt,
       ageDays,
-      source: 'rdap.org'
+      source
     };
 
   } catch (err) {
     const errorType = err.name === 'AbortError' ? 'timeout' : 'fetch_error';
     return {
       available: false,
-      domainQueried: domain,
+      domainQueried: '',
       createdAt: null,
       ageDays: null,
-      source: 'rdap.org',
+      source,
       error: `${errorType}: ${err.message}`
     };
   }
 }
 
-// ── Certificate History Query ────────────────────────────────────────────────
+// ── Certificate History (crt.sh) ───────────────────────────────────────────
 
-/**
- * Query crt.sh for certificate transparency logs.
- * @param {string} domain
- * @param {string} hostname
- * @returns {Promise<object>}
- */
 async function queryCertificateHistory(domain, hostname) {
-  if (!domain && !hostname) {
-    return {
-      available: false,
-      firstSeenAt: null,
-      firstSeenDays: null,
-      source: 'crt.sh',
-      error: 'No domain or hostname provided'
-    };
+  const query = domain || hostname || '';
+  if (!query) {
+    return { available: false, firstSeenAt: null, firstSeenDays: null, source: 'crt.sh', error: 'No query' };
   }
-
-  // Build crt.sh lookup URL (without output=json to get human-readable page)
-  const crtshLookupUrl = `https://crt.sh/?q=${encodeURIComponent(domain || hostname)}`;
 
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), CRTSH_TIMEOUT_MS);
 
-    const resp = await fetch(crtshLookupUrl, { signal: controller.signal });
+    const resp = await fetch(
+      `https://crt.sh/?q=${encodeURIComponent(query)}&output=json`,
+      {
+        signal: controller.signal,
+        headers: {
+          'Accept': 'application/json,text/plain,*/*',
+          'User-Agent': 'AI-API-Doctor/1.10.1 (+https://aiapidoctor.com)'
+        }
+      }
+    );
+
     clearTimeout(timeoutId);
 
     if (!resp.ok) {
-      return {
-        available: false,
-        firstSeenAt: null,
-        firstSeenDays: null,
-        source: 'crt.sh',
-        error: `HTTP ${resp.status}`
-      };
+      return { available: false, firstSeenAt: null, firstSeenDays: null, source: 'crt.sh', error: `HTTP ${resp.status}` };
     }
 
     const text = await resp.text();
+    let entries = [];
 
-    // Try to parse as JSON first
-    let entries = null;
     try {
       entries = JSON.parse(text);
     } catch (_) {
-      // Not JSON, need to extract from HTML or plain text
-      // This is a simplified approach - try to find dates in the response
-      entries = null;
+      return { available: false, firstSeenAt: null, firstSeenDays: null, source: 'crt.sh', error: 'JSON parse failed' };
     }
 
-    let firstSeenAt = null;
-
-    if (Array.isArray(entries) && entries.length > 0) {
-      // Sort by not_before and get earliest
-      const validEntries = entries
-        .filter(e => e.not_before || e['not_before (GMT)'])
-        .map(e => new Date(e.not_before || e['not_before (GMT)']))
-        .filter(d => !isNaN(d.getTime()))
-        .sort((a, b) => a - b);
-
-      if (validEntries.length > 0) {
-        firstSeenAt = validEntries[0].toISOString();
-      }
+    if (!Array.isArray(entries) || entries.length === 0) {
+      return { available: false, firstSeenAt: null, firstSeenDays: null, source: 'crt.sh', error: 'No entries' };
     }
 
-    if (!firstSeenAt) {
-      // Fallback: try JSON API endpoint
-      const jsonUrl = `https://crt.sh/?q=${encodeURIComponent(domain || hostname)}&output=json`;
-      try {
-        const jsonController = new AbortController();
-        const jsonTimeoutId = setTimeout(() => jsonController.abort(), 2500);
-        const jsonResp = await fetch(jsonUrl, { signal: jsonController.signal });
-        clearTimeout(jsonTimeoutId);
+    // Find earliest not_before
+    const validEntries = entries
+      .filter(e => e.not_before)
+      .map(e => new Date(e.not_before))
+      .filter(d => !isNaN(d.getTime()))
+      .sort((a, b) => a - b);
 
-        if (jsonResp.ok) {
-          const jsonText = await jsonResp.text();
-          const jsonEntries = JSON.parse(jsonText);
-          if (Array.isArray(jsonEntries) && jsonEntries.length > 0) {
-            const validEntries = jsonEntries
-              .filter(e => e.not_before)
-              .map(e => new Date(e.not_before))
-              .filter(d => !isNaN(d.getTime()))
-              .sort((a, b) => a - b);
-
-            if (validEntries.length > 0) {
-              firstSeenAt = validEntries[0].toISOString();
-            }
-          }
-        }
-      } catch (_) {
-        // Ignore fallback errors
-      }
+    if (validEntries.length === 0) {
+      return { available: false, firstSeenAt: null, firstSeenDays: null, source: 'crt.sh', error: 'No valid dates' };
     }
 
-    if (!firstSeenAt) {
-      return {
-        available: false,
-        firstSeenAt: null,
-        firstSeenDays: null,
-        source: 'crt.sh',
-        error: 'Could not parse certificate data'
-      };
-    }
+    const firstSeenAt = validEntries[0].toISOString();
+    const firstSeenDays = Math.floor((Date.now() - validEntries[0].getTime()) / (1000 * 60 * 60 * 24));
 
-    const firstSeenDate = new Date(firstSeenAt);
-    const ageMs = Date.now() - firstSeenDate.getTime();
-    const firstSeenDays = Math.floor(ageMs / (1000 * 60 * 60 * 24));
-
-    return {
-      available: true,
-      firstSeenAt,
-      firstSeenDays,
-      source: 'crt.sh',
-      lookupUrl: crtshLookupUrl
-    };
+    return { available: true, firstSeenAt, firstSeenDays, source: 'crt.sh' };
 
   } catch (err) {
     const errorType = err.name === 'AbortError' ? 'timeout' : 'fetch_error';
@@ -378,37 +393,15 @@ async function queryCertificateHistory(domain, hostname) {
       firstSeenAt: null,
       firstSeenDays: null,
       source: 'crt.sh',
-      error: `${errorType}: ${err.message}`
+      error: `${errorType}`
     };
   }
 }
 
-// ── Wayback Info ─────────────────────────────────────────────────────────────
+// ── Wayback ──────────────────────────────────────────────────────────────────
 
-/**
- * Build Wayback lookup URL (optional, non-blocking).
- * @param {string} domain
- * @returns {object}
- */
-function buildWaybackInfo(domain) {
-  const lookupUrl = domain ? `https://web.archive.org/web/*/${domain}` : null;
-  return {
-    lookupUrl,
-    available: false,
-    closestUrl: null,
-    timestamp: null
-  };
-}
-
-/**
- * Query Wayback Availability API (optional enhancement).
- * @param {string} domain
- * @returns {Promise<object>}
- */
 async function queryWaybackAvailability(domain) {
-  if (!domain) {
-    return { available: false, closestUrl: null, timestamp: null };
-  }
+  if (!domain) return { available: false, closestUrl: null, timestamp: null };
 
   try {
     const controller = new AbortController();
@@ -421,50 +414,66 @@ async function queryWaybackAvailability(domain) {
 
     clearTimeout(timeoutId);
 
-    if (!resp.ok) {
-      return { available: false, closestUrl: null, timestamp: null };
-    }
+    if (!resp.ok) return { available: false, closestUrl: null, timestamp: null };
 
     const data = await resp.json();
 
     if (data.archived_snapshots && data.archived_snapshots.closest) {
-      const snapshot = data.archived_snapshots.closest;
+      const snap = data.archived_snapshots.closest;
       return {
         available: true,
-        closestUrl: snapshot.url || null,
-        timestamp: snapshot.timestamp || null
+        closestUrl: snap.url || null,
+        timestamp: snap.timestamp || null
       };
     }
 
     return { available: false, closestUrl: null, timestamp: null };
 
-  } catch (err) {
+  } catch (_) {
     return { available: false, closestUrl: null, timestamp: null };
   }
 }
 
-// ── Cache helpers ────────────────────────────────────────────────────────────
+// ── Status calculation ──────────────────────────────────────────────────────
 
-/**
- * Get cache key for a domain.
- * @param {string} domain
- * @returns {string}
- */
+function buildPublicSignalsStatus(domainRegistration, certificateHistory) {
+  const domainOk = domainRegistration && domainRegistration.available === true;
+  const certOk = certificateHistory && certificateHistory.available === true;
+
+  let status = 'unknown';
+  let confidence = 'none';
+
+  if (domainOk && certOk) {
+    status = 'full';
+    confidence = 'full';
+  } else if (domainOk || certOk) {
+    status = 'partial';
+    confidence = 'partial';
+  }
+
+  return { status, confidence };
+}
+
+function getCacheTtl(status) {
+  switch (status) {
+    case 'full': return TTL_FULL;
+    case 'partial': return TTL_PARTIAL;
+    default: return TTL_UNKNOWN;
+  }
+}
+
+// ── Cache helpers ───────────────────────────────────────────────────────────
+
 function getCacheKey(domain) {
   return `${CACHE_KEY_PREFIX}${domain}`;
 }
 
 // ── Main handler ─────────────────────────────────────────────────────────────
 
-/**
- * Cloudflare Pages Function handler.
- * GET /api/public-signals?hostname=example.com
- */
 export async function onRequestGet(context) {
-  const { request, env, waitUntil, next } = context;
+  const { request, env, waitUntil } = context;
   const cache = caches.default;
 
-  // Parse query parameters
   const url = new URL(request.url);
   const hostname = url.searchParams.get('hostname');
 
@@ -488,7 +497,7 @@ export async function onRequestGet(context) {
   const normalizedHostname = validation.hostname;
   const registrableDomain = guessRegistrableDomain(normalizedHostname);
 
-  // Check cache first
+  // Check cache
   const cacheKey = getCacheKey(registrableDomain);
   const cachedResponse = await cache.match(cacheKey);
 
@@ -502,58 +511,65 @@ export async function onRequestGet(context) {
       headers: {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 'public, max-age=86400',
+        'Cache-Control': 'public, max-age=' + (cachedData.cacheTtlSeconds || 3600),
         'X-Cache': 'HIT'
       }
     });
   }
 
-  // Execute queries in parallel with overall timeout
+  // Execute queries with overall timeout
   const errors = [];
   let domainRegistration = {
     available: false,
     domainQueried: registrableDomain,
     createdAt: null,
     ageDays: null,
-    source: 'rdap.org',
+    source: 'rdap',
     lookupUrl: `https://lookup.icann.org/en/lookup?name=${encodeURIComponent(registrableDomain)}`,
     rdapUrl: `https://rdap.org/domain/${encodeURIComponent(registrableDomain)}`,
-    error: 'Query not executed'
+    error: 'Not queried'
   };
+
   let certificateHistory = {
     available: false,
     firstSeenAt: null,
     firstSeenDays: null,
     source: 'crt.sh',
     lookupUrl: `https://crt.sh/?q=${encodeURIComponent(registrableDomain)}`,
-    error: 'Query not executed'
+    error: 'Not queried'
   };
-  let wayback = buildWaybackInfo(normalizedHostname);
 
-  // Execute with overall timeout
+  let wayback = {
+    lookupUrl: `https://web.archive.org/web/*/${registrableDomain}`,
+    available: false,
+    closestUrl: null,
+    timestamp: null
+  };
+
   const overallController = new AbortController();
   const overallTimeoutId = setTimeout(() => overallController.abort(), GLOBAL_TIMEOUT_MS);
 
   try {
-    // Run all queries in parallel
+    // Run queries in parallel
     const [rdapResult, certResult, waybackResult] = await Promise.allSettled([
       queryRdap(registrableDomain),
       queryCertificateHistory(registrableDomain, normalizedHostname),
-      queryWaybackAvailability(normalizedHostname)
+      queryWaybackAvailability(registrableDomain)
     ]);
 
     // Process RDAP result
     if (rdapResult.status === 'fulfilled') {
       domainRegistration = {
         ...rdapResult.value,
+        domainQueried: registrableDomain,
         lookupUrl: `https://lookup.icann.org/en/lookup?name=${encodeURIComponent(registrableDomain)}`,
         rdapUrl: `https://rdap.org/domain/${encodeURIComponent(registrableDomain)}`
       };
       if (!domainRegistration.available && domainRegistration.error) {
-        errors.push({ source: 'rdap.org', message: domainRegistration.error });
+        errors.push({ source: 'rdap', code: 'lookup_failed', message: domainRegistration.error });
       }
     } else {
-      errors.push({ source: 'rdap.org', message: String(rdapResult.reason) });
+      errors.push({ source: 'rdap', code: 'exception', message: String(rdapResult.reason) });
     }
 
     // Process certificate result
@@ -563,10 +579,10 @@ export async function onRequestGet(context) {
         lookupUrl: `https://crt.sh/?q=${encodeURIComponent(registrableDomain)}`
       };
       if (!certificateHistory.available && certificateHistory.error) {
-        errors.push({ source: 'crt.sh', message: certificateHistory.error });
+        errors.push({ source: 'crt.sh', code: 'lookup_failed', message: certificateHistory.error });
       }
     } else {
-      errors.push({ source: 'crt.sh', message: String(certResult.reason) });
+      errors.push({ source: 'crt.sh', code: 'exception', message: 'Certificate lookup exception' });
     }
 
     // Process Wayback result
@@ -581,34 +597,35 @@ export async function onRequestGet(context) {
     clearTimeout(overallTimeoutId);
   }
 
-  // Determine overall status
-  const status = errors.length === 0 ? 'full' :
-                 errors.length < 2 ? 'partial' : 'unknown';
+  // Calculate status
+  const { status, confidence } = buildPublicSignalsStatus(domainRegistration, certificateHistory);
+  const cacheTtlSeconds = getCacheTtl(status);
 
   const responseData = {
     ok: true,
     status,
+    confidence,
     hostname: normalizedHostname,
     domain: registrableDomain,
     fetchedAt: new Date().toISOString(),
     cached: false,
+    cacheTtlSeconds,
     domainRegistration,
     certificateHistory,
     wayback,
     errors,
-    version: PUBLIC_SIGNALS_VERSION
+    version: VERSION
   };
 
-  // Build and cache response
+  // Cache response
   const response = new Response(JSON.stringify(responseData), {
     headers: {
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*',
-      'Cache-Control': 'public, max-age=86400'
+      'Cache-Control': `public, max-age=${cacheTtlSeconds}`
     }
   });
 
-  // Cache the response for future requests
   waitUntil(cache.put(cacheKey, response.clone()));
 
   return response;
@@ -616,9 +633,6 @@ export async function onRequestGet(context) {
 
 // ── CORS preflight ───────────────────────────────────────────────────────────
 
-/**
- * Handle CORS preflight requests.
- */
 export async function onRequestOptions(context) {
   return new Response(null, {
     headers: {

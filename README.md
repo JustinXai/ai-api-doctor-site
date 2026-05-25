@@ -47,12 +47,14 @@ It is **not** a model authenticity judge, nor a long-term monitoring system.
 - 轻量请求下的稳定性与延迟
 - 是否能导出 Cline / Continue 配置
 
-### Short-term Operational Risk Signals (v1.10)
+### Short-term Operational Risk Signals (v1.10.1)
 
 Since v1.10, short-term operational risk signals are fetched through the Cloudflare Pages Function `/api/public-signals`, which queries public domain registration, certificate transparency, and Wayback data with caching. The browser no longer directly calls RDAP or crt.sh, reducing CORS and slow-response failures.
 
-- Domain registration age (via RDAP, proxied through Worker)
-- HTTPS certificate first-seen date (via crt.sh, proxied through Worker)
+Since v1.10.1, the Worker no longer relies only on rdap.org. For .com/.net/.name/.cc domains it uses Verisign RDAP directly when possible and falls back to IANA RDAP bootstrap. crt.sh is treated as best-effort because it can be slow or rate-limited; a crt.sh timeout does not affect the domain registration status.
+
+- Domain registration age (via Verisign RDAP / IANA bootstrap / rdap.org fallback, proxied through Worker)
+- HTTPS certificate first-seen date (via crt.sh, best-effort only)
 - Wayback Machine historical snapshot links
 
 **中文：**
@@ -60,6 +62,8 @@ Since v1.10, short-term operational risk signals are fetched through the Cloudfl
 短期运营风险信号：根据 Base URL 自动尝试查询域名注册时间和 HTTPS 证书首次发现时间，并给出独立的预充值风险提示。该模块不证明平台一定会跑路或一定不会跑路，也不影响 API 技术评分。
 
 v1.10 起，短期运营风险信号通过 Cloudflare Pages Function `/api/public-signals` 查询公开域名注册、证书透明日志和 Wayback 信息，并缓存结果。浏览器端不再直接请求 RDAP / crt.sh，以减少 CORS 和慢响应问题。
+
+v1.10.1 起，公开运营信号不再只依赖 rdap.org。对于 .com/.net/.name/.cc 等域名会优先使用注册局 RDAP；其他 TLD 使用 IANA RDAP bootstrap。crt.sh 证书历史仅作为 best-effort 信号，超时不会影响域名注册时间判断。
 
 ## What it does not prove
 
@@ -148,6 +152,7 @@ node assets/verify-identity.js
 node assets/verify-model-signal-v18.js
 node assets/verify-operational-risk-v19.js
 node assets/verify-public-signals-v110.js
+node assets/verify-public-signals-v1101.js
 ```
 
 These scripts are deterministic local checks and do not require real API keys.
