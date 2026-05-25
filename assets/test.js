@@ -718,8 +718,16 @@ function calcOperationalRiskScore(domainSignal, certSignal) {
 
 /**
  * Generate operational risk summary and recommendation text.
+ * v1.10.5: handles partial signals (domain only or cert only) separately
+ * from full signals (both available) and unknown (neither available).
  */
-function buildOperationalRiskSummary(level, domainSignal, certSignal, zh) {
+function buildOperationalRiskSummary(level, domainSignal, certSignal, zh, opts) {
+  opts = opts || {};
+  const confidence = opts.confidence || 'none';
+  const isPartial = confidence === 'partial';
+  const domainAvailable = domainSignal && domainSignal.available === true;
+  const certAvailable = certSignal && certSignal.available === true;
+
   const labels = {
     high: zh ? '高' : 'High',
     medium: zh ? '中' : 'Medium',
@@ -730,8 +738,40 @@ function buildOperationalRiskSummary(level, domainSignal, certSignal, zh) {
   let summary = '';
   let recommendation = '';
 
-  if (level === 'high') {
-    // Check for extremely new signals
+  // ── Case 1: Partial — domain available, cert unavailable ─────────────────────
+  if (isPartial && domainAvailable && !certAvailable) {
+    const days = domainSignal.ageDays;
+    if (days !== null && days < 30) {
+      summary = zh
+        ? `公开记录显示该域名注册仅 ${days} 天，但证书历史未能自动获取，这里只是部分运营信号。`
+        : `The domain was registered only ${days} days ago. Certificate history was not retrieved automatically — this is a partial operational signal only.`;
+    } else {
+      summary = zh
+        ? `公开记录显示该域名注册时间较短；证书历史未能自动获取，因此这里只是部分运营信号。`
+        : `Public records show this domain was registered recently. Certificate history was not retrieved automatically, so this is only a partial operational signal.`;
+    }
+    recommendation = zh
+      ? '仅建议小额测试充值。证书历史未能自动获取，完整评估前请手动核验证书历史、历史快照和供应商口碑。'
+      : 'Use with small test top-ups only. Certificate history was not retrieved; before large prepaid balances, manually verify certificate history, archive snapshots, and provider reputation.';
+  }
+  // ── Case 2: Partial — cert available, domain unavailable ────────────────────
+  else if (isPartial && !domainAvailable && certAvailable) {
+    const days = certSignal.firstSeenDays;
+    if (days !== null && days < 30) {
+      summary = zh
+        ? `证书首次发现仅 ${days} 天前，但域名注册信息未能自动获取，这里只是部分运营信号。`
+        : `HTTPS certificate first seen only ${days} days ago. Domain registration was not retrieved automatically — this is a partial operational signal only.`;
+    } else {
+      summary = zh
+        ? `公开记录显示该站点证书历史较短；域名注册信息未能自动获取，因此这里只是部分运营信号。`
+        : `Public records show a relatively short HTTPS history. Domain registration was not retrieved automatically, so this is only a partial operational signal.`;
+    }
+    recommendation = zh
+      ? '仅建议小额测试充值。域名注册信息未能自动获取，完整评估前请手动核验域名注册时间、历史快照和供应商口碑。'
+      : 'Use with small test top-ups only. Domain registration was not retrieved; before large prepaid balances, manually verify domain registration age, archive snapshots, and provider reputation.';
+  }
+  // ── Case 3: Full — both available ─────────────────────────────────────────
+  else if (level === 'high') {
     const domainDays = domainSignal.ageDays;
     const certDays = certSignal.firstSeenDays;
 
@@ -766,7 +806,9 @@ function buildOperationalRiskSummary(level, domainSignal, certSignal, zh) {
     recommendation = zh
       ? '首次使用仍建议小额测试。'
       : 'Small test top-ups are still recommended for first-time use.';
-  } else {
+  }
+  // ── Case 4: Unknown — both unavailable ────────────────────────────────────
+  else {
     summary = zh
       ? '未能自动获取域名注册时间或证书历史。建议手动查询公开记录后再考虑大额充值。'
       : 'Failed to automatically retrieve domain registration time or certificate history. Manual verification of public records is advised before large top-ups.';
@@ -775,7 +817,7 @@ function buildOperationalRiskSummary(level, domainSignal, certSignal, zh) {
       : 'Please manually verify domain registration, certificate history, and snapshots before deciding on larger amounts.';
   }
 
-  return { summary, recommendation, levelLabel: labels[level] };
+  return { summary, recommendation, levelLabel: labels[level] || labels.unknown };
 }
 
 /**
@@ -4831,23 +4873,65 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo, operationalRis
         </div>
       ` : '';
 
-      // Score display
+      // Score display — v1.10.5: partial shows domain age signal instead of x/20
       const scored = operationalRisk.scored !== false;
       const confidence = operationalRisk.confidence || 'none';
       const isPartial = confidence === 'partial';
       const isUnknown = !scored || confidence === 'none';
+      const domainAvailable = domainSignal.available === true;
+      const certAvailable = certSignal.available === true;
 
       let scoreDisplay = '';
+      let signalDetails = '';
+
       if (isUnknown) {
+        // Unknown: no full score available
         scoreDisplay = `<span style="font-weight:700;color:#94a3b8">${zh ? '未评分' : 'Not Scored'}</span>`;
+        signalDetails = `
+          <div style="margin-bottom:3px">
+            <span style="font-weight:600;color:#64748b">${zh ? '完整运营风险评分：' : 'Full Operational Score: '}</span>
+            <span style="color:#94a3b8">${zh ? '未评分' : 'Not available'}</span>
+          </div>`;
+      } else if (isPartial && domainAvailable && !certAvailable) {
+        // Partial: domain only — show domain age signal (3/10), not full score
+        const domainScore = operationalRiskScore ? (operationalRiskScore.domainScore || 0) : 0;
+        scoreDisplay = `<span style="font-weight:700;color:#d97706">${zh ? '部分证据' : 'Partial Evidence'}</span>`;
+        signalDetails = `
+          <div style="margin-bottom:3px">
+            <span style="font-weight:600;color:#64748b">${zh ? '域名注册时间信号：' : 'Domain Age Signal: '}</span>
+            <span style="font-weight:700;color:${lc.color}">${domainScore}/10</span>
+          </div>
+          <div style="margin-bottom:3px">
+            <span style="font-weight:600;color:#64748b">${zh ? '完整运营风险评分：' : 'Full Operational Score: '}</span>
+            <span style="color:#94a3b8">${zh ? '未评分（需证书历史）' : 'Not available (cert history required)'}</span>
+          </div>`;
+      } else if (isPartial && !domainAvailable && certAvailable) {
+        // Partial: cert only — show cert signal (4/8), not full score
+        const certScore = operationalRiskScore ? (operationalRiskScore.certScore || 0) : 0;
+        scoreDisplay = `<span style="font-weight:700;color:#d97706">${zh ? '部分证据' : 'Partial Evidence'}</span>`;
+        signalDetails = `
+          <div style="margin-bottom:3px">
+            <span style="font-weight:600;color:#64748b">${zh ? '证书历史信号：' : 'Cert History Signal: '}</span>
+            <span style="font-weight:700;color:${lc.color}">${certScore}/8</span>
+          </div>
+          <div style="margin-bottom:3px">
+            <span style="font-weight:600;color:#64748b">${zh ? '完整运营风险评分：' : 'Full Operational Score: '}</span>
+            <span style="color:#94a3b8">${zh ? '未评分（需域名注册时间）' : 'Not available (domain reg required)'}</span>
+          </div>`;
       } else {
+        // Full: both available — show full x/20 score
         const suffix = isPartial ? `<span style="font-size:9px;color:#d97706"> ${zh ? '（仅基于部分公开信号）' : '(partial)'}</span>` : '';
         scoreDisplay = `<span style="font-weight:700">${operationalRisk.score}/${operationalRisk.max}</span>${suffix}`;
       }
 
-      // Title with partial indicator
-      const titleSuffix = isPartial ? (zh ? '（部分确认）' : ' (Partial)') : '';
+      // Title: Partial Evidence indicator
+      const titleSuffix = isPartial ? (zh ? '（部分证据）' : ' (Partial Evidence)') : '';
       const title = `${zh ? '短期运营风险信号' : 'Short-term Operational Risk Signals'}${titleSuffix}`;
+
+      // Bottom notice: make it more prominent with yellow background for partial
+      const noticeBg = isPartial ? '#fef9c3' : '#fff';
+      const noticeBorder = isPartial ? '#fde68a' : '#e2e8f0';
+      const noticeColor = isPartial ? '#92400e' : '#94a3b8';
 
       return `
         <div style="background:${lc.bg};border:1px solid ${lc.border};border-radius:12px;padding:12px 14px;margin-bottom:10px">
@@ -4858,16 +4942,20 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo, operationalRis
           </div>
           <div style="font-size:10px;color:#374151;margin-bottom:6px">
             <div style="margin-bottom:3px"><span style="font-weight:600;color:#64748b">${zh ? '检测域名：' : 'Domain: '}</span>${escH(operationalRisk.hostname || '—')}</div>
-            <div style="margin-bottom:3px"><span style="font-weight:600;color:#64748b">${zh ? '域名注册时间：' : 'Domain Registered: '}</span>${escH(domainText)}</div>
-            <div><span style="font-weight:600;color:#64748b">${zh ? '证书首次发现：' : 'Cert First Seen: '}</span>${escH(certText)}</div>
+            ${domainAvailable || !certAvailable ? `<div style="margin-bottom:3px"><span style="font-weight:600;color:#64748b">${zh ? '域名注册时间：' : 'Domain Registered: '}</span>${escH(domainText)}</div>` : ''}
+            ${certAvailable || !domainAvailable ? `<div style="margin-bottom:3px"><span style="font-weight:600;color:#64748b">${zh ? '证书首次发现：' : 'Cert First Seen: '}</span>${escH(certText)}</div>` : ''}
+            ${signalDetails}
           </div>
           <div style="font-size:11px;color:#374151;line-height:1.5;margin-bottom:6px"><b>${zh ? '结论：' : 'Conclusion: '}</b>${escH(operationalRisk.summary || '')}</div>
           ${operationalRisk.recommendation ? `<div style="font-size:11px;color:#374151;line-height:1.5;margin-bottom:6px"><b>${zh ? '建议：' : 'Recommendation: '}</b>${escH(operationalRisk.recommendation)}</div>` : ''}
           ${linksSection}
-          <div style="margin-top:8px;padding:6px 8px;background:#fff;border-radius:6px;font-size:9px;color:#94a3b8;line-height:1.4">
-            ${zh
-              ? '⚠️ 本模块根据域名和证书公开记录提供短期运营风险提示，不证明平台一定会或不会发生运营问题，也不影响 API 技术评分。首次使用仍建议小额测试。'
-              : '⚠️ This module provides short-term operational risk hints based on public domain and certificate records. It does not prove whether a provider will or will not have operational issues, and does not affect the API technical score. Small test top-ups are still recommended for first-time use.'}
+          <div style="margin-top:8px;padding:6px 8px;background:${noticeBg};border-radius:6px;font-size:9px;color:${noticeColor};line-height:1.4;border:1px solid ${noticeBorder}">
+            <b>${zh ? '注意：' : 'Note: '}</b>${zh
+              ? '本模块不影响 API 技术总分。'
+              : 'This module does not affect the API technical score.'}${zh
+              ? '' : ' '}${zh
+              ? '提供短期运营风险提示，不证明平台一定会或不会发生运营问题。首次使用仍建议小额测试。'
+              : 'It provides short-term operational risk hints only and does not prove whether a provider will or will not have operational issues. Small test top-ups are still recommended for first-time use.'}
           </div>
         </div>
       `;
@@ -5335,9 +5423,9 @@ window.Doctor = {
         domainRegistration: domainRegistration,
         certificateHistory: certificateHistory,
         waybackUrl,
-        summary: buildOperationalRiskSummary(operationalRiskScore.level, domainRegistration, certificateHistory, zh).summary,
-        recommendation: buildOperationalRiskSummary(operationalRiskScore.level, domainRegistration, certificateHistory, zh).recommendation,
-        levelLabel: buildOperationalRiskSummary(operationalRiskScore.level, domainRegistration, certificateHistory, zh).levelLabel,
+        summary: buildOperationalRiskSummary(operationalRiskScore.level, domainRegistration, certificateHistory, zh, { confidence }).summary,
+        recommendation: buildOperationalRiskSummary(operationalRiskScore.level, domainRegistration, certificateHistory, zh, { confidence }).recommendation,
+        levelLabel: buildOperationalRiskSummary(operationalRiskScore.level, domainRegistration, certificateHistory, zh, { confidence }).levelLabel,
         // v1.10 debug fields
         _publicSignalsViaWorker: true,
         _publicSignalsCached: publicSignalsData._cached || false,
