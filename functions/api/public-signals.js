@@ -13,7 +13,7 @@
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const VERSION = 'v1.10.1-public-signals-worker';
+const VERSION = 'v1.10.4-public-signals-worker';
 
 // Cache TTLs (seconds)
 const TTL_FULL = 86400;      // 24 hours
@@ -31,7 +31,7 @@ const WAYBACK_TIMEOUT_MS = 2000;
 const IANA_BOOTSTRAP_URL = 'https://data.iana.org/rdap/dns.json';
 const IANA_BOOTSTRAP_TTL = 604800; // 7 days
 
-const CACHE_KEY_PREFIX = 'https://aiapidoctor.com/api/public-signals-cache/';
+const CACHE_KEY_PREFIX = 'https://aiapidoctor.com/api/public-signals-cache/v1104/';
 
 // ── SSRF Prevention ──────────────────────────────────────────────────────────
 
