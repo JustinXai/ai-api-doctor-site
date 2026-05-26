@@ -3908,14 +3908,21 @@ function buildDebugScoring(rawScore, cappedScore, checks, breakdown, extra = {})
       return capMap[capReason] ?? null;
     })() : null) : null,
     capAppliedBool: cappedScore < rawScore,
-    moduleScores: {
-      usageTransparency: breakdown?.usageTransparency?.score ?? null,
-      cacheSignal: breakdown?.cacheSignal?.score ?? null,
-      modelSignal: breakdown?.modelSignal?.score ?? null,
-      stabilityLatency: breakdown?.stabilityLatency?.score ?? null,
-      coreCompatibility: breakdown?.coreCompatibility?.score ?? null,
-      clientConfig: breakdown?.clientConfig?.score ?? null,
-    },
+    // v1.11.4: Build moduleByKey from breakdown.modules array
+    moduleScores: (() => {
+      const moduleByKey = {};
+      if (breakdown?.modules && Array.isArray(breakdown.modules)) {
+        breakdown.modules.forEach(m => { if (m && m.key) moduleByKey[m.key] = m; });
+      }
+      return {
+        usageTransparency: moduleByKey.usageTransparency?.score ?? null,
+        cacheSignal: moduleByKey.cacheSignal?.score ?? moduleByKey.cacheHitCheck?.score ?? null,
+        modelSignal: moduleByKey.modelSignal?.score ?? null,
+        stabilityLatency: moduleByKey.stabilityLatency?.score ?? null,
+        coreCompatibility: moduleByKey.coreCompatibility?.score ?? moduleByKey.basicCompatibility?.score ?? null,
+        clientConfig: moduleByKey.clientConfig?.score ?? null,
+      };
+    })(),
     coreChatSuccess: targetWorks,
     coreChatStatus: tcEvidence.httpStatus || 0,
     coreAuthFailed: hasCoreChat403,
@@ -4016,6 +4023,216 @@ function buildDebugScoring(rawScore, cappedScore, checks, breakdown, extra = {})
     certificateHistorySource: operationalRisk?.certificateHistory?.source || null,
     waybackLookupUrl: operationalRisk?.waybackUrl || null,
     operationalRiskVersion: 'v1.9-domain-cert-days',
+    // v1.11.4: Enhanced moduleScores with reason/evidenceSource/timeout/fallbackUsed
+    moduleScores: {
+      usageTransparency: {
+        score: breakdown?.usageTransparency?.score ?? null,
+        max: breakdown?.usageTransparency?.max ?? 25,
+        reason: (() => {
+          if (!checks.targetCall?.evidence?.httpStatus) return 'target_call_not_executed';
+          if (checks.targetCall?.timeout) return 'target_call_timeout';
+          if (checks.usageAudit?.timeout) return 'usage_audit_timeout';
+          const hasUsage = !!(checks.targetCall?.evidence?.usage && Object.keys(checks.targetCall.evidence.usage).length > 0);
+          if (!hasUsage) return 'usage_missing';
+          return 'ok';
+        })(),
+        evidenceSource: (() => {
+          if (checks.targetCall?.evidence?.usage) return 'targetCall';
+          if (checks.usageAudit?.evidence?.usage) return 'usageAudit';
+          return 'none';
+        })(),
+        timeout: !!(checks.targetCall?.timeout || checks.usageAudit?.timeout),
+        fallbackUsed: !!(checks.usageAudit?.fallback)
+      },
+      cacheSignal: {
+        score: breakdown?.cacheSignal?.score ?? null,
+        max: breakdown?.cacheSignal?.max ?? 5,
+        reason: (() => {
+          if (checks.cacheHitCheck?.timeout) return 'cache_probe_timeout';
+          const evidence = checks.cacheHitCheck?.evidence || {};
+          if (evidence.fieldFound === false) return 'cache_field_not_returned';
+          if (evidence.cacheHitRate == null) return 'cache_hit_rate_unknown';
+          return 'ok';
+        })(),
+        evidenceSource: checks.cacheHitCheck?.evidence?.fieldFound ? 'probe' : 'none',
+        timeout: !!(checks.cacheHitCheck?.timeout),
+        fallbackUsed: false
+      },
+      modelSignal: {
+        score: breakdown?.modelSignal?.score ?? null,
+        max: breakdown?.modelSignal?.max ?? 15,
+        reason: (() => {
+          if (checks.modelSignal?.timeout) return 'model_signal_timeout';
+          const sc = checks.modelSignal?.evidence?.modelSignal?.selfClaim;
+          if (!sc) return 'no_self_claim_evidence';
+          if (sc.type === 'ambiguous') return 'model_unable_to_confirm';
+          if (sc.type === 'wrong_family') return 'wrong_family';
+          if (sc.type === 'hard_contamination') return 'hard_contamination';
+          if (sc.type === 'platform_identity') return 'platform_proxy';
+          return 'ok';
+        })(),
+        evidenceSource: checks.modelSignal?.evidence ? 'selfClaim' : 'none',
+        timeout: !!(checks.modelSignal?.timeout),
+        fallbackUsed: false
+      },
+      stabilityLatency: {
+        score: breakdown?.stabilityLatency?.score ?? null,
+        max: breakdown?.stabilityLatency?.max ?? 25,
+        reason: (() => {
+          if (checks.stability?.timeout) return 'stability_timeout';
+          const samples = checks.stability?.evidence?.samples || [];
+          const success = samples.filter(s => s.ok && s.hasContent).length;
+          const total = samples.length;
+          if (total === 0) return 'no_samples';
+          if (total < 3) return 'insufficient_samples';
+          const rate = success / total;
+          if (rate <= 0.4) return 'low_success_rate';
+          if (rate <= 0.6) return 'medium_success_rate';
+          return 'ok';
+        })(),
+        evidenceSource: checks.stability?.evidence?.samples?.length > 0 ? 'samples' : 'none',
+        timeout: !!(checks.stability?.timeout),
+        fallbackUsed: false
+      },
+      coreCompatibility: {
+        score: breakdown?.coreCompatibility?.score ?? null,
+        max: breakdown?.coreCompatibility?.max ?? 25,
+        reason: (() => {
+          if (!checks.targetCall?.evidence?.httpStatus) return 'target_call_not_executed';
+          const tc = checks.targetCall;
+          if (tc.timeout) return 'target_call_timeout';
+          if (!tc.evidence?.responseParsed) return 'response_not_json';
+          if (!tc.evidence?.formatChoices && !tc.evidence?.formatMessage) return 'missing_choices_or_message';
+          return 'ok';
+        })(),
+        evidenceSource: checks.targetCall?.evidence ? 'targetCall' : 'none',
+        timeout: !!(checks.targetCall?.timeout),
+        fallbackUsed: false
+      },
+      clientConfig: {
+        score: breakdown?.clientConfig?.score ?? null,
+        max: breakdown?.clientConfig?.max ?? 5,
+        reason: 'ok',
+        evidenceSource: 'default',
+        timeout: false,
+        fallbackUsed: false
+      }
+    },
+    // v1.11.4: stepDiagnostics for all steps
+    stepDiagnostics: {
+      reachability: {
+        ok: checks.reachability?.ok ?? null,
+        status: checks.reachability?.status ?? null,
+        score: checks.reachability?.score ?? null,
+        durationMs: checks.reachability?.durationMs ?? null,
+        timeout: !!(checks.reachability?.timeout),
+        fallbackUsed: false,
+        evidenceSource: checks.reachability?.evidence ? 'probe' : 'none',
+        error: checks.reachability?.error ?? null
+      },
+      auth: {
+        ok: checks.auth?.ok ?? null,
+        status: checks.auth?.status ?? null,
+        score: checks.auth?.score ?? null,
+        durationMs: checks.auth?.durationMs ?? null,
+        timeout: !!(checks.auth?.timeout),
+        fallbackUsed: false,
+        evidenceSource: checks.auth?.evidence ? 'probe' : 'none',
+        error: checks.auth?.error ?? null
+      },
+      targetCall: {
+        ok: checks.targetCall?.ok ?? null,
+        status: checks.targetCall?.status ?? null,
+        score: checks.targetCall?.score ?? null,
+        durationMs: checks.targetCall?.durationMs ?? null,
+        timeout: !!(checks.targetCall?.timeout),
+        fallbackUsed: false,
+        evidenceSource: checks.targetCall?.evidence ? 'probe' : 'none',
+        error: checks.targetCall?.error ?? null,
+        httpStatus: checks.targetCall?.evidence?.httpStatus ?? null,
+        responseParsed: !!(checks.targetCall?.evidence?.responseParsed),
+        hasUsage: !!(checks.targetCall?.evidence?.usage && Object.keys(checks.targetCall.evidence.usage).length > 0)
+      },
+      usageTransparency: {
+        ok: checks.usageAudit?.ok ?? null,
+        status: checks.usageAudit?.status ?? checks.costTransparency?.status ?? null,
+        score: checks.costTransparency?.score ?? null,
+        durationMs: checks.usageAudit?.durationMs ?? null,
+        timeout: !!(checks.usageAudit?.timeout || checks.costTransparency?.timeout),
+        fallbackUsed: !!(checks.usageAudit?.fallback),
+        evidenceSource: checks.usageAudit?.evidence?.usage ? 'usageAudit' : (checks.targetCall?.evidence?.usage ? 'targetCall' : 'none'),
+        error: checks.usageAudit?.error ?? null
+      },
+      cacheHitCheck: {
+        ok: checks.cacheHitCheck?.ok ?? null,
+        status: checks.cacheHitCheck?.status ?? null,
+        score: checks.cacheHitCheck?.score ?? null,
+        durationMs: checks.cacheHitCheck?.durationMs ?? null,
+        timeout: !!(checks.cacheHitCheck?.timeout),
+        fallbackUsed: false,
+        evidenceSource: checks.cacheHitCheck?.evidence ? 'probe' : 'none',
+        error: checks.cacheHitCheck?.error ?? null,
+        cacheHitRate: checks.cacheHitCheck?.evidence?.cacheHitRate ?? null
+      },
+      modelSignal: {
+        ok: checks.modelSignal?.ok ?? null,
+        status: checks.modelSignal?.status ?? null,
+        score: checks.modelSignal?.score ?? null,
+        durationMs: checks.modelSignal?.durationMs ?? null,
+        timeout: !!(checks.modelSignal?.timeout),
+        fallbackUsed: false,
+        evidenceSource: checks.modelSignal?.evidence ? 'selfClaim' : 'none',
+        error: checks.modelSignal?.error ?? null,
+        selfClaimType: checks.modelSignal?.evidence?.modelSignal?.selfClaim?.type ?? null
+      },
+      stability: {
+        ok: checks.stability?.ok ?? null,
+        status: checks.stability?.status ?? null,
+        score: checks.stability?.score ?? null,
+        durationMs: checks.stability?.durationMs ?? null,
+        timeout: !!(checks.stability?.timeout),
+        fallbackUsed: false,
+        evidenceSource: checks.stability?.evidence?.samples?.length > 0 ? 'samples' : 'none',
+        error: checks.stability?.error ?? null,
+        successRate: (() => {
+          const samples = checks.stability?.evidence?.samples || [];
+          const success = samples.filter(s => s.ok && s.hasContent).length;
+          return samples.length > 0 ? success / samples.length : null;
+        })()
+      },
+      basicCompatibility: {
+        ok: checks.basicCompatibility?.ok ?? null,
+        status: checks.basicCompatibility?.status ?? null,
+        score: checks.basicCompatibility?.score ?? null,
+        durationMs: checks.basicCompatibility?.durationMs ?? null,
+        timeout: !!(checks.basicCompatibility?.timeout),
+        fallbackUsed: false,
+        evidenceSource: checks.basicCompatibility?.evidence ? 'probe' : 'none',
+        error: checks.basicCompatibility?.error ?? null
+      },
+      clientConfig: {
+        ok: checks.clientConfig?.ok ?? null,
+        status: checks.clientConfig?.status ?? null,
+        score: checks.clientConfig?.score ?? null,
+        durationMs: checks.clientConfig?.durationMs ?? null,
+        timeout: false,
+        fallbackUsed: false,
+        evidenceSource: 'default',
+        error: null
+      }
+    },
+    // v1.11.4: Timeout constants reference
+    timeoutConstants: {
+      GLOBAL_TIMEOUT_MS: 150000,
+      TARGET_CALL_TIMEOUT_MS: 20000,
+      USAGE_AUDIT_TIMEOUT_MS: 20000,
+      CACHE_PROBE_TIMEOUT_MS: 15000,
+      CACHE_PROBE_TOTAL_TIMEOUT_MS: 35000,
+      MODEL_SIGNAL_TIMEOUT_MS: 30000,
+      STABILITY_TIMEOUT_MS: 45000,
+      PUBLIC_SIGNALS_TIMEOUT_MS: 6000,
+      JSON_READ_TIMEOUT_MS: 8000
+    }
   };
 }
 
