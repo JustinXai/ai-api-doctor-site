@@ -4160,7 +4160,10 @@ function applyCaps(rawScore, checks, modelIdInfo) {
   }
 
   // 4. Core response is HTML/invalid JSON (format severely incompatible)
-  const coreResponseUnparseable = !checks.targetCall?.evidence?.responseParsed && (checks.targetCall?.evidence?.httpStatus === 200);
+  // v1.10.10: Only cap if basicCompatibility's JSON check also failed.
+  // If basicCompatibility gives tcJson=1 (response is JSON-compatible), do NOT cap.
+  const basicCompatTcJson = checks.basicCompatibility?.evidence?.tcJson;
+  const coreResponseUnparseable = basicCompatTcJson !== 1 && !checks.targetCall?.evidence?.responseParsed && (checks.targetCall?.evidence?.httpStatus === 200);
   if (coreResponseUnparseable) {
     cap = 45; capReason = 'response_not_json'; capApplied = true;
   }
@@ -4370,8 +4373,8 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo, operationalRis
   else verdictDesc = zh ? '部分信号异常，建议小额验证' : 'Some signals abnormal — verify with small amounts';
   const disclaimer = zh ? '本报告仅基于可复现 API 信号，不构成法律结论。' : 'This report is based on reproducible API signals only and does not constitute a legal conclusion.';
 
-  // ── v1.10.9: Two-column module grid cell ──
-  function buildModuleCell(checkKey, moduleData, checks, reportId, zh) {
+  // ── v1.10.10: Two-column module grid cell (safe, no source leak) ──
+  function buildModuleCell(checkKey, moduleData, reportId, zh) {
     const { label, score, maxScore, risk } = moduleData;
     const fmtScore = (s, max) => {
       const rounded = Math.round(s * 10) / 10;
@@ -4391,32 +4394,96 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo, operationalRis
       unknown: zh ? '未验证' : 'Unknown'
     };
     const rc = riskColors[risk] || riskColors.unknown;
-    const contentId = 'rc-content-' + checkKey + '-' + reportId;
 
-    return `<button class="module-cell" data-module="${checkKey}" onclick="(function(){
-      var panel=document.getElementById('module-detail-panel-${reportId}');
-      var current='module-detail-panel-${reportId}';
-      if(!panel)return;
-      var isSame=panel.dataset.activeModule==='${checkKey}';
-      // Build detail content
-      var checkData=${buildModuleDetail.toString()}(checks['${checkKey}'],'${checkKey}',${zh},'${reportId}');
-      if(isSame){
-        panel.style.display='none';
-        panel.dataset.activeModule='';
-      }else{
-        panel.innerHTML=checkData;
-        panel.style.display='block';
-        panel.dataset.activeModule='${checkKey}';
-      }
-    })()" style="cursor:pointer">
-      <span class="module-name">${escH(label)}</span>
-      <span class="module-score">${fmtScore(score, maxScore)}</span>
-      <span class="risk-pill" style="background:${rc.bg};color:${rc.color}">${riskLabels[risk] || riskLabels.unknown}</span>
-      <span class="module-arrow" style="color:#94a3b8;font-size:12px">›</span>
-    </button>`;
+    return '<button class="module-cell" type="button" data-module="' + escH(checkKey) + '">' +
+      '<span class="module-name">' + escH(label) + '</span>' +
+      '<span class="module-score">' + escH(fmtScore(score, maxScore)) + '</span>' +
+      '<span class="risk-pill" style="background:' + rc.bg + ';color:' + rc.color + '">' + escH(riskLabels[risk] || riskLabels.unknown) + '</span>' +
+      '<span class="module-arrow" style="color:#94a3b8;font-size:12px">&#8250;</span>' +
+      '</button>';
   }
 
-  // Helper to build module detail HTML
+  // ── v1.10.10: Bind module grid click handlers (event delegation) ──
+  function bindModuleGridHandlers(checks, reportId, zh) {
+    var grid = document.getElementById('module-grid-' + reportId);
+    var panel = document.getElementById('module-detail-panel-' + reportId);
+    if (!grid || !panel) return;
+
+    grid.addEventListener('click', function(e) {
+      var cell = e.target.closest('[data-module]');
+      if (!cell) return;
+
+      var key = cell.getAttribute('data-module');
+      var isSame = panel.dataset.activeModule === key;
+
+      if (isSame) {
+        panel.style.display = 'none';
+        panel.dataset.activeModule = '';
+        panel.innerHTML = '';
+      } else {
+        panel.innerHTML = buildModuleDetailHTML(key, checks, zh);
+        panel.style.display = 'block';
+        panel.dataset.activeModule = key;
+      }
+    });
+  }
+
+  // ── v1.10.10: Build module detail HTML (safe, no source leak) ──
+  function buildModuleDetailHTML(checkKey, checks, zh) {
+    var checkData = checks[checkKey];
+    if (!checkData) return '<p style="color:#94a3b8;font-size:11px">' + (zh ? '暂无详情' : 'No details') + '</p>';
+
+    var html = '<div style="background:#fff;border-radius:12px;padding:12px 14px">';
+
+    // Deductions
+    if (checkData.deductions && checkData.deductions.length > 0) {
+      html += '<div style="margin-bottom:10px">';
+      html += '<div style="font-size:10px;font-weight:600;color:#dc2626;margin-bottom:6px">' + escH(zh ? '扣分详情' : 'Deduction Details') + '</div>';
+      html += '<ul style="margin:0;padding:0 0 0 16px;font-size:11px;color:#dc2626;line-height:1.8">';
+      for (var i = 0; i < checkData.deductions.length; i++) {
+        html += '<li style="padding:2px 0">' + escH(checkData.deductions[i]) + '</li>';
+      }
+      html += '</ul></div>';
+    }
+
+    // Sub-scores
+    if (checkData.evidence && checkData.evidence.subScores) {
+      var subLabels = {
+        usageField: zh ? 'usage字段' : 'usage Field',
+        promptTokens: zh ? 'prompt token' : 'prompt tokens',
+        completionTokens: zh ? 'completion token' : 'completion tokens',
+        totalTokens: zh ? 'total token' : 'total tokens',
+        shortReply: zh ? '短回复检测' : 'Short Reply',
+        selfClaim: zh ? '自报身份' : 'Self-Claim',
+        targetConsistency: zh ? '目标一致性' : 'Target Consistency',
+        capabilitySmoke: zh ? '能力测试' : 'Capability Tests'
+      };
+      var entries = Object.entries(checkData.evidence.subScores);
+      if (entries.length > 0) {
+        html += '<div style="margin-bottom:10px">';
+        html += '<div style="font-size:10px;font-weight:600;color:#0f172a;margin-bottom:6px">' + escH(zh ? '子项详情' : 'Sub-scores') + '</div>';
+        for (var j = 0; j < entries.length; j++) {
+          var kv = entries[j];
+          var k = kv[0], v = kv[1];
+          if (!v || v.maxScore === undefined) continue;
+          var ratio = v.maxScore > 0 ? v.score / v.maxScore : 0;
+          var icon = ratio >= 0.8 ? '&#10003;' : ratio >= 0.5 ? '&#9888;' : '&#10007;';
+          var iconColor = ratio >= 0.8 ? '#16a34a' : ratio >= 0.5 ? '#d97706' : '#dc2626';
+          html += '<div style="display:flex;align-items:center;gap:8px;padding:3px 0;font-size:11px">';
+          html += '<span style="color:' + iconColor + '">' + icon + '</span>';
+          html += '<span style="flex:1;color:#374151">' + escH(subLabels[k] || escH(k)) + '</span>';
+          html += '<span style="font-weight:700;color:#374151">' + v.score + '/' + v.maxScore + '</span>';
+          html += '</div>';
+        }
+        html += '</div>';
+      }
+    }
+
+    html += '</div>';
+    return html;
+  }
+
+  // Helper to build module detail HTML (legacy, kept for reference)
   function buildModuleDetail(checkData, checkKey, zh, reportId) {
     if (!checkData) return '';
     const rowId = 'rc-row-' + checkKey + '-' + reportId;
@@ -5785,6 +5852,12 @@ window.Doctor = {
     if (result && result._runId !== undefined && result._runId !== this._runId) return;
     const html = buildReportCardHTML(result, this._formData, getDocLang(), this._modelIdInfo, result.operationalRisk);
     resultNode.innerHTML = html;
+    // v1.10.10: Bind module grid click handlers after HTML is inserted
+    if (result && result.checks && result.reportId) {
+      try {
+        bindModuleGridHandlers(result.checks, result.reportId, getDocLang() !== 'en');
+      } catch (e) { /* ignore if handlers fail to bind */ }
+    }
     const rect = resultNode.getBoundingClientRect();
     if (rect.top > window.innerHeight * 0.6) resultNode.scrollIntoView({ behavior: 'smooth', block: 'start' });
   },
@@ -5972,6 +6045,92 @@ window.Doctor = {
     .rc-label { flex: 1; color: #374151; font-size: 11px; }
     .rc-score { font-weight: 700; color: #374151; font-size: 11px; min-width: 40px; }
     .rc-detail { color: #94a3b8; font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 120px; }
+    /* v1.10.10: Two-column module grid */
+    .module-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      background: #fff;
+      border-radius: 12px;
+      overflow: hidden;
+      margin-bottom: 10px;
+    }
+    .module-cell {
+      display: grid;
+      grid-template-columns: minmax(96px, 1fr) auto auto;
+      align-items: center;
+      gap: 8px;
+      min-height: 44px;
+      padding: 9px 12px;
+      border: 0;
+      border-bottom: 1px solid #e2e8f0;
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .module-cell:nth-child(odd) {
+      border-right: 1px solid #e2e8f0;
+    }
+    .module-cell:nth-last-child(-n + 2) {
+      border-bottom: 0;
+    }
+    .module-cell:hover {
+      background: #f8fafc;
+    }
+    .module-cell:focus {
+      outline: 2px solid #2563eb;
+      outline-offset: -2px;
+    }
+    .module-name {
+      font-weight: 650;
+      white-space: nowrap;
+      font-size: 12px;
+      color: #374151;
+    }
+    .module-score {
+      font-weight: 750;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+      font-size: 12px;
+      color: #0f172a;
+    }
+    .risk-pill {
+      white-space: nowrap;
+      font-size: 11px;
+      padding: 2px 7px;
+      border-radius: 999px;
+      font-weight: 600;
+    }
+    .module-arrow {
+      color: #94a3b8;
+      font-size: 14px;
+    }
+    .module-detail-panel {
+      margin-top: 10px;
+      padding: 0;
+      border: 0;
+      border-radius: 12px;
+      background: transparent;
+    }
+    .module-detail-panel[hidden] {
+      display: none;
+    }
+    @media (max-width: 640px) {
+      .module-grid {
+        grid-template-columns: 1fr;
+      }
+      .module-cell:nth-child(odd) {
+        border-right: 0;
+      }
+      .module-cell:nth-last-child(-n + 2) {
+        border-bottom: 1px solid #e2e8f0;
+      }
+      .module-cell:last-child {
+        border-bottom: 0;
+      }
+    }
   `;
   document.head.appendChild(style);
 })();
