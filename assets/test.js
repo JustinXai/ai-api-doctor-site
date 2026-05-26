@@ -4065,6 +4065,88 @@ function safeScore(score, max) {
 }
 
 /* ═══════════════════════════════════════════════════════
+   v1.11.3: Risk label helpers
+   ═══════════════════════════════════════════════════════ */
+function getRiskByRatio(score, max) {
+  if (!Number.isFinite(score) || !Number.isFinite(max) || max <= 0) return 'unknown';
+  const ratio = score / max;
+  if (ratio >= 0.8) return 'low';
+  if (ratio >= 0.5) return 'medium';
+  return 'high';
+}
+
+function getRiskLabel(risk, locale) {
+  const zh = locale === 'zh' || locale === 'zh-CN';
+  const zhMap = {
+    low: '低风险',
+    medium: '中风险',
+    high: '高风险',
+    unknown: '未验证'
+  };
+  const enMap = {
+    low: 'Low Risk',
+    medium: 'Medium Risk',
+    high: 'High Risk',
+    unknown: 'Unverified'
+  };
+  return zh ? (zhMap[risk] || '未验证') : (enMap[risk] || 'Unverified');
+}
+
+function safeText(v, fallback) {
+  return typeof v === 'string' && v ? v : (fallback || '');
+}
+
+function isZh(locale) {
+  return locale !== 'en';
+}
+
+/* ═══════════════════════════════════════════════════════
+   v1.11.3: normalizeModuleForDisplay
+   Ensures module objects have flat string label/riskLabel
+   ═══════════════════════════════════════════════════════ */
+function normalizeModuleForDisplay(module, locale) {
+  const zh = isZh(locale);
+  const key = safeText(module?.key, 'unknown');
+
+  const labelZhMap = {
+    usageTransparency: '扣费透明度',
+    cacheSignal: '缓存命中信号',
+    modelSignal: '模型信号',
+    stabilityLatency: '稳定性与延迟',
+    coreCompatibility: '基础兼容性',
+    basicCompatibility: '基础兼容性',
+    clientConfig: '客户端配置'
+  };
+
+  const labelEnMap = {
+    usageTransparency: 'Cost Transparency',
+    cacheSignal: 'Cache Signal',
+    modelSignal: 'Model Signal',
+    stabilityLatency: 'Stability & Latency',
+    coreCompatibility: 'Basic Compatibility',
+    basicCompatibility: 'Basic Compatibility',
+    clientConfig: 'Client Config'
+  };
+
+  const score = safeNum(module?.score, 0);
+  const max = safeNum(module?.max, 0);
+  const risk = module?.risk || getRiskByRatio(score, max);
+
+  return {
+    key,
+    labelZh: safeText(module?.labelZh, labelZhMap[key] || key),
+    labelEn: safeText(module?.labelEn, labelEnMap[key] || key),
+    label: zh ? safeText(module?.labelZh, labelZhMap[key] || key) : safeText(module?.labelEn, labelEnMap[key] || key),
+    score,
+    max,
+    risk,
+    riskLabelZh: getRiskLabel(risk, 'zh'),
+    riskLabelEn: getRiskLabel(risk, 'en'),
+    riskLabel: getRiskLabel(risk, zh ? 'zh' : 'en')
+  };
+}
+
+/* ═══════════════════════════════════════════════════════
    NEW: calcFinalScore — v1.7 Real-Data Weighted
    Normalized weighted sum based on real request data.
    ═══════════════════════════════════════════════════════ */
@@ -4626,7 +4708,7 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo, operationalRis
 
   // ── v1.10.10: Two-column module grid cell (safe, no source leak) ──
   function buildModuleCell(checkKey, moduleData, reportId, zh) {
-    const { label, score, maxScore, risk } = moduleData;
+    const { label, score, maxScore, risk, riskLabel } = moduleData;
     const fmtScore = (s, max) => {
       const rounded = Math.round(s * 10) / 10;
       if (Number.isInteger(rounded)) return rounded + '/' + max;
@@ -4638,18 +4720,20 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo, operationalRis
       high: { color: '#dc2626', bg: '#fee2e2' },
       unknown: { color: '#64748b', bg: '#f1f5f9' }
     };
-    const riskLabels = {
-      low: zh ? '低风险' : 'Low',
-      medium: zh ? '中风险' : 'Medium',
-      high: zh ? '高风险' : 'High',
-      unknown: zh ? '未验证' : 'Unknown'
-    };
     const rc = riskColors[risk] || riskColors.unknown;
+    const displayRiskLabel = typeof riskLabel === 'string' && riskLabel
+      ? riskLabel
+      : (riskLabels => riskLabels[risk] || riskLabels.unknown)({
+          low: zh ? '低风险' : 'Low Risk',
+          medium: zh ? '中风险' : 'Medium Risk',
+          high: zh ? '高风险' : 'High Risk',
+          unknown: zh ? '未验证' : 'Unverified'
+        });
 
     return '<button class="module-cell" type="button" data-module="' + escH(checkKey) + '">' +
       '<span class="module-name">' + escH(label) + '</span>' +
       '<span class="module-score">' + escH(fmtScore(score, maxScore)) + '</span>' +
-      '<span class="risk-pill" style="background:' + rc.bg + ';color:' + rc.color + '">' + escH(riskLabels[risk] || riskLabels.unknown) + '</span>' +
+      '<span class="risk-pill" style="background:' + rc.bg + ';color:' + rc.color + '">' + escH(displayRiskLabel) + '</span>' +
       '<span class="module-arrow" style="color:#94a3b8;font-size:12px">&#8250;</span>' +
       '</button>';
   }
@@ -5432,44 +5516,29 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo, operationalRis
     <!-- v1.10.9: 6 module sections — two-column compact grid -->
     <div class="module-grid" id="module-grid-${reportId}">
       <!-- Row 1: usageTransparency + cacheSignal -->
-      ${buildModuleCell('usageTransparency', {
-        label: safeBreakdown?.usageTransparency?.label ?? safeChecks.costTransparency?.label ?? (zh ? '扣费透明度' : 'Cost Transparency'),
-        score: safeBreakdown?.usageTransparency?.score ?? safeChecks.costTransparency?.score ?? 0,
-        maxScore: safeBreakdown?.usageTransparency?.max ?? 25,
-        risk: safeBreakdown?.usageTransparency?.risk ?? 'unknown'
-      }, safeChecks, reportId, zh)}
-      ${buildModuleCell('cacheSignal', {
-        label: safeBreakdown?.cacheSignal?.label ?? safeChecks.cacheHitCheck?.label ?? (zh ? '缓存命中信号' : 'Cache Signal'),
-        score: safeBreakdown?.cacheSignal?.score ?? safeChecks.cacheHitCheck?.score ?? 0,
-        maxScore: safeBreakdown?.cacheSignal?.max ?? 5,
-        risk: safeBreakdown?.cacheSignal?.risk ?? 'unknown'
-      }, safeChecks, reportId, zh)}
+      ${(function(){
+        const mods = safeBreakdown?.modules || [];
+        const findMod = (k) => { const m = mods.find(x => x && x.key === k); return m ? normalizeModuleForDisplay(m, zh ? 'zh' : 'en') : null; };
+        const m1 = findMod('usageTransparency') || {key:'usageTransparency',label:zh?'扣费透明度':'Cost Transparency',score:0,max:25,risk:'unknown',riskLabel:zh?'未验证':'Unverified'};
+        const m2 = findMod('cacheSignal') || {key:'cacheSignal',label:zh?'缓存命中信号':'Cache Signal',score:0,max:5,risk:'unknown',riskLabel:zh?'未验证':'Unverified'};
+        return buildModuleCell('usageTransparency', m1, safeChecks, reportId, zh) + buildModuleCell('cacheSignal', m2, safeChecks, reportId, zh);
+      })()}
       <!-- Row 2: modelSignal + stabilityLatency -->
-      ${buildModuleCell('modelSignal', {
-        label: safeBreakdown?.modelSignal?.label ?? safeChecks.modelSignal?.label ?? (zh ? '模型信号' : 'Model Signal'),
-        score: safeBreakdown?.modelSignal?.score ?? safeChecks.modelSignal?.score ?? 0,
-        maxScore: safeBreakdown?.modelSignal?.max ?? 15,
-        risk: safeBreakdown?.modelSignal?.risk ?? 'unknown'
-      }, safeChecks, reportId, zh)}
-      ${buildModuleCell('stabilityLatency', {
-        label: safeBreakdown?.stabilityLatency?.label ?? safeChecks.stability?.label ?? (zh ? '稳定性与延迟' : 'Stability & Latency'),
-        score: safeBreakdown?.stabilityLatency?.score ?? safeChecks.stability?.score ?? 0,
-        maxScore: safeBreakdown?.stabilityLatency?.max ?? 25,
-        risk: safeBreakdown?.stabilityLatency?.risk ?? 'unknown'
-      }, safeChecks, reportId, zh)}
-      <!-- Row 3: coreCompatibility + clientConfig -->
-      ${buildModuleCell('coreCompatibility', {
-        label: safeBreakdown?.coreCompatibility?.label ?? safeChecks.basicCompatibility?.label ?? (zh ? '基础兼容性' : 'Basic Compatibility'),
-        score: safeBreakdown?.coreCompatibility?.score ?? safeChecks.basicCompatibility?.score ?? 0,
-        maxScore: safeBreakdown?.coreCompatibility?.max ?? 25,
-        risk: safeBreakdown?.coreCompatibility?.risk ?? 'unknown'
-      }, safeChecks, reportId, zh)}
-      ${buildModuleCell('clientConfig', {
-        label: safeBreakdown?.clientConfig?.label ?? safeChecks.clientConfig?.label ?? (zh ? '客户端配置' : 'Client Config'),
-        score: safeBreakdown?.clientConfig?.score ?? safeChecks.clientConfig?.score ?? 0,
-        maxScore: safeBreakdown?.clientConfig?.max ?? 5,
-        risk: safeBreakdown?.clientConfig?.risk ?? 'unknown'
-      }, safeChecks, reportId, zh)}
+      ${(function(){
+        const mods = safeBreakdown?.modules || [];
+        const findMod = (k) => { const m = mods.find(x => x && x.key === k); return m ? normalizeModuleForDisplay(m, zh ? 'zh' : 'en') : null; };
+        const m3 = findMod('modelSignal') || {key:'modelSignal',label:zh?'模型信号':'Model Signal',score:0,max:15,risk:'unknown',riskLabel:zh?'未验证':'Unverified'};
+        const m4 = findMod('stabilityLatency') || findMod('stability') || {key:'stabilityLatency',label:zh?'稳定性与延迟':'Stability & Latency',score:0,max:25,risk:'unknown',riskLabel:zh?'未验证':'Unverified'};
+        return buildModuleCell('modelSignal', m3, safeChecks, reportId, zh) + buildModuleCell('stabilityLatency', m4, safeChecks, reportId, zh);
+      })()}
+      <!-- Row 3: coreCompatibility/basicCompatibility + clientConfig -->
+      ${(function(){
+        const mods = safeBreakdown?.modules || [];
+        const findMod = (k) => { const m = mods.find(x => x && x.key === k); return m ? normalizeModuleForDisplay(m, zh ? 'zh' : 'en') : null; };
+        const m5 = findMod('coreCompatibility') || findMod('basicCompatibility') || {key:'coreCompatibility',label:zh?'基础兼容性':'Basic Compatibility',score:0,max:25,risk:'unknown',riskLabel:zh?'未验证':'Unverified'};
+        const m6 = findMod('clientConfig') || {key:'clientConfig',label:zh?'客户端配置':'Client Config',score:0,max:5,risk:'unknown',riskLabel:zh?'未验证':'Unverified'};
+        return buildModuleCell('coreCompatibility', m5, safeChecks, reportId, zh) + buildModuleCell('clientConfig', m6, safeChecks, reportId, zh);
+      })()}
     </div>
     <!-- Module detail panel — shown when a module is expanded -->
     <div id="module-detail-panel-${reportId}" class="module-detail-panel" style="display:none"></div>
