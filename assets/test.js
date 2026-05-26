@@ -4209,6 +4209,53 @@ function applyCapsLegacy(rawScore, checks, modelIdInfo) {
 }
 
 /* ═══════════════════════════════════════════════════════
+   v1.10.12: Simplified fatal cap for raw module score
+   Only true core failures trigger cap.
+   Cap limits are raw scores, not percentages.
+   ═══════════════════════════════════════════════════════ */
+function applyFatalCapsToRaw(rawScore, checks) {
+  let applied = false;
+  let reason = null;
+  let limit = null;
+
+  // 1. Base URL unreachable
+  if ((checks.reachability?.score || 0) < 3) {
+    applied = true; reason = 'base_url_unreachable'; limit = 20;
+  }
+  // 2. Core auth failed (401/403 on target call)
+  else if (checks.auth?.evidence?.chatStatus === 401 || checks.auth?.evidence?.modelsStatus === 401) {
+    applied = true; reason = 'core_auth_failed'; limit = 25;
+  }
+  // 3. Target call 403 on core endpoint
+  else if (checks.targetCall?.evidence?.httpStatus === 403) {
+    applied = true; reason = 'target_call_403'; limit = 25;
+  }
+  // 4. Target call 404 (model not found)
+  else if (checks.targetCall?.evidence?.httpStatus === 404) {
+    applied = true; reason = 'model_not_found'; limit = 35;
+  }
+  // 5. Response format incompatible - ONLY if basicCompat < 10 AND response is truly garbage
+  else if (checks.basicCompatibility?.score < 10 && !checks.targetCall?.evidence?.responseParsed) {
+    applied = true; reason = 'response_format_incompatible'; limit = 35;
+  }
+  // 6. Stability completely failed (success rate <= 40%)
+  else {
+    const samples = checks.stability?.evidence?.samples || [];
+    const totalSamples = samples.length;
+    const successSamples = samples.filter(s => s.ok && s.hasContent).length;
+    const successRate = totalSamples >= 5 ? successSamples / totalSamples : 1;
+    if (totalSamples >= 5 && successRate <= 0.4) {
+      applied = true; reason = 'stability_failed'; limit = 60;
+    }
+  }
+
+  // NEVER cap for: usage missing, model signal low, short reply failed,
+  // identity no answer, cache unverified, operational risk
+
+  return { applied, reason, limit };
+}
+
+/* ═══════════════════════════════════════════════════════
    NEW: getJudgment — one-line verdict
    ═══════════════════════════════════════════════════════ */
 function getJudgment(score, checks) {
@@ -5097,13 +5144,13 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo, operationalRis
     ${(() => {
       // Only show cap notice if capApplied=true AND capReason is truly fatal
       if (!capApplied || !capReason) return '';
-      const trulyFatalReasons = ['reachability_failed', 'auth_401', 'core_chat_403', 'response_not_json', 'model_not_found', 'stability_failed'];
+      const trulyFatalReasons = ['base_url_unreachable', 'core_auth_failed', 'target_call_403', 'model_not_found', 'response_format_incompatible', 'stability_failed'];
       if (!trulyFatalReasons.includes(capReason)) return '';
       const reasonLabels = {
-        reachability_failed: zh ? '核心调用未成功' : 'Core call failed',
-        auth_401: zh ? 'API Key 无法调用目标模型' : 'API Key cannot call target model',
-        core_chat_403: zh ? '核心接口权限受限' : 'Core endpoint restricted',
-        response_not_json: zh ? '返回格式不兼容' : 'Response format incompatible',
+        base_url_unreachable: zh ? '核心调用未成功' : 'Core call failed',
+        core_auth_failed: zh ? 'API Key 无法调用目标模型' : 'API Key cannot call target model',
+        target_call_403: zh ? '核心接口权限受限' : 'Core endpoint restricted',
+        response_format_incompatible: zh ? '返回格式不兼容' : 'Response format incompatible',
         model_not_found: zh ? '目标模型不可用' : 'Target model unavailable',
         stability_failed: zh ? '稳定性采样失败' : 'Stability sampling failed'
       };
@@ -5685,55 +5732,57 @@ window.Doctor = {
         clearTimeout(globalTimer);
         return; // Silently ignore stale results
       }
-      const checks = { reachability: reachResult, auth: authResult, modelList: modelListResult, autoModel: autoModelResult, targetCall: targetCallResult, stability: stabilityResult, usageAudit: usageResult, costTransparency: costResult, cacheHitCheck: cacheResult, modelSignal: modelSignalResult, basicCompatibility: basicCompatResult, clientConfig: clientResult };
-      const { totalScore, gradeScore, breakdown, breakdownTotalRaw, scoreConsistencyCheck } = calcFinalScore(checks);
-      const capResult = applyCaps(gradeScore, checks, modelIdInfo);
-      const cappedGradeScore = extractCappedScore(capResult);
-      const capApplied = capResult && capResult.capApplied === true;
-      const cappedScore = capApplied ? Math.round((cappedGradeScore / 100) * breakdownTotalRaw * 10) / 10 : totalScore;
-      const grade = getScoreGrade(cappedGradeScore);
-      const judgment = getJudgment(cappedGradeScore, checks);
-      const failureSummary = generateFailureSummary(cappedGradeScore, grade, checks);
+      // v1.10.12: Simplified scoring - apply caps directly to rawModuleScore
+      // cap limit is a raw score, not a percentage
+      const rawModuleScore = breakdownTotalRaw; // sum of all 6 module scores
+      const capResult = applyFatalCapsToRaw(rawModuleScore, checks);
+      const capApplied = capResult.applied;
+      const capReason = capResult.reason;
+      const capLimit = capResult.limit;
+      // Final score: if cap applied, use capLimit; otherwise use rawModuleScore
+      const finalScore = capApplied ? capLimit : rawModuleScore;
+      const grade = getScoreGrade(finalScore);
+      const judgment = getJudgment(finalScore, checks);
+      const failureSummary = generateFailureSummary(finalScore, grade, checks);
 
       // Add step timing to debugScoring
       let debugScoring;
       try {
-        debugScoring = buildDebugScoring(totalScore, cappedScore, checks, breakdown, {
-        scoreConsistencyCheck,
-        breakdownTotalRaw,
-        gradeScore,
-        cappedGradeScore,
-        capApplied,
-        capReason: capResult?.capReason,
-        operationalRisk,
-        stepTimings,
-        stepTimeouts,
-        checkStartedAt,
-        checkFinishedAt,
-        totalCheckDurationMs: checkFinishedAt - checkStartedAt,
-        globalTimeoutApplied: globalTimeoutTriggered,
-        stuckPreventionVersion: 'v1.10-public-signals-worker'
-      });
+        debugScoring = buildDebugScoring(rawModuleScore, finalScore, checks, breakdown, {
+          rawModuleScore,
+          finalScore,
+          capApplied,
+          capReason: capResult.reason,
+          capLimit: capResult.limit,
+          operationalRisk,
+          stepTimings,
+          stepTimeouts,
+          checkStartedAt,
+          checkFinishedAt,
+          totalCheckDurationMs: checkFinishedAt - checkStartedAt,
+          globalTimeoutApplied: globalTimeoutTriggered,
+          stuckPreventionVersion: 'v1.10.12-public-signals-worker'
+        });
       } catch (err) {
         debugScoring = {
           error: 'debugScoring build failed',
           message: String(err && err.message ? err.message : err),
           fallback: true,
-          stuckPreventionVersion: 'v1.10-public-signals-worker'
+          stuckPreventionVersion: 'v1.10.12-public-signals-worker'
         };
       }
 
       this._result = {
-        score: cappedScore,
-        totalScore,
+        score: finalScore,
+        rawModuleScore: rawModuleScore,
+        totalScore: finalScore,
         breakdown,
-        // v1.10.8: Always include breakdownTotalRaw for score consistency
-        breakdownTotalRaw: breakdownTotalRaw ?? totalScore,
+        breakdownTotalRaw: rawModuleScore,
         capApplied,
-        capReason: capResult?.capReason || null,
-        capLimit: capResult?.capLimit || null,
+        capReason: capResult.reason || null,
+        capLimit: capResult.limit || null,
         grade,
-        gradeScore: cappedGradeScore,
+        gradeScore: finalScore,
         judgment,
         checks,
         deepMode,

@@ -36,10 +36,10 @@ function testScoreConsistency() {
   results.push({ test: 'Result: Includes breakdownTotalRaw', passed: usesBreakdownTotalRawInResult });
   console.log(usesBreakdownTotalRawInResult ? 'PASS' : 'FAIL', '- Result: Includes breakdownTotalRaw');
 
-  // 5. Check that score in result is cappedScore
-  const usesCappedScore = testJsContent.includes('score: cappedScore');
-  results.push({ test: 'Result: score is cappedScore', passed: usesCappedScore });
-  console.log(usesCappedScore ? 'PASS' : 'FAIL', '- Result: score is cappedScore');
+  // 5. Check that score in result is finalScore
+  const usesFinalScore = testJsContent.includes('score: finalScore');
+  results.push({ test: 'Result: score is finalScore', passed: usesFinalScore });
+  console.log(usesFinalScore ? 'PASS' : 'FAIL', '- Result: score is finalScore');
 
   // 6. Check that capApplied is included in result
   const includesCapApplied = testJsContent.includes('capApplied,');
