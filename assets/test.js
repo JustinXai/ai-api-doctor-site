@@ -6060,6 +6060,7 @@ window.Doctor = {
   // Generate partial report when global timeout is reached
   _generatePartialReport() {
     const zh = getDocLang() !== 'en';
+    const currentRunId = this._runId; // Capture current runId for this result
     // If result exists with partial data, use it; otherwise create minimal result
     if (!this._result) {
       // Minimal partial result
@@ -6084,7 +6085,8 @@ window.Doctor = {
           globalTimeoutApplied: true,
           stuckPreventionVersion: 'v1.10-public-signals-worker'
         },
-        operationalRisk: null
+        operationalRisk: null,
+        _runId: currentRunId // Critical: must match this._runId for showResult to display
       };
     } else {
       // Enhance existing partial result with partial timeout marker
@@ -6093,6 +6095,7 @@ window.Doctor = {
       this._result.reportId = this._result.reportId || generateReportId();
       this._result.timestamp = this._result.timestamp || new Date().toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
       this._result.checks = this._result.checks || {};
+      this._result._runId = currentRunId; // Critical: ensure runId matches for showResult to display
       // Mark partial timeout in debug info
       if (!this._result.debugScoring) {
         this._result.debugScoring = {};
