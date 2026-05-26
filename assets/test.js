@@ -3750,13 +3750,16 @@ function generateFailureSummary(score, grade, checks) {
    ═══════════════════════════════════════════════════════ */
 function getConfidence(checks) {
   const zh = getDocLang() !== 'en';
-  const hasUsage = !!(checks.targetCall?.evidence?.usage && Object.keys(checks.targetCall.evidence.usage).length > 0);
-  const costRisk = getCostRiskLevel(checks.costTransparency?.score || 0);
-  const modelRisk = checks.modelSignal?.evidence?.modelSignal?.risk || 'low';
-  const selfClaimType = checks.modelSignal?.evidence?.modelSignal?.selfClaim?.type || 'exact_match';
-  const stabilityRisk = getStabilityRiskLevel(checks.stability?.score || 0, checks);
-  const successSamples = (checks.stability?.evidence?.samples || []).filter(s => s.ok && s.hasContent).length;
-  const hasInconsistent = Object.values(checks).some(c => c?.status === 'inconsistent');
+  const safeChecks = checks || {};
+  const hasUsage = !!(safeChecks.targetCall?.evidence?.usage && Object.keys(safeChecks.targetCall.evidence.usage).length > 0);
+  const costRisk = getCostRiskLevel(safeChecks.costTransparency?.score || 0);
+  const modelSignalEvidence = safeChecks.modelSignal?.evidence || {};
+  const modelSignalDetail = modelSignalEvidence?.modelSignal || {};
+  const modelRisk = modelSignalDetail?.risk || 'low';
+  const selfClaimType = modelSignalDetail?.selfClaim?.type || 'exact_match';
+  const stabilityRisk = getStabilityRiskLevel(safeChecks.stability?.score || 0, safeChecks);
+  const successSamples = (safeChecks.stability?.evidence?.samples || []).filter(s => s.ok && s.hasContent).length;
+  const hasInconsistent = Object.values(safeChecks).some(c => c?.status === 'inconsistent');
 
   // low confidence conditions
   if (!hasUsage) return { level: 'low', label: zh ? '低' : 'Low', reason: zh ? 'usage 完全缺失，置信度降低' : 'usage completely missing — reduced confidence' };
@@ -4575,16 +4578,24 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo, operationalRis
   const rawModuleScore = breakdownTotalRaw != null ? breakdownTotalRaw : totalScore;
   const escH = s => esc(String(s || ''));
   const riskColors = { low: { color: '#16a34a', bg: '#dcfce7' }, medium: { color: '#d97706', bg: '#fef9c3' }, high: { color: '#dc2626', bg: '#fee2e2' } };
+
+  // Safe accessors for potentially empty checks and breakdown
+  const safeChecks = checks || {};
+  const safeBreakdown = breakdown || {};
+  const safeModelSignal = safeChecks.modelSignal || {};
+  const safeEvidence = safeModelSignal?.evidence || {};
+  const safeModelSignalDetail = safeEvidence?.modelSignal || {};
+
   // Use breakdown risk if available, fallback to computed values
-  const costRisk = breakdown?.usageTransparency?.risk || getCostRiskLevel(checks.costTransparency?.score || 0);
-  const modelRisk = breakdown?.modelSignal?.risk || checks.modelSignal?.evidence?.modelSignal?.risk || 'low';
-  const stabilityRisk = breakdown?.stabilityLatency?.risk || getStabilityRiskLevel(checks.stability?.score || 0, checks);
-  const selfClaimType = checks.modelSignal?.evidence?.modelSignal?.selfClaim?.type || 'exact_match';
+  const costRisk = safeBreakdown?.usageTransparency?.risk || getCostRiskLevel(safeChecks.costTransparency?.score || 0);
+  const modelRisk = safeBreakdown?.modelSignal?.risk || safeModelSignalDetail?.risk || 'low';
+  const stabilityRisk = safeBreakdown?.stabilityLatency?.risk || getStabilityRiskLevel(safeChecks.stability?.score || 0, safeChecks);
+  const selfClaimType = safeModelSignalDetail?.selfClaim?.type || 'exact_match';
   const isProxyOrPlatform = selfClaimType === 'platform_identity';
-  const modelSignal = checks.modelSignal?.evidence?.modelSignal;
+  const modelSignal = safeModelSignalDetail;
   const srcRisk = modelSignal?.risk || (isProxyOrPlatform || selfClaimType === 'ambiguous' || selfClaimType === 'wrong_family' || selfClaimType === 'hard_contamination' ? 'medium' : 'low');
   const srcLabelMap = {
-    exact_match: {zh:'身份匹配',en:'Identity Match'}, 
+    exact_match: {zh:'身份匹配',en:'Identity Match'},
     family_match: {zh:'家族匹配',en:'Family Match'},
     platform_identity: {zh:'平台/客户端',en:'Platform/Client'},
     ambiguous: {zh:'无法确认',en:'Unconfirmed'},
@@ -4593,10 +4604,10 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo, operationalRis
     failed: {zh:'检测失败',en:'Test Failed'}, empty: {zh:'无回答',en:'No Answer'},
   };
   const srcLabel = srcLabelMap[selfClaimType] || {zh:'未知',en:'Unknown'};
-  const confidence = getConfidence(checks);
+  const confidence = getConfidence(safeChecks);
   const confidenceColors = { high: { color: '#16a34a', bg: '#dcfce7' }, medium: { color: '#d97706', bg: '#fef9c3' }, low: { color: '#dc2626', bg: '#fee2e2' } };
   const confColor = confidenceColors[confidence.level] || confidenceColors.medium;
-  const hasUsage = !!(checks.targetCall?.evidence?.usage && Object.keys(checks.targetCall.evidence.usage).length > 0);
+  const hasUsage = !!(safeChecks.targetCall?.evidence?.usage && Object.keys(safeChecks.targetCall.evidence.usage).length > 0);
 
   // Priority: cost>model>stability>proxy (user requirement order)
   let verdictDesc = '';
@@ -4698,7 +4709,7 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo, operationalRis
         targetConsistency: zh ? '目标一致性' : 'Target Consistency',
         capabilitySmoke: zh ? '能力测试' : 'Capability Tests'
       };
-      var entries = Object.entries(checkData.evidence.subScores);
+      var entries = Object.entries(checkData.evidence?.subScores || {});
       if (entries.length > 0) {
         html += '<div style="margin-bottom:10px">';
         html += '<div style="font-size:10px;font-weight:600;color:#0f172a;margin-bottom:6px">' + escH(zh ? '子项详情' : 'Sub-scores') + '</div>';
@@ -4898,7 +4909,7 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo, operationalRis
       detailDeductions = `<div style="margin-bottom:8px">
         <div style="font-size:10px;font-weight:600;color:#dc2626;margin-bottom:4px">${zh ? '扣分详情' : 'Deduction Details'}</div>
         <ul style="margin:0;padding:0 0 0 14px;font-size:11px;color:#dc2626;line-height:1.7">
-          ${checkData.deductions.map(d => `<li style="padding:1px 0">${escH(d)}</li>`).join('')}
+          ${(checkData.deductions || []).map(d => `<li style="padding:1px 0">${escH(d)}</li>`).join('')}
         </ul>
       </div>`;
     }
@@ -5422,43 +5433,43 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo, operationalRis
     <div class="module-grid" id="module-grid-${reportId}">
       <!-- Row 1: usageTransparency + cacheSignal -->
       ${buildModuleCell('usageTransparency', {
-        label: breakdown?.usageTransparency?.label ?? checks.costTransparency?.label ?? (zh ? '扣费透明度' : 'Cost Transparency'),
-        score: breakdown?.usageTransparency?.score ?? checks.costTransparency?.score ?? 0,
-        maxScore: breakdown?.usageTransparency?.max ?? 25,
-        risk: breakdown?.usageTransparency?.risk ?? 'unknown'
-      }, checks, reportId, zh)}
+        label: safeBreakdown?.usageTransparency?.label ?? safeChecks.costTransparency?.label ?? (zh ? '扣费透明度' : 'Cost Transparency'),
+        score: safeBreakdown?.usageTransparency?.score ?? safeChecks.costTransparency?.score ?? 0,
+        maxScore: safeBreakdown?.usageTransparency?.max ?? 25,
+        risk: safeBreakdown?.usageTransparency?.risk ?? 'unknown'
+      }, safeChecks, reportId, zh)}
       ${buildModuleCell('cacheSignal', {
-        label: breakdown?.cacheSignal?.label ?? checks.cacheHitCheck?.label ?? (zh ? '缓存命中信号' : 'Cache Signal'),
-        score: breakdown?.cacheSignal?.score ?? checks.cacheHitCheck?.score ?? 0,
-        maxScore: breakdown?.cacheSignal?.max ?? 5,
-        risk: breakdown?.cacheSignal?.risk ?? 'unknown'
-      }, checks, reportId, zh)}
+        label: safeBreakdown?.cacheSignal?.label ?? safeChecks.cacheHitCheck?.label ?? (zh ? '缓存命中信号' : 'Cache Signal'),
+        score: safeBreakdown?.cacheSignal?.score ?? safeChecks.cacheHitCheck?.score ?? 0,
+        maxScore: safeBreakdown?.cacheSignal?.max ?? 5,
+        risk: safeBreakdown?.cacheSignal?.risk ?? 'unknown'
+      }, safeChecks, reportId, zh)}
       <!-- Row 2: modelSignal + stabilityLatency -->
       ${buildModuleCell('modelSignal', {
-        label: breakdown?.modelSignal?.label ?? checks.modelSignal?.label ?? (zh ? '模型信号' : 'Model Signal'),
-        score: breakdown?.modelSignal?.score ?? checks.modelSignal?.score ?? 0,
-        maxScore: breakdown?.modelSignal?.max ?? 15,
-        risk: breakdown?.modelSignal?.risk ?? 'unknown'
-      }, checks, reportId, zh)}
+        label: safeBreakdown?.modelSignal?.label ?? safeChecks.modelSignal?.label ?? (zh ? '模型信号' : 'Model Signal'),
+        score: safeBreakdown?.modelSignal?.score ?? safeChecks.modelSignal?.score ?? 0,
+        maxScore: safeBreakdown?.modelSignal?.max ?? 15,
+        risk: safeBreakdown?.modelSignal?.risk ?? 'unknown'
+      }, safeChecks, reportId, zh)}
       ${buildModuleCell('stabilityLatency', {
-        label: breakdown?.stabilityLatency?.label ?? checks.stability?.label ?? (zh ? '稳定性与延迟' : 'Stability & Latency'),
-        score: breakdown?.stabilityLatency?.score ?? checks.stability?.score ?? 0,
-        maxScore: breakdown?.stabilityLatency?.max ?? 25,
-        risk: breakdown?.stabilityLatency?.risk ?? 'unknown'
-      }, checks, reportId, zh)}
+        label: safeBreakdown?.stabilityLatency?.label ?? safeChecks.stability?.label ?? (zh ? '稳定性与延迟' : 'Stability & Latency'),
+        score: safeBreakdown?.stabilityLatency?.score ?? safeChecks.stability?.score ?? 0,
+        maxScore: safeBreakdown?.stabilityLatency?.max ?? 25,
+        risk: safeBreakdown?.stabilityLatency?.risk ?? 'unknown'
+      }, safeChecks, reportId, zh)}
       <!-- Row 3: coreCompatibility + clientConfig -->
       ${buildModuleCell('coreCompatibility', {
-        label: breakdown?.coreCompatibility?.label ?? checks.basicCompatibility?.label ?? (zh ? '基础兼容性' : 'Basic Compatibility'),
-        score: breakdown?.coreCompatibility?.score ?? checks.basicCompatibility?.score ?? 0,
-        maxScore: breakdown?.coreCompatibility?.max ?? 25,
-        risk: breakdown?.coreCompatibility?.risk ?? 'unknown'
-      }, checks, reportId, zh)}
+        label: safeBreakdown?.coreCompatibility?.label ?? safeChecks.basicCompatibility?.label ?? (zh ? '基础兼容性' : 'Basic Compatibility'),
+        score: safeBreakdown?.coreCompatibility?.score ?? safeChecks.basicCompatibility?.score ?? 0,
+        maxScore: safeBreakdown?.coreCompatibility?.max ?? 25,
+        risk: safeBreakdown?.coreCompatibility?.risk ?? 'unknown'
+      }, safeChecks, reportId, zh)}
       ${buildModuleCell('clientConfig', {
-        label: breakdown?.clientConfig?.label ?? checks.clientConfig?.label ?? (zh ? '客户端配置' : 'Client Config'),
-        score: breakdown?.clientConfig?.score ?? checks.clientConfig?.score ?? 0,
-        maxScore: breakdown?.clientConfig?.max ?? 5,
-        risk: breakdown?.clientConfig?.risk ?? 'unknown'
-      }, checks, reportId, zh)}
+        label: safeBreakdown?.clientConfig?.label ?? safeChecks.clientConfig?.label ?? (zh ? '客户端配置' : 'Client Config'),
+        score: safeBreakdown?.clientConfig?.score ?? safeChecks.clientConfig?.score ?? 0,
+        maxScore: safeBreakdown?.clientConfig?.max ?? 5,
+        risk: safeBreakdown?.clientConfig?.risk ?? 'unknown'
+      }, safeChecks, reportId, zh)}
     </div>
     <!-- Module detail panel — shown when a module is expanded -->
     <div id="module-detail-panel-${reportId}" class="module-detail-panel" style="display:none"></div>
@@ -5657,7 +5668,7 @@ window.Doctor = {
       modelSignal: 30000,
       stability: 45000
     };
-    const GLOBAL_TIMEOUT = 90000; // 90 seconds total
+    const GLOBAL_TIMEOUT = 150000; // 150 seconds total — increased for high-latency APIs
 
     // Global timeout controller
     const globalController = new AbortController();
@@ -6049,6 +6060,7 @@ window.Doctor = {
   // Generate partial report when global timeout is reached
   _generatePartialReport() {
     const zh = getDocLang() !== 'en';
+    // If result exists with partial data, use it; otherwise create minimal result
     if (!this._result) {
       // Minimal partial result
       const reportId = generateReportId();
@@ -6074,7 +6086,22 @@ window.Doctor = {
         },
         operationalRisk: null
       };
+    } else {
+      // Enhance existing partial result with partial timeout marker
+      this._result.capReason = this._result.capReason || 'partial_timeout';
+      this._result.grade = this._result.grade || { grade: 'U', label: '未完成', labelZh: '未完成', color: '#94a3b8', bg: '#f1f5f9' };
+      this._result.reportId = this._result.reportId || generateReportId();
+      this._result.timestamp = this._result.timestamp || new Date().toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+      this._result.checks = this._result.checks || {};
+      // Mark partial timeout in debug info
+      if (!this._result.debugScoring) {
+        this._result.debugScoring = {};
+      }
+      this._result.debugScoring.globalTimeoutApplied = true;
+      this._result.debugScoring.stuckPreventionVersion = 'v1.10-public-signals-worker';
     }
+    // Show toast and render the partial result
+    showToast(zh ? '检测超时，已生成部分报告（基于已完成的项目）' : 'Timeout — partial report generated from completed checks');
     this.showResult(this._result);
   },
 
@@ -6092,7 +6119,29 @@ window.Doctor = {
     if (!resultNode) return;
     // Ignore stale results
     if (result && result._runId !== undefined && result._runId !== this._runId) return;
-    const html = buildReportCardHTML(result, this._formData, getDocLang(), this._modelIdInfo, result.operationalRisk);
+
+    // Wrap buildReportCardHTML in try-catch to ensure partial results display
+    let html = '';
+    try {
+      html = buildReportCardHTML(result, this._formData, getDocLang(), this._modelIdInfo, result?.operationalRisk);
+    } catch (buildErr) {
+      console.error('Report build error:', buildErr);
+      // Fallback: show minimal score card
+      const zh = getDocLang() !== 'en';
+      const score = result?.score != null ? result.score : '?';
+      const gradeLabel = result?.grade?.labelZh || result?.grade?.label || (zh ? '未知' : 'Unknown');
+      const finalModel = this._formData?.model || result?.modelIdInfo?.finalTestModelId || '';
+      html = `
+        <div style="background:#fff;border-radius:16px;padding:24px;text-align:center">
+          <div style="font-size:14px;color:#f59e0b;margin-bottom:16px">${zh ? '⚠ 部分报告（渲染异常）' : '⚠ Partial Report (Render Error)'}</div>
+          <div style="font-size:72px;font-weight:800;color:#1e40af">${score}</div>
+          <div style="font-size:18px;font-weight:600;color:#64748b;margin-top:8px">${gradeLabel}</div>
+          <div style="font-size:13px;color:#94a3b8;margin-top:16px">${esc(finalModel)}</div>
+          <div style="margin-top:16px;font-size:12px;color:#f59e0b">${zh ? '部分检测已完成，详情可能不完整' : 'Some checks completed — details may be incomplete'}</div>
+        </div>
+      `;
+    }
+
     resultNode.innerHTML = html;
     // v1.10.10: Bind module grid click handlers after HTML is inserted
     if (result && result.checks && result.reportId) {
