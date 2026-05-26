@@ -4287,36 +4287,36 @@ function generateSuggestions(checks, modelIdInfo) {
   const mtComp = checks.costTransparency?.evidence?.maxTokensTest?.completionTokens || 0;
   if (mtComp > 20) add('max_tokens_uncontrolled', zh ? '配置提醒：max_tokens 限制可能影响后续长输出任务，请按需要设置。' : 'Config note: max_tokens limit may affect subsequent long-output tasks, adjust as needed.');
   // Priority 5: hard_contamination
-  if (selfClaimType === 'hard_contamination') add('hard_contamination', zh ? '模型回答中出现开发环境、工具人格或系统提示污染信号，可能影响原始模型行为，建议谨慎用于高成本任务。' : 'Model response shows development environment, tool persona or system prompt contamination — may affect original model behavior. Use with caution for high-cost tasks.');
+  if (selfClaimType === 'hard_contamination') add('hard_contamination', zh ? '模型存在人格污染信号，谨慎用于高成本任务。' : 'Model has contamination signals — use with caution.');
   // Priority 6: wrong_family
-  if (selfClaimType === 'wrong_family') add('wrong_family', zh ? '模型自报家族与目标 Model ID 明显不一致，存在模型降配或路由错误疑似风险。' : 'Model self-reported family clearly inconsistent with target Model ID — possible model downgrade or routing error risk.');
-  // Priority 7: platform_identity — short, no long platform list
+  if (selfClaimType === 'wrong_family') add('wrong_family', zh ? '模型家族与目标不一致，存在降配风险。' : 'Model family inconsistent — possible downgrade.');
+  // Priority 7: platform_identity — short
   if (isProxyOrPlatform) {
     add('proxy_route', zh
-      ? `检测到平台代理层身份暴露，来源透明度较低，建议结合 usage、token 和能力测试结果判断。`
-      : `Platform proxy layer identity detected — source transparency reduced. Recommend evaluating with usage, token and capability test results.`);
+      ? `平台代理层身份暴露，来源透明度降低。`
+      : `Platform proxy layer detected — source transparency reduced.`);
   }
   // Priority 8: Model signal failures
-  if (modelSignalRisk === 'high') add('model_failures', zh ? '模型信号风险较高，建议谨慎用于高成本任务。' : 'Model signal risk high — use with caution for high-cost tasks.');
-  else if (modelSignalScore < 10) add('model_failures', zh ? '模型信号得分较低，存在模型降配或兼容差异风险，建议结合实际任务继续验证模型质量。' : 'Model signal score low — possible model downgrade or compatibility issues. Recommend continuing to verify with real tasks.');
+  if (modelSignalRisk === 'high') add('model_failures', zh ? '模型信号风险较高，建议谨慎使用。' : 'Model signal risk high — use with caution.');
+  else if (modelSignalScore < 10) add('model_failures', zh ? '模型信号得分较低，建议继续验证。' : 'Model signal low — continue verification.');
   // Priority 9: Model not in /models but works
-  if (!isInList && targetWorks && modelSignalRisk !== 'high' && selfClaimScore > 0) add('model_not_in_list', zh ? '当前模型未出现在 /models 列表中，但实际调用已通过，可能是隐藏模型、别名模型或供应商未完整暴露模型列表。' : 'Model not in /models list but actual call passed — may be a hidden/alias model or incomplete model list exposure.');
+  if (!isInList && targetWorks && modelSignalRisk !== 'high' && selfClaimScore > 0) add('model_not_in_list', zh ? '模型未在列表中但调用正常。' : 'Model not in list but call passed.');
   // Priority 10: Stability high risk
   if (stabilityRisk === 'high') add('stability_high', zh
-    ? `稳定性采样存在严重波动：平均延迟 ${Math.round(avgLat)}ms，最大 ${checks.stability?.evidence?.maxLatency || 0}ms，波动 ${Math.round(jitter)}ms。建议谨慎用于高成本任务。`
-    : `Stability sampling shows severe fluctuation: avg ${Math.round(avgLat)}ms, max ${checks.stability?.evidence?.maxLatency || 0}ms, jitter ${Math.round(jitter)}ms. Use with caution for high-cost tasks.`);
+    ? `稳定性波动较大：${Math.round(avgLat)}ms，谨慎使用。`
+    : `Stability fluctuates: ${Math.round(avgLat)}ms avg — use with caution.`);
   // Priority 11: Stability medium risk
   if (stabilityRisk === 'medium') add('stability_fluctuation', zh
-    ? `稳定性采样存在波动，可能影响 Cline、Continue 等客户端体验。`
-    : `Stability sampling shows fluctuation — may affect Cline, Continue and other client experiences.`);
-  // Priority 13: Cache weak signal (only for weak/none with fieldFound=true, NOT for unknown/error)
+    ? `稳定性存在波动，可能影响客户端体验。`
+    : `Stability fluctuation — may affect client experience.`);
+  // Priority 13: Cache weak signal
   const cacheStatus = checks.cacheHitCheck?.status || 'unknown';
   const cacheFieldFound = checks.cacheHitCheck?.evidence?.fieldFound || false;
   if ((cacheStatus === 'weak' || cacheStatus === 'none') && cacheFieldFound) {
-    add('cache_weak', zh ? '缓存命中信号较弱，建议不要仅凭高缓存宣传判断成本。' : 'Weak cache hit signal — do not judge costs based solely on high cache claims.');
+    add('cache_weak', zh ? '缓存信号较弱，不要仅凭高缓存宣传判断成本。' : 'Weak cache signal — do not judge costs by high cache claims.');
   }
   // Priority 12: All good
-  if (suggestions.length === 0) add('all_good', zh ? '扣费透明度、模型能力和稳定性信号表现良好，建议继续小额观察。' : 'Billing transparency, model capabilities and stability signals look good — recommend ongoing small-amount monitoring.');
+  if (suggestions.length === 0) add('all_good', zh ? '主要信号正常，建议继续小额观察。' : 'All signals normal — continue monitoring.');
   return suggestions.map(s => s.text).slice(0, 2); // limit to top 2
 }
 
@@ -4357,18 +4357,222 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo, operationalRis
 
   // Priority: cost>model>stability>proxy (user requirement order)
   let verdictDesc = '';
-  if (costRisk === 'high') verdictDesc = zh ? 'usage/token信号异常，扣费不易核对' : 'usage/token abnormal — billing hard to audit.';
-  else if (modelRisk === 'high') verdictDesc = zh ? '模型信号异常，建议谨慎使用' : 'Model signal anomalies — use with caution.';
-  else if (stabilityRisk === 'high') verdictDesc = zh ? '稳定性波动较大，建议谨慎用于客户端' : 'Stability fluctuates significantly — use caution.';
-  else if (selfClaimType === 'wrong_family') verdictDesc = zh ? '模型家族不一致，存在降配风险' : 'Model family inconsistent — possible downgrade.';
-  else if (selfClaimType === 'hard_contamination') verdictDesc = zh ? '模型回答存在工具人格污染' : 'Model shows tool-persona contamination.';
-  else if (selfClaimType === 'family_match') verdictDesc = zh ? '已识别为同一家族，但具体子版本未完全验证' : 'Same family detected — exact sub-version not fully verified.';
-  else if (selfClaimType === 'ambiguous') verdictDesc = zh ? '模型身份未确认，建议结合 usage 和能力测试判断' : 'Model identity unconfirmed — evaluate with usage and capability tests.';
-  else if (isProxyOrPlatform) verdictDesc = zh ? '检测到平台代理层，来源透明度降低' : 'Platform proxy layer detected — reduced source transparency.';
-  else if (!hasUsage) verdictDesc = zh ? 'usage缺失，扣费不可审计' : 'usage missing — billing unauditable.';
-  else if (costRisk === 'low' && modelRisk === 'low' && stabilityRisk === 'low' && selfClaimType === 'exact_match') verdictDesc = zh ? '主要信号正常，建议继续小额观察' : 'All signals normal — continue monitoring.';
-  else verdictDesc = zh ? '部分信号异常，建议小额继续验证' : 'Some signals abnormal — verify with small amounts.';
+  if (costRisk === 'high') verdictDesc = zh ? 'usage/token信号异常，扣费不易核对' : 'usage/token abnormal — billing hard to audit';
+  else if (modelRisk === 'high') verdictDesc = zh ? '模型信号异常，建议谨慎使用' : 'Model signal anomalies — use with caution';
+  else if (stabilityRisk === 'high') verdictDesc = zh ? '稳定性波动较大，建议谨慎' : 'Stability fluctuates — use with caution';
+  else if (selfClaimType === 'wrong_family') verdictDesc = zh ? '模型家族不一致，存在降配风险' : 'Model family inconsistent — possible downgrade';
+  else if (selfClaimType === 'hard_contamination') verdictDesc = zh ? '模型存在人格污染信号' : 'Model has contamination signals';
+  else if (selfClaimType === 'family_match') verdictDesc = zh ? '同家族，版本未完全验证' : 'Same family — version not verified';
+  else if (selfClaimType === 'ambiguous') verdictDesc = zh ? '模型身份未确认' : 'Model identity unconfirmed';
+  else if (isProxyOrPlatform) verdictDesc = zh ? '平台代理层，来源透明度降低' : 'Platform proxy — reduced transparency';
+  else if (!hasUsage) verdictDesc = zh ? 'usage缺失，扣费不可审计' : 'usage missing — billing unauditable';
+  else if (costRisk === 'low' && modelRisk === 'low' && stabilityRisk === 'low' && selfClaimType === 'exact_match') verdictDesc = zh ? '主要信号正常，建议小额观察' : 'All signals normal — small amounts advised';
+  else verdictDesc = zh ? '部分信号异常，建议小额验证' : 'Some signals abnormal — verify with small amounts';
   const disclaimer = zh ? '本报告仅基于可复现 API 信号，不构成法律结论。' : 'This report is based on reproducible API signals only and does not constitute a legal conclusion.';
+
+  // ── v1.10.9: Two-column module grid cell ──
+  function buildModuleCell(checkKey, moduleData, checks, reportId, zh) {
+    const { label, score, maxScore, risk } = moduleData;
+    const fmtScore = (s, max) => {
+      const rounded = Math.round(s * 10) / 10;
+      if (Number.isInteger(rounded)) return rounded + '/' + max;
+      return rounded.toFixed(1) + '/' + max;
+    };
+    const riskColors = {
+      low: { color: '#16a34a', bg: '#dcfce7' },
+      medium: { color: '#d97706', bg: '#fef3c7' },
+      high: { color: '#dc2626', bg: '#fee2e2' },
+      unknown: { color: '#64748b', bg: '#f1f5f9' }
+    };
+    const riskLabels = {
+      low: zh ? '低风险' : 'Low',
+      medium: zh ? '中风险' : 'Medium',
+      high: zh ? '高风险' : 'High',
+      unknown: zh ? '未验证' : 'Unknown'
+    };
+    const rc = riskColors[risk] || riskColors.unknown;
+    const contentId = 'rc-content-' + checkKey + '-' + reportId;
+
+    return `<button class="module-cell" data-module="${checkKey}" onclick="(function(){
+      var panel=document.getElementById('module-detail-panel-${reportId}');
+      var current='module-detail-panel-${reportId}';
+      if(!panel)return;
+      var isSame=panel.dataset.activeModule==='${checkKey}';
+      // Build detail content
+      var checkData=${buildModuleDetail.toString()}(checks['${checkKey}'],'${checkKey}',${zh},'${reportId}');
+      if(isSame){
+        panel.style.display='none';
+        panel.dataset.activeModule='';
+      }else{
+        panel.innerHTML=checkData;
+        panel.style.display='block';
+        panel.dataset.activeModule='${checkKey}';
+      }
+    })()" style="cursor:pointer">
+      <span class="module-name">${escH(label)}</span>
+      <span class="module-score">${fmtScore(score, maxScore)}</span>
+      <span class="risk-pill" style="background:${rc.bg};color:${rc.color}">${riskLabels[risk] || riskLabels.unknown}</span>
+      <span class="module-arrow" style="color:#94a3b8;font-size:12px">›</span>
+    </button>`;
+  }
+
+  // Helper to build module detail HTML
+  function buildModuleDetail(checkData, checkKey, zh, reportId) {
+    if (!checkData) return '';
+    const rowId = 'rc-row-' + checkKey + '-' + reportId;
+    const contentId = 'rc-content-' + checkKey + '-' + reportId;
+
+    // Build deduction details for expandable content
+    let detailDeductions = '';
+    if (checkData.deductions && checkData.deductions.length > 0) {
+      detailDeductions = `<div style="margin-bottom:8px">
+        <div style="font-size:10px;font-weight:600;color:#dc2626;margin-bottom:4px">${zh ? '扣分详情' : 'Deduction Details'}</div>
+        <ul style="margin:0;padding:0 0 0 14px;font-size:11px;color:#dc2626;line-height:1.7">
+          ${checkData.deductions.map(d => `<li style="padding:1px 0">${escH(d)}</li>`).join('')}
+        </ul>
+      </div>`;
+    }
+
+    // Sub-items (subScores)
+    let subItemsHtml = '';
+    if (checkData.evidence?.subScores && typeof checkData.evidence.subScores === 'object') {
+      const subScoreLabels = {
+        usageField: zh ? 'usage 字段' : 'usage Field',
+        promptTokens: zh ? 'prompt token' : 'prompt tokens',
+        completionTokens: zh ? 'completion token' : 'completion tokens',
+        totalTokens: zh ? 'total token' : 'total tokens',
+        shortReply: zh ? '短回复检测' : 'Short Reply',
+        maxTokens: zh ? 'max_tokens' : 'max_tokens',
+        usageStability: zh ? '用量稳定性' : 'Usage Stability',
+        clarity: zh ? '清晰度' : 'Clarity',
+        promptTokenEst: zh ? 'token 估算' : 'Token Est.',
+        selfClaim: zh ? '自报身份' : 'Self-Claim',
+        targetConsistency: zh ? '目标一致性' : 'Target Consistency',
+        capabilitySmoke: zh ? '能力测试' : 'Capability Tests',
+        modelIdentity: zh ? '模型身份' : 'Model Identity',
+        modelVisibility: zh ? '模型可见性' : 'Model Visibility',
+        targetCallQuality: zh ? '调用质量' : 'Call Quality',
+        jsonTest: zh ? 'JSON 测试' : 'JSON Test',
+        instructionTest: zh ? '指令遵循' : 'Instruction',
+        codeRepair: zh ? '代码修复' : 'Code Repair',
+        reasoning: zh ? '推理能力' : 'Reasoning',
+        needle: zh ? '大海捞针' : 'Needle',
+        consistency: zh ? '一致性' : 'Consistency',
+      };
+      subItemsHtml = Object.entries(checkData.evidence.subScores).map(([k, v]) => {
+        if (v == null || v.maxScore === undefined) return '';
+        const subRatio = v.maxScore > 0 ? v.score / v.maxScore : 0;
+        const subStatus = subRatio >= 0.8 ? 'good' : subRatio >= 0.5 ? 'warning' : 'failed';
+        const subCfg = statusColor(subStatus);
+        const icon = subRatio >= 0.8 ? '&#10003;' : subRatio >= 0.5 ? '&#9888;' : '&#10007;';
+        return `<div style="display:flex;align-items:center;gap:6px;padding:2px 0;font-size:11px">
+          <span style="color:${subCfg.color}">${icon}</span>
+          <span style="flex:1;color:#374151">${escH(subScoreLabels[k] || k)}</span>
+          <span style="font-weight:700;color:#374151">${v.score}/${v.maxScore}</span>
+        </div>`;
+      }).join('');
+    }
+
+    // Stability samples table
+    let stabilitySamplesHtml = '';
+    if (checkKey === 'stability' && checkData.evidence?.samples?.length > 0) {
+      const samples = checkData.evidence.samples;
+      stabilitySamplesHtml = `<div style="margin-top:8px">
+        <div style="font-size:10px;font-weight:600;color:#0f172a;margin-bottom:4px">${zh ? '采样明细' : 'Sample Details'}</div>
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:10px">
+            <tr style="background:#f1f5f9">
+              <th style="padding:3px 6px;text-align:left;color:#64748b">#</th>
+              <th style="padding:3px 6px;text-align:center;color:#64748b">${zh ? '状态' : 'Status'}</th>
+              <th style="padding:3px 6px;text-align:right;color:#64748b">${zh ? '延迟' : 'Latency'}</th>
+              <th style="padding:3px 6px;text-align:right;color:#64748b">${zh ? '输出' : 'Output'}</th>
+            </tr>
+            ${samples.map((s, i) => {
+              const rowColor = !s.ok ? '#fee2e2' : s.hasContent ? '#dcfce7' : '#fef9c3';
+              return `<tr style="background:${rowColor}">
+                <td style="padding:2px 6px;color:#64748b">${i + 1}</td>
+                <td style="padding:2px 6px;text-align:center;color:${s.ok ? '#16a34a' : '#dc2626'}">${s.ok ? 'OK' : (s.errMsg || 'ERR')}</td>
+                <td style="padding:2px 6px;text-align:right;color:#374151">${s.latency || 0}ms</td>
+                <td style="padding:2px 6px;text-align:right;color:#374151">${s.responseText ? escH(s.responseText.substring(0, 20)) : '-'}</td>
+              </tr>`;
+            }).join('')}
+          </table>
+        </div>
+      </div>`;
+    }
+
+    // Stability retry hint
+    let stabilityRetryHint = '';
+    if (checkKey === 'stability' && checkData.status === 'failed') {
+      stabilityRetryHint = `<div style="margin-top:8px;padding:6px 8px;background:#fef9c3;border-radius:6px;font-size:10px;color:#92400e;line-height:1.5">
+        ${zh ? '本次稳定性波动较大，建议在同一网络环境下重复测试 2–3 次确认。' : 'This run shows significant stability fluctuation. Re-test 2–3 times under the same network conditions to confirm.'}
+      </div>`;
+    }
+
+    // Cache hit details
+    let cacheHitHtml = '';
+    if (checkKey === 'cacheHitCheck' && checkData.evidence) {
+      const ev = checkData.evidence;
+      const fmtRate = (r) => r != null ? (Math.round(r * 10000) / 100) + '%' : '—';
+      const cacheStatus = checkData.status || 'unknown';
+      const sufficient = ev.probeTokenSufficient;
+      cacheHitHtml = `<div style="margin-top:8px;padding:8px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;font-size:11px">
+        <div style="margin-bottom:6px;padding:6px 8px;background:${sufficient ? '#dcfce7' : '#fef3c7'};border-radius:6px;font-size:10px;display:flex;align-items:center;gap:6px">
+          <span style="font-weight:700;color:${sufficient ? '#16a34a' : '#d97706'}">${sufficient ? (zh ? '探测长度足够' : 'Probe Sufficient') : (zh ? '探测长度不足' : 'Probe Insufficient')}</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:10px;color:#374151;margin-bottom:6px">
+          <div><span style="color:#94a3b8">${zh ? '字段来源：' : 'Field: '}</span>${escH(ev.sourceField || (zh ? '未暴露' : 'Not exposed'))}</div>
+          <div><span style="color:#94a3b8">${zh ? '缓存命中率：' : 'Cache Rate: '}</span>${fmtRate(ev.cacheHitRate)}</div>
+        </div>
+        <div style="margin-top:6px;padding:6px 8px;background:#f8fafc;border-radius:6px;font-size:10px;color:#64748b;border:1px solid #e2e8f0;line-height:1.5">
+          <div style="font-weight:600;margin-bottom:3px">${zh ? '💡 缓存与扣费说明' : '💡 Cache & Billing Note'}</div>
+          <div>${zh
+            ? '本项检测的是接口响应中的 usage/cache 字段，不代表底层一定按官方 Prompt Cache 计费。'
+            : 'This check reads cache-related fields in the API response only. It does not prove official Prompt Cache billing behavior.'}</div>
+        </div>
+      </div>`;
+    }
+
+    // Source transparency / model signal details
+    let sourceTransparencyHtml = '';
+    if (checkKey === 'modelSignal' && checkData.evidence?.modelSignal) {
+      const ms = checkData.evidence.modelSignal;
+      const sc = ms.selfClaim || {};
+      const stLabelMap = {
+        exact_match: zh ? '身份匹配' : 'Identity Match',
+        family_match: zh ? '家族匹配' : 'Family Match',
+        platform_identity: zh ? '平台身份' : 'Platform Identity',
+        platform_or_proxy_identity: zh ? '代理身份' : 'Proxy Identity',
+        proxy_route_identity: zh ? '路由身份' : 'Route Identity',
+        wrong_family: zh ? '家族不一致' : 'Family Inconsistent',
+        hard_contamination: zh ? '人格污染' : 'Contamination',
+        version_mismatch: zh ? '版本不一致' : 'Version Mismatch',
+        variant_mismatch: zh ? '变体不一致' : 'Variant Mismatch',
+        ambiguous: zh ? '未确认' : 'Unconfirmed',
+        failed: zh ? '检测失败' : 'Test Failed',
+      };
+      sourceTransparencyHtml = `<div style="margin-top:8px;padding:8px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;font-size:11px">
+        <div style="font-weight:600;color:#0f172a;margin-bottom:6px">${zh ? '模型身份' : 'Model Identity'}</div>
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+          <span style="font-size:11px;color:#374151">${zh ? '分类：' : 'Category: '}</span>
+          <span style="font-weight:600;color:#d97706">${escH(stLabelMap[sc.type] || sc.type || '-')}</span>
+        </div>
+        ${sc.rawAnswer ? `<div style="margin-bottom:4px"><span style="font-size:10px;color:#94a3b8">${zh ? '响应自称：' : 'Self-reported: '}</span><span style="font-size:11px;font-weight:600;color:#d97706">${escH(sc.rawAnswer.substring(0, 100))}</span></div>` : ''}
+      </div>`;
+    }
+
+    const hasDetailContent = detailDeductions || subItemsHtml || stabilitySamplesHtml || cacheHitHtml || sourceTransparencyHtml;
+    if (!hasDetailContent) return '';
+
+    return `<div style="background:#fff;border-radius:12px;padding:12px 14px;margin-top:0">
+      ${detailDeductions}
+      ${subItemsHtml ? `<div style="margin-bottom:8px">${subItemsHtml}</div>` : ''}
+      ${stabilitySamplesHtml}
+      ${stabilityRetryHint}
+      ${cacheHitHtml}
+      ${sourceTransparencyHtml}
+    </div>`;
+  }
 
   function moduleSection(checkKey, checkData, riskLevel) {
     if (!checkData) return '';
@@ -4815,52 +5019,22 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo, operationalRis
     <!-- Verdict description (short, one line) -->
     <div style="background:#fff;border-radius:12px;padding:8px 14px;margin-bottom:6px;font-size:11px;color:#374151;line-height:1.5">${escH(verdictDesc)}</div>
 
-    <!-- Score disclaimer + cap reason — near score card -->
+    <!-- v1.10.9: Score cap reason — only for truly fatal failures -->
     ${(() => {
-      // capReason: only show when raw weighted score > final capped score by meaningful margin
-      const rawFinal = (() => {
-        const costNorm = Math.min(100, ((checks.costTransparency?.score||0)/30)*100);
-        const cacheNorm = Math.min(100, ((checks.cacheHitCheck?.score||0)/5)*100);
-        const modelNorm = Math.min(100, ((checks.modelIntegrity?.score||0)/40)*100);
-        const stabNorm  = Math.min(100, ((checks.stability?.score||0)/15)*100);
-        const compNorm  = Math.min(100, ((checks.basicCompatibility?.score||0)/7)*100);
-        const cliNorm   = Math.min(100, ((checks.clientConfig?.score||0)/3)*100);
-        return Math.round((costNorm*0.30 + cacheNorm*0.05 + modelNorm*0.40 + stabNorm*0.15 + compNorm*0.07 + cliNorm*0.03) * 10) / 10;
-      })();
-      const capMargin = rawFinal - score;
-      if (capMargin < 5) return '';
-      // Determine most severe cap reason
-      const reachScore = checks.reachability?.score || 0;
-      const has401 = checks.auth?.evidence?.modelsStatus === 401 || checks.auth?.evidence?.chatStatus === 401;
-      // Distinguish core_chat 403 from auxiliary 403 (model_list / usage_audit / metadata_audit / cache_check)
-      const hasCoreChat403 = checks.auth?.evidence?.chatStatus === 403 || (checks.targetCall?.evidence?.httpStatus === 403);
-      const hasAuxiliary403Only = !hasCoreChat403 && (
-        checks.auth?.evidence?.modelsStatus === 403 || checks.modelList?.evidence?.httpStatus === 403 ||
-        checks.usageAudit?.evidence?.httpStatus === 403 || checks.metadataAudit?.evidence?.httpStatus === 403 ||
-        checks.cacheHitCheck?.evidence?.httpStatus === 403
-      );
-      const targetWorks = (checks.targetCall?.score || 0) >= 11;
-      const costRiskL = getCostRiskLevel(checks.costTransparency?.score || 0);
-      const modelRiskL = checks.modelSignal?.evidence?.modelSignal?.risk || 'low';
-      const stabRiskL  = getStabilityRiskLevel(checks.stability?.score || 0, checks);
-      const selfClaimType = checks.modelSignal?.evidence?.modelSignal?.selfClaim?.type || 'exact_match';
-      let capReasonText = '';
-      if (reachScore < 3) capReasonText = zh ? '核心模型调用未成功' : 'Core model call unsuccessful';
-      else if (has401) capReasonText = zh ? 'API Key 无法调用目标模型（401）' : 'API Key cannot call target model (401)';
-      else if (hasCoreChat403) capReasonText = zh ? 'API Key 无法调用目标模型（403）' : 'API Key cannot call target model (403)';
-      else if (hasAuxiliary403Only) capReasonText = zh ? '部分辅助接口权限受限（403），核心调用正常' : 'Some auxiliary endpoints permissions restricted (403), core call normal';
-      else if (!targetWorks) capReasonText = zh ? '核心调用未成功' : 'Core call unsuccessful';
-      else if (selfClaimType === 'wrong_family') capReasonText = zh ? '模型家族与目标不一致' : 'Model family inconsistent with target';
-      else if (selfClaimType === 'hard_contamination') capReasonText = zh ? '模型人格污染信号' : 'Model persona contamination signal';
-      else if (selfClaimType === 'platform_identity') capReasonText = zh ? '平台代理层身份暴露' : 'Platform proxy layer identity detected';
-      else if (modelRiskL === 'high') capReasonText = zh ? '模型信号风险较高' : 'Model signal risk high';
-      else if (costRiskL === 'high') capReasonText = zh ? 'usage 字段缺失或异常' : 'usage fields missing or abnormal';
-      else if (stabRiskL === 'high') capReasonText = zh ? '稳定性采样未通过' : 'Stability sampling failed';
-      if (!capReasonText) return '';
-      const capText = zh
-        ? `本次评分触发了关键风险上限：${capReasonText}，因此总分低于各单项加权结果。`
-        : `Key risk cap triggered: ${capReasonText} — final score below weighted sum.`;
-      return `<div style="background:#f1f5f9;border-radius:8px;padding:6px 12px;margin-bottom:6px;font-size:10px;color:#64748b;line-height:1.5;border:1px solid #e2e8f0">${escH(capText)}</div>`;
+      // Only show cap notice if capApplied=true AND capReason is truly fatal
+      if (!capApplied || !capReason) return '';
+      const trulyFatalReasons = ['reachability_failed', 'auth_401', 'core_chat_403', 'response_not_json', 'model_not_found', 'stability_failed'];
+      if (!trulyFatalReasons.includes(capReason)) return '';
+      const reasonLabels = {
+        reachability_failed: zh ? '核心调用未成功' : 'Core call failed',
+        auth_401: zh ? 'API Key 无法调用目标模型' : 'API Key cannot call target model',
+        core_chat_403: zh ? '核心接口权限受限' : 'Core endpoint restricted',
+        response_not_json: zh ? '返回格式不兼容' : 'Response format incompatible',
+        model_not_found: zh ? '目标模型不可用' : 'Target model unavailable',
+        stability_failed: zh ? '稳定性采样失败' : 'Stability sampling failed'
+      };
+      const reasonText = reasonLabels[capReason] || capReason;
+      return `<div style="background:#fee2e2;border-radius:8px;padding:6px 12px;margin-bottom:6px;font-size:10px;color:#dc2626;line-height:1.5;border:1px solid #fecaca">${zh ? `⚠ 关键失败封顶：${reasonText}` : `⚠ Capped: ${reasonText}`}</div>`;
     })()}
 
     <!-- Short-term Operational Risk Signals (v1.10.7 — compact) -->
@@ -4903,13 +5077,13 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo, operationalRis
       const isPartial = domainAvailable && !certAvailable;
       const partialHint = isPartial ? (zh ? '（部分证据）' : ' (Partial Evidence)') : '';
 
-      // Collapsible links
+      // Collapsible links — v1.10.9: hidden by default
       const links = buildOperationalRiskLinks(hostname, operationalRisk.domainQueried || '');
       const toggleId = `or-links-${reportId || 'r'}`;
       const linksHtml = hostname ? `
         <div style="margin-top:6px;padding-top:6px;border-top:1px dashed #e2e8f0">
-          <a href="javascript:void(0)" onclick="var el=document.getElementById('${toggleId}');if(el){el.style.display=el.style.display?'none':'';}" style="font-size:9px;color:#94a3b8;text-decoration:underline">${zh ? '[展开公开查询链接]' : '[Show public lookup links]'}</a>
-          <div id="${toggleId}" style="display:none;margin-top:4px;display:flex;flex-wrap:wrap;gap:4px">
+          <a href="javascript:void(0)" onclick="var el=document.getElementById('${toggleId}');if(el){el.style.display=el.style.display?'none':'flex';}" style="font-size:9px;color:#94a3b8;text-decoration:underline">${zh ? '展开公开查询链接' : 'Show public lookup links'}</a>
+          <div id="${toggleId}" style="display:none;margin-top:4px;flex-wrap:wrap;gap:4px">
             <a href="${links.icannLookup}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:2px 6px;background:#f8fafc;border-radius:4px;font-size:9px;color:#2563eb;text-decoration:none;border:1px solid #e2e8f0">ICANN</a>
             <a href="${links.rdapLookup}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:2px 6px;background:#f8fafc;border-radius:4px;font-size:9px;color:#2563eb;text-decoration:none;border:1px solid #e2e8f0">RDAP</a>
             <a href="${links.crtShLookup}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:2px 6px;background:#f8fafc;border-radius:4px;font-size:9px;color:#2563eb;text-decoration:none;border:1px solid #e2e8f0">crt.sh</a>
@@ -4937,19 +5111,50 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo, operationalRis
       `;
     })()}
 
-    <!-- v1.10.8: Cap notice (short label) — shown when cap is applied -->
-    ${capApplied ? `<div style="font-size:9px;color:#dc2626;font-weight:600;margin-bottom:4px;text-align:center">${zh ? '⚠ 关键失败封顶' : '⚠ Capped by critical failure'}</div>` : ''}
-
-    <!-- 6 module sections — use breakdown for labels and normalized scores -->
-    <div style="background:#fff;border-radius:16px;padding:12px 16px;margin-bottom:10px">
-      <div style="font-size:11px;font-weight:700;color:#0f172a;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #f1f5f9">${zh ? '6项检测（点击展开详情）' : '6 Modules (tap to expand)'}</div>
-      ${moduleSection('usageTransparency', { label: breakdown?.usageTransparency?.label ?? checks.costTransparency?.label, score: breakdown?.usageTransparency?.score ?? checks.costTransparency?.score, maxScore: breakdown?.usageTransparency?.max ?? 25 }, breakdown?.usageTransparency?.risk)}
-      ${moduleSection('cacheSignal', { label: breakdown?.cacheSignal?.label ?? checks.cacheHitCheck?.label, score: breakdown?.cacheSignal?.score ?? checks.cacheHitCheck?.score, maxScore: breakdown?.cacheSignal?.max ?? 5 }, breakdown?.cacheSignal?.risk)}
-      ${moduleSection('modelSignal', { label: breakdown?.modelSignal?.label ?? checks.modelSignal?.label, score: breakdown?.modelSignal?.score ?? checks.modelSignal?.score, maxScore: breakdown?.modelSignal?.max ?? 15 }, breakdown?.modelSignal?.risk)}
-      ${moduleSection('stabilityLatency', { label: breakdown?.stabilityLatency?.label ?? checks.stability?.label, score: breakdown?.stabilityLatency?.score ?? checks.stability?.score, maxScore: breakdown?.stabilityLatency?.max ?? 25 }, breakdown?.stabilityLatency?.risk)}
-      ${moduleSection('coreCompatibility', { label: breakdown?.coreCompatibility?.label ?? checks.basicCompatibility?.label, score: breakdown?.coreCompatibility?.score ?? checks.basicCompatibility?.score, maxScore: breakdown?.coreCompatibility?.max ?? 25 }, breakdown?.coreCompatibility?.risk)}
-      ${moduleSection('clientConfig', { label: breakdown?.clientConfig?.label ?? checks.clientConfig?.label, score: breakdown?.clientConfig?.score ?? checks.clientConfig?.score, maxScore: breakdown?.clientConfig?.max ?? 5 }, breakdown?.clientConfig?.risk)}
+    <!-- v1.10.9: 6 module sections — two-column compact grid -->
+    <div class="module-grid" id="module-grid-${reportId}">
+      <!-- Row 1: usageTransparency + cacheSignal -->
+      ${buildModuleCell('usageTransparency', {
+        label: breakdown?.usageTransparency?.label ?? checks.costTransparency?.label ?? (zh ? '扣费透明度' : 'Cost Transparency'),
+        score: breakdown?.usageTransparency?.score ?? checks.costTransparency?.score ?? 0,
+        maxScore: breakdown?.usageTransparency?.max ?? 25,
+        risk: breakdown?.usageTransparency?.risk ?? 'unknown'
+      }, checks, reportId, zh)}
+      ${buildModuleCell('cacheSignal', {
+        label: breakdown?.cacheSignal?.label ?? checks.cacheHitCheck?.label ?? (zh ? '缓存命中信号' : 'Cache Signal'),
+        score: breakdown?.cacheSignal?.score ?? checks.cacheHitCheck?.score ?? 0,
+        maxScore: breakdown?.cacheSignal?.max ?? 5,
+        risk: breakdown?.cacheSignal?.risk ?? 'unknown'
+      }, checks, reportId, zh)}
+      <!-- Row 2: modelSignal + stabilityLatency -->
+      ${buildModuleCell('modelSignal', {
+        label: breakdown?.modelSignal?.label ?? checks.modelSignal?.label ?? (zh ? '模型信号' : 'Model Signal'),
+        score: breakdown?.modelSignal?.score ?? checks.modelSignal?.score ?? 0,
+        maxScore: breakdown?.modelSignal?.max ?? 15,
+        risk: breakdown?.modelSignal?.risk ?? 'unknown'
+      }, checks, reportId, zh)}
+      ${buildModuleCell('stabilityLatency', {
+        label: breakdown?.stabilityLatency?.label ?? checks.stability?.label ?? (zh ? '稳定性与延迟' : 'Stability & Latency'),
+        score: breakdown?.stabilityLatency?.score ?? checks.stability?.score ?? 0,
+        maxScore: breakdown?.stabilityLatency?.max ?? 25,
+        risk: breakdown?.stabilityLatency?.risk ?? 'unknown'
+      }, checks, reportId, zh)}
+      <!-- Row 3: coreCompatibility + clientConfig -->
+      ${buildModuleCell('coreCompatibility', {
+        label: breakdown?.coreCompatibility?.label ?? checks.basicCompatibility?.label ?? (zh ? '基础兼容性' : 'Basic Compatibility'),
+        score: breakdown?.coreCompatibility?.score ?? checks.basicCompatibility?.score ?? 0,
+        maxScore: breakdown?.coreCompatibility?.max ?? 25,
+        risk: breakdown?.coreCompatibility?.risk ?? 'unknown'
+      }, checks, reportId, zh)}
+      ${buildModuleCell('clientConfig', {
+        label: breakdown?.clientConfig?.label ?? checks.clientConfig?.label ?? (zh ? '客户端配置' : 'Client Config'),
+        score: breakdown?.clientConfig?.score ?? checks.clientConfig?.score ?? 0,
+        maxScore: breakdown?.clientConfig?.max ?? 5,
+        risk: breakdown?.clientConfig?.risk ?? 'unknown'
+      }, checks, reportId, zh)}
     </div>
+    <!-- Module detail panel — shown when a module is expanded -->
+    <div id="module-detail-panel-${reportId}" class="module-detail-panel" style="display:none"></div>
 
     ${toolCallingHtml}
     ${suggestionHtml}

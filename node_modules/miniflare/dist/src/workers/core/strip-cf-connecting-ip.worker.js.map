@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["../../../../src/workers/core/strip-cf-connecting-ip.worker.ts"],
+  "sourcesContent": ["interface Env {\n\tCF_WORKER_ZONE: string;\n}\n\nexport default {\n\tfetch(request, env: Env) {\n\t\tconst headers = new Headers(request.headers);\n\t\theaders.delete(\"CF-Connecting-IP\");\n\t\theaders.set(\"CF-Worker\", env.CF_WORKER_ZONE);\n\t\treturn fetch(request, { headers });\n\t},\n} satisfies ExportedHandler<Env>;\n"],
+  "mappings": ";AAIA,IAAO,wCAAQ;AAAA,EACd,MAAM,SAAS,KAAU;AACxB,QAAM,UAAU,IAAI,QAAQ,QAAQ,OAAO;AAC3C,mBAAQ,OAAO,kBAAkB,GACjC,QAAQ,IAAI,aAAa,IAAI,cAAc,GACpC,MAAM,SAAS,EAAE,QAAQ,CAAC;AAAA,EAClC;AACD;",
+  "names": []
+}
