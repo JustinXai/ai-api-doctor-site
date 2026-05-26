@@ -4101,42 +4101,87 @@ function isZh(locale) {
 }
 
 /* ═══════════════════════════════════════════════════════
+   v1.11.3-p2: MODULE_DEFINITIONS - single source of truth for module specs
+   ═══════════════════════════════════════════════════════ */
+const MODULE_DEFINITIONS = {
+  usageTransparency: {
+    max: 25,
+    labelZh: '扣费透明度',
+    labelEn: 'Cost Transparency'
+  },
+  cacheSignal: {
+    max: 5,
+    labelZh: '缓存命中信号',
+    labelEn: 'Cache Signal'
+  },
+  cacheHitCheck: {
+    max: 5,
+    labelZh: '缓存命中信号',
+    labelEn: 'Cache Signal'
+  },
+  modelSignal: {
+    max: 15,
+    labelZh: '模型信号',
+    labelEn: 'Model Signal'
+  },
+  stabilityLatency: {
+    max: 25,
+    labelZh: '稳定性与延迟',
+    labelEn: 'Stability & Latency'
+  },
+  stability: {
+    max: 25,
+    labelZh: '稳定性与延迟',
+    labelEn: 'Stability & Latency'
+  },
+  coreCompatibility: {
+    max: 25,
+    labelZh: '基础兼容性',
+    labelEn: 'Basic Compatibility'
+  },
+  basicCompatibility: {
+    max: 25,
+    labelZh: '基础兼容性',
+    labelEn: 'Basic Compatibility'
+  },
+  clientConfig: {
+    max: 5,
+    labelZh: '客户端配置',
+    labelEn: 'Client Config'
+  }
+};
+
+const MODULE_ORDER = [
+  'usageTransparency',
+  'cacheSignal',
+  'modelSignal',
+  'stabilityLatency',
+  'coreCompatibility',
+  'clientConfig'
+];
+
+/* ═══════════════════════════════════════════════════════
    v1.11.3: normalizeModuleForDisplay
    Ensures module objects have flat string label/riskLabel
    ═══════════════════════════════════════════════════════ */
 function normalizeModuleForDisplay(module, locale) {
   const zh = isZh(locale);
   const key = safeText(module?.key, 'unknown');
-
-  const labelZhMap = {
-    usageTransparency: '扣费透明度',
-    cacheSignal: '缓存命中信号',
-    modelSignal: '模型信号',
-    stabilityLatency: '稳定性与延迟',
-    coreCompatibility: '基础兼容性',
-    basicCompatibility: '基础兼容性',
-    clientConfig: '客户端配置'
-  };
-
-  const labelEnMap = {
-    usageTransparency: 'Cost Transparency',
-    cacheSignal: 'Cache Signal',
-    modelSignal: 'Model Signal',
-    stabilityLatency: 'Stability & Latency',
-    coreCompatibility: 'Basic Compatibility',
-    basicCompatibility: 'Basic Compatibility',
-    clientConfig: 'Client Config'
-  };
-
+  const def = MODULE_DEFINITIONS[key] || {};
+  
+  // Score: use module.score, fallback to 0
   const score = safeNum(module?.score, 0);
-  const max = safeNum(module?.max, 0);
+  // Max: use MODULE_DEFINITIONS as fallback - NEVER allow undefined
+  const max = safeNum(module?.max, def.max || 0);
+  
+  // Risk: compute from score/max ratio
   const risk = module?.risk || getRiskByRatio(score, max);
 
   return {
     key,
-    labelZh: safeText(module?.labelZh, labelZhMap[key] || key),
-    labelEn: safeText(module?.labelEn, labelEnMap[key] || key),
-    label: zh ? safeText(module?.labelZh, labelZhMap[key] || key) : safeText(module?.labelEn, labelEnMap[key] || key),
+    labelZh: safeText(module?.labelZh, def.labelZh || key),
+    labelEn: safeText(module?.labelEn, def.labelEn || key),
+    label: zh ? safeText(module?.labelZh, def.labelZh || key) : safeText(module?.labelEn, def.labelEn || key),
     score,
     max,
     risk,
@@ -4144,6 +4189,27 @@ function normalizeModuleForDisplay(module, locale) {
     riskLabelEn: getRiskLabel(risk, 'en'),
     riskLabel: getRiskLabel(risk, zh ? 'zh' : 'en')
   };
+}
+
+/* ═══════════════════════════════════════════════════════
+   v1.11.3-p2: formatModuleScore - ensures no /undefined appears
+   ═══════════════════════════════════════════════════════ */
+function formatModuleScore(score, max, key) {
+  const def = MODULE_DEFINITIONS[key] || {};
+  const safeMax = safeNum(max, def.max);
+  
+  const fmtScore = (s) => {
+    const rounded = Math.round(s * 10) / 10;
+    if (Number.isInteger(rounded)) return String(rounded);
+    return rounded.toFixed(1);
+  };
+  
+  if (safeMax > 0) {
+    return fmtScore(score) + '/' + fmtScore(safeMax);
+  } else {
+    console.warn('formatModuleScore: no max found for key=' + key + ', showing score only');
+    return fmtScore(score) + '/?';
+  }
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -4708,12 +4774,7 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo, operationalRis
 
   // ── v1.10.10: Two-column module grid cell (safe, no source leak) ──
   function buildModuleCell(checkKey, moduleData, reportId, zh) {
-    const { label, score, maxScore, risk, riskLabel } = moduleData;
-    const fmtScore = (s, max) => {
-      const rounded = Math.round(s * 10) / 10;
-      if (Number.isInteger(rounded)) return rounded + '/' + max;
-      return rounded.toFixed(1) + '/' + max;
-    };
+    const { label, score, max, risk, riskLabel } = moduleData;
     const riskColors = {
       low: { color: '#16a34a', bg: '#dcfce7' },
       medium: { color: '#d97706', bg: '#fef3c7' },
@@ -4723,16 +4784,11 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo, operationalRis
     const rc = riskColors[risk] || riskColors.unknown;
     const displayRiskLabel = typeof riskLabel === 'string' && riskLabel
       ? riskLabel
-      : (riskLabels => riskLabels[risk] || riskLabels.unknown)({
-          low: zh ? '低风险' : 'Low Risk',
-          medium: zh ? '中风险' : 'Medium Risk',
-          high: zh ? '高风险' : 'High Risk',
-          unknown: zh ? '未验证' : 'Unverified'
-        });
+      : (zh ? '未验证' : 'Unverified');
 
     return '<button class="module-cell" type="button" data-module="' + escH(checkKey) + '">' +
       '<span class="module-name">' + escH(label) + '</span>' +
-      '<span class="module-score">' + escH(fmtScore(score, maxScore)) + '</span>' +
+      '<span class="module-score">' + escH(formatModuleScore(score, max, checkKey)) + '</span>' +
       '<span class="risk-pill" style="background:' + rc.bg + ';color:' + rc.color + '">' + escH(displayRiskLabel) + '</span>' +
       '<span class="module-arrow" style="color:#94a3b8;font-size:12px">&#8250;</span>' +
       '</button>';
