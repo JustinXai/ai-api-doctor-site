@@ -5835,6 +5835,22 @@ window.Doctor = {
       stepTimings.basicCompat = 0;
       this._refreshProgress(8, combinedState, `${basicCompatResult.summary} / ${clientResult.summary}`);
 
+      // Build checks object from all step results
+      const checks = {
+        reachability: reachResult,
+        auth: authResult,
+        modelList: modelListResult,
+        autoModel: autoModelResult,
+        targetCall: targetCallResult,
+        stability: stabilityResult,
+        usageAudit: usageResult,
+        costTransparency: costResult,
+        cacheHitCheck: cacheResult,
+        modelSignal: modelSignalResult,
+        basicCompatibility: basicCompatResult,
+        clientConfig: clientResult
+      };
+
       // Tool calling (deep mode)
       let toolCallingResult = null;
       if (deepMode) {
