@@ -4224,8 +4224,8 @@ function buildDebugScoring(rawScore, cappedScore, checks, breakdown, extra = {})
     // v1.11.4: Timeout constants reference
     timeoutConstants: {
       GLOBAL_TIMEOUT_MS: 150000,
-      TARGET_CALL_TIMEOUT_MS: 20000,
-      USAGE_AUDIT_TIMEOUT_MS: 20000,
+      TARGET_CALL_TIMEOUT_MS: 30000,
+      USAGE_AUDIT_TIMEOUT_MS: 30000,
       CACHE_PROBE_TIMEOUT_MS: 15000,
       CACHE_PROBE_TOTAL_TIMEOUT_MS: 35000,
       MODEL_SIGNAL_TIMEOUT_MS: 30000,
@@ -6024,7 +6024,7 @@ window.Doctor = {
       modelList: 12000,
       modelSelection: 15000,
       operationalRisk: 6000,
-      usageTransparency: 20000,
+      usageTransparency: 30000,
       cacheSignal: 25000,
       modelSignal: 30000,
       stability: 45000
