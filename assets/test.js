@@ -4032,6 +4032,36 @@ function getCapReason(score, checks) {
 }
 
 /* ═══════════════════════════════════════════════════════
+   v1.10.12-p0: Safe utility functions for null-safety
+   ═══════════════════════════════════════════════════════ */
+function safeNum(v, fallback) {
+  if (fallback === undefined) fallback = 0;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function safeText(v, fallback) {
+  if (fallback === undefined) fallback = '';
+  if (v === null || v === undefined) return fallback;
+  return String(v);
+}
+
+function safeArray(v) {
+  return Array.isArray(v) ? v : [];
+}
+
+function safeObject(v) {
+  return v && typeof v === 'object' ? v : {};
+}
+
+function safeScore(score, max) {
+  return {
+    score: safeNum(score, 0),
+    max: safeNum(max, 0)
+  };
+}
+
+/* ═══════════════════════════════════════════════════════
    NEW: calcFinalScore — v1.7 Real-Data Weighted
    Normalized weighted sum based on real request data.
    ═══════════════════════════════════════════════════════ */
@@ -4115,6 +4145,162 @@ function calcFinalScore(checks) {
       cacheSignal: { score: cacheScore, max: 5, norm: cacheNorm, risk: cacheRisk, label: '缓存命中信号', labelEn: 'Cache Signal' },
       clientConfig: { score: clientScore, max: 5, norm: clientNorm, risk: clientRisk, label: '客户端配置', labelEn: 'Client Config' },
     }
+  };
+}
+
+/* ═══════════════════════════════════════════════════════
+   v1.10.12-p0: Safe buildModuleScores
+   Builds module array from checks, with fallback for missing modules.
+   ═══════════════════════════════════════════════════════ */
+function buildModuleScores(checks, locale) {
+  const zh = locale !== 'en';
+  const sc = safeObject(checks);
+
+  // Helper to get safe risk level
+  const getRisk = (score, max) => {
+    const ratio = max > 0 ? score / max : 0;
+    if (ratio >= 0.85) return 'low';
+    if (ratio >= 0.6) return 'medium';
+    return 'high';
+  };
+
+  // Helper to get risk label
+  const riskLabel = (risk) => ({
+    low: { zh: '低风险', en: 'Low' },
+    medium: { zh: '中风险', en: 'Medium' },
+    high: { zh: '高风险', en: 'High' },
+    unknown: { zh: '未验证', en: 'Unknown' }
+  }[risk] || { zh: '未验证', en: 'Unknown' });
+
+  // Module 1: usageTransparency (from costTransparency)
+  const usageCheck = sc.costTransparency || {};
+  const usageScore = safeNum(usageCheck.score, 0);
+  const usageMax = 25;
+
+  // Module 2: cacheHitCheck
+  const cacheCheck = sc.cacheHitCheck || {};
+  const cacheScore = safeNum(cacheCheck.score, 0);
+  const cacheMax = 5;
+
+  // Module 3: modelSignal
+  const modelCheck = sc.modelSignal || {};
+  const modelScore = safeNum(modelCheck.score, 0);
+  const modelMax = 15;
+
+  // Module 4: stabilityLatency (from stability)
+  const stabilityCheck = sc.stability || {};
+  const stabilityScore = safeNum(stabilityCheck.score, 0);
+  const stabilityMax = 25;
+
+  // Module 5: basicCompatibility
+  const basicCheck = sc.basicCompatibility || {};
+  const basicScore = safeNum(basicCheck.score, 0);
+  const basicMax = 25;
+
+  // Module 6: clientConfig
+  const clientCheck = sc.clientConfig || {};
+  const clientScore = safeNum(clientCheck.score, 0);
+  const clientMax = 5;
+
+  return [
+    {
+      key: 'usageTransparency',
+      labelZh: '扣费透明度',
+      labelEn: 'Usage Transparency',
+      label: zh ? '扣费透明度' : 'Usage Transparency',
+      score: usageScore,
+      max: usageMax,
+      risk: getRisk(usageScore, usageMax),
+      riskLabelZh: riskLabel(getRisk(usageScore, usageMax)).zh,
+      riskLabelEn: riskLabel(getRisk(usageScore, usageMax)).en
+    },
+    {
+      key: 'cacheSignal',
+      labelZh: '缓存命中信号',
+      labelEn: 'Cache Signal',
+      label: zh ? '缓存命中信号' : 'Cache Signal',
+      score: cacheScore,
+      max: cacheMax,
+      risk: getRisk(cacheScore, cacheMax),
+      riskLabelZh: riskLabel(getRisk(cacheScore, cacheMax)).zh,
+      riskLabelEn: riskLabel(getRisk(cacheScore, cacheMax)).en
+    },
+    {
+      key: 'modelSignal',
+      labelZh: '模型信号',
+      labelEn: 'Model Signal',
+      label: zh ? '模型信号' : 'Model Signal',
+      score: modelScore,
+      max: modelMax,
+      risk: getRisk(modelScore, modelMax),
+      riskLabelZh: riskLabel(getRisk(modelScore, modelMax)).zh,
+      riskLabelEn: riskLabel(getRisk(modelScore, modelMax)).en
+    },
+    {
+      key: 'stabilityLatency',
+      labelZh: '稳定性与延迟',
+      labelEn: 'Stability & Latency',
+      label: zh ? '稳定性与延迟' : 'Stability & Latency',
+      score: stabilityScore,
+      max: stabilityMax,
+      risk: getRisk(stabilityScore, stabilityMax),
+      riskLabelZh: riskLabel(getRisk(stabilityScore, stabilityMax)).zh,
+      riskLabelEn: riskLabel(getRisk(stabilityScore, stabilityMax)).en
+    },
+    {
+      key: 'coreCompatibility',
+      labelZh: '基础兼容性',
+      labelEn: 'Core Compatibility',
+      label: zh ? '基础兼容性' : 'Core Compatibility',
+      score: basicScore,
+      max: basicMax,
+      risk: getRisk(basicScore, basicMax),
+      riskLabelZh: riskLabel(getRisk(basicScore, basicMax)).zh,
+      riskLabelEn: riskLabel(getRisk(basicScore, basicMax)).en
+    },
+    {
+      key: 'clientConfig',
+      labelZh: '客户端配置',
+      labelEn: 'Client Config',
+      label: zh ? '客户端配置' : 'Client Config',
+      score: clientScore,
+      max: clientMax,
+      risk: getRisk(clientScore, clientMax),
+      riskLabelZh: riskLabel(getRisk(clientScore, clientMax)).zh,
+      riskLabelEn: riskLabel(getRisk(clientScore, clientMax)).en
+    }
+  ];
+}
+
+/* ═══════════════════════════════════════════════════════
+   v1.10.12-p0: Safe buildScoreBreakdown
+   Builds complete score breakdown from checks.
+   ═══════════════════════════════════════════════════════ */
+function buildScoreBreakdown(checks, locale) {
+  const sc = safeObject(checks);
+  const modules = buildModuleScores(sc, locale);
+
+  const rawModuleScore = Math.round(
+    modules.reduce((sum, m) => sum + safeNum(m.score, 0), 0) * 10
+  ) / 10;
+
+  const capResult = applyFatalCapsToRaw(rawModuleScore, sc);
+  const capApplied = capResult.applied === true;
+  const capLimit = safeNum(capResult.limit, null);
+  const capReason = capResult.reason || null;
+
+  const finalScore = capApplied && capLimit !== null
+    ? Math.min(rawModuleScore, capLimit)
+    : rawModuleScore;
+
+  return {
+    modules,
+    rawModuleScore,
+    finalScore: Math.round(finalScore * 10) / 10,
+    capApplied,
+    capReason,
+    capLimit: capLimit === null ? null : capLimit,
+    capEvidence: null
   };
 }
 
@@ -5732,15 +5918,15 @@ window.Doctor = {
         clearTimeout(globalTimer);
         return; // Silently ignore stale results
       }
-      // v1.10.12: Simplified scoring - apply caps directly to rawModuleScore
-      // cap limit is a raw score, not a percentage
-      const rawModuleScore = breakdownTotalRaw; // sum of all 6 module scores
-      const capResult = applyFatalCapsToRaw(rawModuleScore, checks);
-      const capApplied = capResult.applied;
-      const capReason = capResult.reason;
-      const capLimit = capResult.limit;
+      // v1.10.12-p0: Build score breakdown safely using buildScoreBreakdown
+      const lang = getDocLang();
+      const breakdown = buildScoreBreakdown(checks, lang);
+      const rawModuleScore = breakdown.rawModuleScore;
+      const capApplied = breakdown.capApplied;
+      const capReason = breakdown.capReason;
+      const capLimit = breakdown.capLimit;
       // Final score: if cap applied, use capLimit; otherwise use rawModuleScore
-      const finalScore = capApplied ? capLimit : rawModuleScore;
+      const finalScore = capApplied ? (capLimit || rawModuleScore) : rawModuleScore;
       const grade = getScoreGrade(finalScore);
       const judgment = getJudgment(finalScore, checks);
       const failureSummary = generateFailureSummary(finalScore, grade, checks);
@@ -5752,8 +5938,8 @@ window.Doctor = {
           rawModuleScore,
           finalScore,
           capApplied,
-          capReason: capResult.reason,
-          capLimit: capResult.limit,
+          capReason: capReason,
+          capLimit: capLimit,
           operationalRisk,
           stepTimings,
           stepTimeouts,
@@ -5761,14 +5947,14 @@ window.Doctor = {
           checkFinishedAt,
           totalCheckDurationMs: checkFinishedAt - checkStartedAt,
           globalTimeoutApplied: globalTimeoutTriggered,
-          stuckPreventionVersion: 'v1.10.12-public-signals-worker'
+          stuckPreventionVersion: 'v1.10.12p0-public-signals-worker'
         });
       } catch (err) {
         debugScoring = {
           error: 'debugScoring build failed',
           message: String(err && err.message ? err.message : err),
           fallback: true,
-          stuckPreventionVersion: 'v1.10.12-public-signals-worker'
+          stuckPreventionVersion: 'v1.10.12p0-public-signals-worker'
         };
       }
 
@@ -5779,8 +5965,8 @@ window.Doctor = {
         breakdown,
         breakdownTotalRaw: rawModuleScore,
         capApplied,
-        capReason: capResult.reason || null,
-        capLimit: capResult.limit || null,
+        capReason: capReason || null,
+        capLimit: capLimit || null,
         grade,
         gradeScore: finalScore,
         judgment,
