@@ -4310,8 +4310,8 @@ function buildModuleScores(checks, locale) {
   // Helper to get safe risk level
   const getRisk = (score, max) => {
     const ratio = max > 0 ? score / max : 0;
-    if (ratio >= 0.85) return 'low';
-    if (ratio >= 0.6) return 'medium';
+    if (ratio >= 0.8) return 'low';
+    if (ratio >= 0.5) return 'medium';
     return 'high';
   };
 
@@ -4436,18 +4436,31 @@ function buildScoreBreakdown(checks, locale) {
   ) / 10;
 
   const capResult = applyFatalCapsToRaw(rawModuleScore, sc);
-  const capApplied = capResult.applied === true;
+  const capDetected = capResult.reason !== null;
   const capLimit = safeNum(capResult.limit, null);
+  // capEffective: cap only applies if raw is ABOVE the cap limit
+  const capEffective = capDetected && capLimit !== null && rawModuleScore > capLimit;
+  const capApplied = capEffective;
   const capReason = capResult.reason || null;
 
-  const finalScore = capApplied && capLimit !== null
+  let finalScore = capApplied && capLimit !== null
     ? Math.min(rawModuleScore, capLimit)
     : rawModuleScore;
+
+  // Invariant: finalScore must never exceed rawModuleScore
+  if (finalScore > rawModuleScore) {
+    console.warn('[score invariant] finalScore > rawModuleScore, clamping', { finalScore, rawModuleScore });
+    finalScore = rawModuleScore;
+  }
+
+  finalScore = Math.round(finalScore * 10) / 10;
 
   return {
     modules,
     rawModuleScore,
-    finalScore: Math.round(finalScore * 10) / 10,
+    finalScore,
+    capDetected,
+    capEffective,
     capApplied,
     capReason,
     capLimit: capLimit === null ? null : capLimit,
@@ -4734,10 +4747,16 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo, operationalRis
   const safeEvidence = safeModelSignal?.evidence || {};
   const safeModelSignalDetail = safeEvidence?.modelSignal || {};
 
-  // Use breakdown risk if available, fallback to computed values
-  const costRisk = safeBreakdown?.usageTransparency?.risk || getCostRiskLevel(safeChecks.costTransparency?.score || 0);
-  const modelRisk = safeBreakdown?.modelSignal?.risk || safeModelSignalDetail?.risk || 'low';
-  const stabilityRisk = safeBreakdown?.stabilityLatency?.risk || getStabilityRiskLevel(safeChecks.stability?.score || 0, safeChecks);
+  // Build module lookup from breakdown.modules array (same source as module grid)
+  const moduleByKey = {};
+  if (safeBreakdown.modules && Array.isArray(safeBreakdown.modules)) {
+    safeBreakdown.modules.forEach(m => { if (m && m.key) moduleByKey[m.key] = m; });
+  }
+
+  // Use breakdown risk from same source as module grid
+  const costRisk = (moduleByKey.usageTransparency && moduleByKey.usageTransparency.risk) || getCostRiskLevel(safeChecks.costTransparency?.score || 0);
+  const modelRisk = (moduleByKey.modelSignal && moduleByKey.modelSignal.risk) || safeModelSignalDetail?.risk || 'low';
+  const stabilityRisk = (moduleByKey.stabilityLatency && moduleByKey.stabilityLatency.risk) || getStabilityRiskLevel(safeChecks.stability?.score || 0, safeChecks);
   const selfClaimType = safeModelSignalDetail?.selfClaim?.type || 'exact_match';
   const isProxyOrPlatform = selfClaimType === 'platform_identity';
   const modelSignal = safeModelSignalDetail;
