@@ -4160,16 +4160,23 @@ function applyCaps(rawScore, checks, modelIdInfo) {
   }
 
   // 4. Core response is HTML/invalid JSON (format severely incompatible)
-  // v1.10.10: Only cap if basicCompatibility's JSON check also failed.
-  // If basicCompatibility gives tcJson=1 (response is JSON-compatible), do NOT cap.
-  const basicCompatTcJson = checks.basicCompatibility?.evidence?.tcJson;
-  const coreResponseUnparseable = basicCompatTcJson !== 1 && !checks.targetCall?.evidence?.responseParsed && (checks.targetCall?.evidence?.httpStatus === 200);
-  if (coreResponseUnparseable) {
+  // v1.10.11: Only cap if basicCompatibility is genuinely low AND response is truly incompatible.
+  // If basicCompatibility.score >= 20, do NOT cap (the response is acceptable).
+  // If targetCall returns valid JSON, do NOT cap.
+  // Usage missing or short replies do NOT trigger this cap.
+  const basicCompatScore = checks.basicCompatibility?.score || 0;
+  const targetResponseParsed = checks.targetCall?.evidence?.responseParsed === true;
+  const targetHttpStatus = checks.targetCall?.evidence?.httpStatus;
+  // Strict conditions: basicCompat must be genuinely low AND response clearly invalid
+  const trulyIncompatibleResponse =
+    basicCompatScore < 20 &&  // basicCompat must be genuinely low
+    !targetResponseParsed &&  // response was not parseable
+    targetHttpStatus === 200; // HTTP succeeded but content is garbage
+  if (trulyIncompatibleResponse) {
     cap = 45; capReason = 'response_not_json'; capApplied = true;
   }
 
   // 5. Current Model ID explicitly unavailable (404 / model not found)
-  const targetHttpStatus = checks.targetCall?.evidence?.httpStatus;
   const targetOutputText = typeof checks.targetCall?.evidence?.output === 'string'
     ? checks.targetCall.evidence.output
     : checks.targetCall?.evidence?.output?.text || '';
@@ -6058,7 +6065,7 @@ window.Doctor = {
     }
     .module-cell {
       display: grid;
-      grid-template-columns: minmax(96px, 1fr) auto auto;
+      grid-template-columns: minmax(96px, 1fr) auto auto 14px;
       align-items: center;
       gap: 8px;
       min-height: 44px;

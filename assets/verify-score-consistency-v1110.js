@@ -57,8 +57,9 @@ function testScoreConsistency() {
   console.log(includesCapLimit ? 'PASS' : 'FAIL', '- Result: Includes capLimit');
 
   // 9. Check that response_not_json cap is conditional on basicCompatibility
-  // v1.10.10: Only cap if basicCompatibility's JSON check also failed
-  const hasConditionalCap = testJsContent.includes('basicCompatTcJson');
+  // v1.10.11: Only cap if basicCompatibility is genuinely low (< 20) AND response is truly incompatible
+  const hasConditionalCap = testJsContent.includes('basicCompatScore < 20') &&
+    testJsContent.includes('!targetResponseParsed');
   results.push({ test: 'Cap: response_not_json conditional on basicCompatibility', passed: hasConditionalCap });
   console.log(hasConditionalCap ? 'PASS' : 'FAIL', '- Cap: response_not_json conditional on basicCompatibility');
 
