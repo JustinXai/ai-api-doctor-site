@@ -4023,101 +4023,67 @@ function buildDebugScoring(rawScore, cappedScore, checks, breakdown, extra = {})
     certificateHistorySource: operationalRisk?.certificateHistory?.source || null,
     waybackLookupUrl: operationalRisk?.waybackUrl || null,
     operationalRiskVersion: 'v1.9-domain-cert-days',
-    // v1.11.4: Enhanced moduleScores with reason/evidenceSource/timeout/fallbackUsed
-    moduleScores: {
-      usageTransparency: {
-        score: breakdown?.usageTransparency?.score ?? null,
-        max: breakdown?.usageTransparency?.max ?? 25,
-        reason: (() => {
-          if (!checks.targetCall?.evidence?.httpStatus) return 'target_call_not_executed';
-          if (checks.targetCall?.timeout) return 'target_call_timeout';
-          if (checks.usageAudit?.timeout) return 'usage_audit_timeout';
-          const hasUsage = !!(checks.targetCall?.evidence?.usage && Object.keys(checks.targetCall.evidence.usage).length > 0);
-          if (!hasUsage) return 'usage_missing';
-          return 'ok';
-        })(),
-        evidenceSource: (() => {
-          if (checks.targetCall?.evidence?.usage) return 'targetCall';
-          if (checks.usageAudit?.evidence?.usage) return 'usageAudit';
-          return 'none';
-        })(),
-        timeout: !!(checks.targetCall?.timeout || checks.usageAudit?.timeout),
-        fallbackUsed: !!(checks.usageAudit?.fallback)
-      },
-      cacheSignal: {
-        score: breakdown?.cacheSignal?.score ?? null,
-        max: breakdown?.cacheSignal?.max ?? 5,
-        reason: (() => {
-          if (checks.cacheHitCheck?.timeout) return 'cache_probe_timeout';
-          const evidence = checks.cacheHitCheck?.evidence || {};
-          if (evidence.fieldFound === false) return 'cache_field_not_returned';
-          if (evidence.cacheHitRate == null) return 'cache_hit_rate_unknown';
-          return 'ok';
-        })(),
-        evidenceSource: checks.cacheHitCheck?.evidence?.fieldFound ? 'probe' : 'none',
-        timeout: !!(checks.cacheHitCheck?.timeout),
-        fallbackUsed: false
-      },
-      modelSignal: {
-        score: breakdown?.modelSignal?.score ?? null,
-        max: breakdown?.modelSignal?.max ?? 15,
-        reason: (() => {
-          if (checks.modelSignal?.timeout) return 'model_signal_timeout';
-          const sc = checks.modelSignal?.evidence?.modelSignal?.selfClaim;
-          if (!sc) return 'no_self_claim_evidence';
-          if (sc.type === 'ambiguous') return 'model_unable_to_confirm';
-          if (sc.type === 'wrong_family') return 'wrong_family';
-          if (sc.type === 'hard_contamination') return 'hard_contamination';
-          if (sc.type === 'platform_identity') return 'platform_proxy';
-          return 'ok';
-        })(),
-        evidenceSource: checks.modelSignal?.evidence ? 'selfClaim' : 'none',
-        timeout: !!(checks.modelSignal?.timeout),
-        fallbackUsed: false
-      },
-      stabilityLatency: {
-        score: breakdown?.stabilityLatency?.score ?? null,
-        max: breakdown?.stabilityLatency?.max ?? 25,
-        reason: (() => {
-          if (checks.stability?.timeout) return 'stability_timeout';
-          const samples = checks.stability?.evidence?.samples || [];
-          const success = samples.filter(s => s.ok && s.hasContent).length;
-          const total = samples.length;
-          if (total === 0) return 'no_samples';
-          if (total < 3) return 'insufficient_samples';
-          const rate = success / total;
-          if (rate <= 0.4) return 'low_success_rate';
-          if (rate <= 0.6) return 'medium_success_rate';
-          return 'ok';
-        })(),
-        evidenceSource: checks.stability?.evidence?.samples?.length > 0 ? 'samples' : 'none',
-        timeout: !!(checks.stability?.timeout),
-        fallbackUsed: false
-      },
-      coreCompatibility: {
-        score: breakdown?.coreCompatibility?.score ?? null,
-        max: breakdown?.coreCompatibility?.max ?? 25,
-        reason: (() => {
-          if (!checks.targetCall?.evidence?.httpStatus) return 'target_call_not_executed';
-          const tc = checks.targetCall;
-          if (tc.timeout) return 'target_call_timeout';
-          if (!tc.evidence?.responseParsed) return 'response_not_json';
-          if (!tc.evidence?.formatChoices && !tc.evidence?.formatMessage) return 'missing_choices_or_message';
-          return 'ok';
-        })(),
-        evidenceSource: checks.targetCall?.evidence ? 'targetCall' : 'none',
-        timeout: !!(checks.targetCall?.timeout),
-        fallbackUsed: false
-      },
-      clientConfig: {
-        score: breakdown?.clientConfig?.score ?? null,
-        max: breakdown?.clientConfig?.max ?? 5,
-        reason: 'ok',
-        evidenceSource: 'default',
-        timeout: false,
-        fallbackUsed: false
+    // v1.11.6: Add scorePathTrace and update moduleScores to use breakdown.modules
+    scorePathTrace: breakdown?.scorePathTrace || null,
+    // v1.11.6: Enhanced moduleScores with reason/evidenceSource/timeout/fallbackUsed
+    // Now uses breakdown.modules array for consistent source
+    moduleScores: (() => {
+      const moduleByKey = {};
+      if (breakdown?.modules && Array.isArray(breakdown.modules)) {
+        breakdown.modules.forEach(m => { if (m && m.key) moduleByKey[m.key] = m; });
       }
-    },
+      return {
+        usageTransparency: {
+          score: moduleByKey.usageTransparency?.score ?? null,
+          max: moduleByKey.usageTransparency?.max ?? 25,
+          source: moduleByKey.usageTransparency?.source || 'unknown',
+          reason: moduleByKey.usageTransparency?.reason || 'unknown',
+          timeout: !!(checks.usageAudit?.timeout || checks.costTransparency?.timeout),
+          fallbackUsed: !!(checks.usageAudit?.fallback)
+        },
+        cacheSignal: {
+          score: moduleByKey.cacheSignal?.score ?? null,
+          max: moduleByKey.cacheSignal?.max ?? 5,
+          source: moduleByKey.cacheSignal?.source || 'unknown',
+          reason: moduleByKey.cacheSignal?.reason || 'unknown',
+          timeout: !!(checks.cacheHitCheck?.timeout),
+          fallbackUsed: false
+        },
+        modelSignal: {
+          score: moduleByKey.modelSignal?.score ?? null,
+          max: moduleByKey.modelSignal?.max ?? 15,
+          source: moduleByKey.modelSignal?.source || 'unknown',
+          reason: moduleByKey.modelSignal?.reason || 'unknown',
+          selfClaimType: moduleByKey.modelSignal?.selfClaimType || null,
+          timeout: !!(checks.modelSignal?.timeout),
+          fallbackUsed: false
+        },
+        stabilityLatency: {
+          score: moduleByKey.stabilityLatency?.score ?? null,
+          max: moduleByKey.stabilityLatency?.max ?? 25,
+          source: moduleByKey.stabilityLatency?.source || 'unknown',
+          reason: moduleByKey.stabilityLatency?.reason || 'unknown',
+          timeout: !!(checks.stability?.timeout),
+          fallbackUsed: false
+        },
+        coreCompatibility: {
+          score: moduleByKey.coreCompatibility?.score ?? null,
+          max: moduleByKey.coreCompatibility?.max ?? 25,
+          source: moduleByKey.coreCompatibility?.source || 'unknown',
+          reason: moduleByKey.coreCompatibility?.reason || 'unknown',
+          timeout: !!(checks.basicCompatibility?.timeout),
+          fallbackUsed: false
+        },
+        clientConfig: {
+          score: moduleByKey.clientConfig?.score ?? null,
+          max: moduleByKey.clientConfig?.max ?? 5,
+          source: moduleByKey.clientConfig?.source || 'unknown',
+          reason: moduleByKey.clientConfig?.reason || 'unknown',
+          timeout: false,
+          fallbackUsed: false
+        }
+      };
+    })(),
     // v1.11.4: stepDiagnostics for all steps
     stepDiagnostics: {
       reachability: {
@@ -4540,36 +4506,137 @@ function buildModuleScores(checks, locale) {
     unknown: { zh: '未验证', en: 'Unknown' }
   }[risk] || { zh: '未验证', en: 'Unknown' });
 
-  // Module 1: usageTransparency (from costTransparency)
+  // ── v1.11.6: Build targetCallEvidence for all modules ──
+  const targetCallEvidence = {
+    attempted: !!(sc.targetCall),
+    ok: sc.targetCall?.ok ?? null,
+    httpStatus: sc.targetCall?.evidence?.httpStatus ?? null,
+    timeout: !!(sc.targetCall?.timeout),
+    fallbackUsed: !!(sc.targetCall?.fallback),
+    responseParsed: !!(sc.targetCall?.evidence?.responseParsed),
+    openAICompatible: !!(sc.targetCall?.evidence?.formatChoices || sc.targetCall?.evidence?.formatMessage),
+    hasChoices: !!(sc.targetCall?.evidence?.formatChoices),
+    hasMessage: !!(sc.targetCall?.evidence?.formatMessage),
+    hasContent: !!(sc.targetCall?.evidence?.output && sc.targetCall.evidence.output !== 'absent'),
+    hasUsage: !!(sc.targetCall?.evidence?.usage && Object.keys(sc.targetCall.evidence.usage).length > 0),
+    evidenceSource: 'targetCall'
+  };
+
+  // Real targetCall success: must be ok, not timeout, not fallback
+  const realTargetCallSuccess = targetCallEvidence.ok === true &&
+    targetCallEvidence.timeout !== true &&
+    targetCallEvidence.fallbackUsed !== true;
+
+  // ── Module 1: usageTransparency (v1.11.6 calibration) ──
   const usageCheck = sc.costTransparency || {};
-  const usageScore = safeNum(usageCheck.score, 0);
+  const usageAuditCheck = sc.usageAudit || {};
+  const rawUsageScore = safeNum(usageCheck.score, 0);
+  const usageTimeout = !!(usageCheck.timeout || usageAuditCheck.timeout);
+  const usageAuditHasUsage = !!(usageAuditCheck?.evidence?.usage && Object.keys(usageAuditCheck.evidence.usage).length > 0);
+
+  let usageScore = rawUsageScore;
+  let usageReason = 'legacy';
+  let usageSource = 'checks.costTransparency.score';
+
+  // v1.11.6 calibration: targetCall success + usage missing → minimum 8/25
+  if (realTargetCallSuccess && !targetCallEvidence.hasUsage && !usageAuditHasUsage) {
+    if (usageTimeout || !usageAuditHasUsage) {
+      // Target call succeeded but usage probe timeout or no usage result
+      usageScore = Math.max(usageScore, 8);
+      usageReason = 'target_call_success_usage_missing';
+      usageSource = 'v1116_calibration: target success + usage missing → 8';
+    }
+  }
+
+  // If targetCall itself succeeded and has usage, use that
+  if (realTargetCallSuccess && targetCallEvidence.hasUsage) {
+    usageScore = Math.max(usageScore, 14);
+    usageReason = 'target_call_has_usage';
+    usageSource = 'v1116_calibration: target has usage → use score';
+  }
+
   const usageMax = 25;
 
-  // Module 2: cacheHitCheck
+  // ── Module 2: cacheHitCheck ──
   const cacheCheck = sc.cacheHitCheck || {};
   const cacheScore = safeNum(cacheCheck.score, 0);
   const cacheMax = 5;
 
-  // Module 3: modelSignal
+  // ── Module 3: modelSignal (v1.11.6 calibration) ──
   const modelCheck = sc.modelSignal || {};
-  const modelScore = safeNum(modelCheck.score, 0);
+  const modelEvidence = modelCheck?.evidence?.modelSignal || {};
+  const selfClaimType = modelEvidence?.selfClaim?.type || 'unknown';
+  const rawModelScore = safeNum(modelCheck.score, 0);
+
+  let modelScore = rawModelScore;
+  let modelReason = 'legacy';
+  let modelSource = 'checks.modelSignal.score';
+
+  // v1.11.6 calibration: use selfClaim type to determine score
+  // Only override if raw score doesn't match expected type mapping
+  const expectedScoreByType = {
+    exact_match: 15,
+    family_match: 11,
+    platform_identity: 6,
+    ambiguous: 7,         // v1.11.5: was incorrectly 2, now 7
+    wrong_family: 2,
+    hard_contamination: 2,
+    empty: 7,
+    failed: 7,
+    unknown: 7
+  };
+
+  if (selfClaimType !== 'unknown' && selfClaimType !== 'exact_match' && selfClaimType !== 'family_match') {
+    const expectedScore = expectedScoreByType[selfClaimType] || 7;
+    if (rawModelScore !== expectedScore) {
+      modelScore = expectedScore;
+      modelReason = `selfClaim_type=${selfClaimType}`;
+      modelSource = `v1116_calibration: ${selfClaimType} → ${expectedScore}`;
+    }
+  }
+
+  // If exact_match or family_match, use the higher of raw or expected
+  if (selfClaimType === 'exact_match' || selfClaimType === 'family_match') {
+    const expectedScore = expectedScoreByType[selfClaimType] || rawModelScore;
+    if (rawModelScore < expectedScore) {
+      modelScore = expectedScore;
+      modelReason = `selfClaim_type=${selfClaimType}`;
+      modelSource = `v1116_calibration: ${selfClaimType} → ${expectedScore}`;
+    }
+  }
+
   const modelMax = 15;
 
-  // Module 4: stabilityLatency (from stability)
+  // ── Module 4: stabilityLatency ──
   const stabilityCheck = sc.stability || {};
   const stabilityScore = safeNum(stabilityCheck.score, 0);
   const stabilityMax = 25;
 
-  // Module 5: basicCompatibility
+  // ── Module 5: basicCompatibility (v1.11.6 calibration) ──
   const basicCheck = sc.basicCompatibility || {};
-  const basicScore = safeNum(basicCheck.score, 0);
+  const rawBasicScore = safeNum(basicCheck.score, 0);
+
+  let basicScore = rawBasicScore;
+  let basicReason = 'legacy';
+  let basicSource = 'checks.basicCompatibility.score';
+
+  // v1.11.6 calibration: if targetCall real success, basicCompatibility minimum 20
+  if (realTargetCallSuccess) {
+    if (rawBasicScore < 20) {
+      basicScore = Math.max(rawBasicScore, 20);
+      basicReason = 'target_call_real_success';
+      basicSource = 'v1116_calibration: target success → min 20';
+    }
+  }
+
   const basicMax = 25;
 
-  // Module 6: clientConfig
+  // ── Module 6: clientConfig ──
   const clientCheck = sc.clientConfig || {};
   const clientScore = safeNum(clientCheck.score, 0);
   const clientMax = 5;
 
+  // ── v1.11.6: Build return array with source tracking ──
   return [
     {
       key: 'usageTransparency',
@@ -4578,6 +4645,8 @@ function buildModuleScores(checks, locale) {
       label: zh ? '扣费透明度' : 'Usage Transparency',
       score: usageScore,
       max: usageMax,
+      source: usageSource,
+      reason: usageReason,
       risk: getRisk(usageScore, usageMax),
       riskLabelZh: riskLabel(getRisk(usageScore, usageMax)).zh,
       riskLabelEn: riskLabel(getRisk(usageScore, usageMax)).en
@@ -4589,6 +4658,8 @@ function buildModuleScores(checks, locale) {
       label: zh ? '缓存命中信号' : 'Cache Signal',
       score: cacheScore,
       max: cacheMax,
+      source: 'checks.cacheHitCheck.score',
+      reason: 'legacy',
       risk: getRisk(cacheScore, cacheMax),
       riskLabelZh: riskLabel(getRisk(cacheScore, cacheMax)).zh,
       riskLabelEn: riskLabel(getRisk(cacheScore, cacheMax)).en
@@ -4600,6 +4671,9 @@ function buildModuleScores(checks, locale) {
       label: zh ? '模型信号' : 'Model Signal',
       score: modelScore,
       max: modelMax,
+      source: modelSource,
+      reason: modelReason,
+      selfClaimType: selfClaimType,
       risk: getRisk(modelScore, modelMax),
       riskLabelZh: riskLabel(getRisk(modelScore, modelMax)).zh,
       riskLabelEn: riskLabel(getRisk(modelScore, modelMax)).en
@@ -4611,6 +4685,8 @@ function buildModuleScores(checks, locale) {
       label: zh ? '稳定性与延迟' : 'Stability & Latency',
       score: stabilityScore,
       max: stabilityMax,
+      source: 'checks.stability.score',
+      reason: 'legacy',
       risk: getRisk(stabilityScore, stabilityMax),
       riskLabelZh: riskLabel(getRisk(stabilityScore, stabilityMax)).zh,
       riskLabelEn: riskLabel(getRisk(stabilityScore, stabilityMax)).en
@@ -4622,6 +4698,8 @@ function buildModuleScores(checks, locale) {
       label: zh ? '基础兼容性' : 'Core Compatibility',
       score: basicScore,
       max: basicMax,
+      source: basicSource,
+      reason: basicReason,
       risk: getRisk(basicScore, basicMax),
       riskLabelZh: riskLabel(getRisk(basicScore, basicMax)).zh,
       riskLabelEn: riskLabel(getRisk(basicScore, basicMax)).en
@@ -4633,6 +4711,8 @@ function buildModuleScores(checks, locale) {
       label: zh ? '客户端配置' : 'Client Config',
       score: clientScore,
       max: clientMax,
+      source: 'checks.clientConfig.score',
+      reason: 'legacy',
       risk: getRisk(clientScore, clientMax),
       riskLabelZh: riskLabel(getRisk(clientScore, clientMax)).zh,
       riskLabelEn: riskLabel(getRisk(clientScore, clientMax)).en
@@ -4672,6 +4752,16 @@ function buildScoreBreakdown(checks, locale) {
 
   finalScore = Math.round(finalScore * 10) / 10;
 
+  // v1.11.6: Build scorePathTrace for debugging
+  const scorePathTrace = {
+    version: 'v1.11.6-score-wiring',
+    usageScoreSource: modules.find(m => m.key === 'usageTransparency')?.source || 'unknown',
+    modelSignalScoreSource: modules.find(m => m.key === 'modelSignal')?.source || 'unknown',
+    compatibilityScoreSource: modules.find(m => m.key === 'coreCompatibility')?.source || 'unknown',
+    uiModuleSource: 'buildScoreBreakdown.modules',
+    finalScoreSource: 'buildScoreBreakdown.finalScore'
+  };
+
   return {
     modules,
     rawModuleScore,
@@ -4681,7 +4771,8 @@ function buildScoreBreakdown(checks, locale) {
     capApplied,
     capReason,
     capLimit: capLimit === null ? null : capLimit,
-    capEvidence: null
+    capEvidence: capResult.capEvidence || null,
+    scorePathTrace
   };
 }
 
@@ -4785,6 +4876,29 @@ function applyFatalCapsToRaw(rawScore, checks) {
   let reason = null;
   let limit = null;
 
+  // Build targetCallEvidence for cap decisions
+  const targetCallEvidence = {
+    attempted: !!(checks.targetCall),
+    ok: checks.targetCall?.ok ?? null,
+    httpStatus: checks.targetCall?.evidence?.httpStatus ?? null,
+    timeout: !!(checks.targetCall?.timeout),
+    fallbackUsed: !!(checks.targetCall?.fallback),
+    responseParsed: !!(checks.targetCall?.evidence?.responseParsed),
+    openAICompatible: !!(checks.targetCall?.evidence?.formatChoices || checks.targetCall?.evidence?.formatMessage),
+    hasChoices: !!(checks.targetCall?.evidence?.formatChoices),
+    hasMessage: !!(checks.targetCall?.evidence?.formatMessage),
+    evidenceSource: 'targetCall'
+  };
+
+  // Real targetCall success: must be ok, not timeout, not fallback
+  const realTargetCallSuccess = targetCallEvidence.ok === true &&
+    !targetCallEvidence.timeout &&
+    !targetCallEvidence.fallbackUsed;
+
+  // v1.11.6: For response_format_incompatible cap, must use real targetCall evidence
+  // Cannot trigger from auxiliary probe failures
+  const canTriggerFormatCap = realTargetCallSuccess && !targetCallEvidence.responseParsed;
+
   // 1. Base URL unreachable
   if ((checks.reachability?.score || 0) < 3) {
     applied = true; reason = 'base_url_unreachable'; limit = 20;
@@ -4801,8 +4915,9 @@ function applyFatalCapsToRaw(rawScore, checks) {
   else if (checks.targetCall?.evidence?.httpStatus === 404) {
     applied = true; reason = 'model_not_found'; limit = 35;
   }
-  // 5. Response format incompatible - ONLY if basicCompat < 10 AND response is truly garbage
-  else if (checks.basicCompatibility?.score < 10 && !checks.targetCall?.evidence?.responseParsed) {
+  // 5. Response format incompatible - ONLY from real targetCall failure
+  // v1.11.6: Must be real targetCall success (not timeout/fallback) AND response not parsed
+  else if (canTriggerFormatCap) {
     applied = true; reason = 'response_format_incompatible'; limit = 35;
   }
   // 6. Stability completely failed (success rate <= 40%)
@@ -4817,9 +4932,24 @@ function applyFatalCapsToRaw(rawScore, checks) {
   }
 
   // NEVER cap for: usage missing, model signal low, short reply failed,
-  // identity no answer, cache unverified, operational risk
+  // identity no answer, cache unverified, operational risk,
+  // OR auxiliary probe failures that aren't real targetCall failures
 
-  return { applied, reason, limit };
+  // Build capEvidence for debugging
+  const capEvidence = {
+    source: reason ? targetCallEvidence.evidenceSource : null,
+    httpStatus: checks.targetCall?.evidence?.httpStatus ?? null,
+    timeout: targetCallEvidence.timeout,
+    fallbackUsed: targetCallEvidence.fallbackUsed,
+    responseParsed: targetCallEvidence.responseParsed,
+    openAICompatible: targetCallEvidence.openAICompatible,
+    hasChoices: targetCallEvidence.hasChoices,
+    hasMessage: targetCallEvidence.hasMessage,
+    errorType: reason,
+    canTriggerFormatCap: canTriggerFormatCap
+  };
+
+  return { applied, reason, limit, capEvidence };
 }
 
 /* ═══════════════════════════════════════════════════════
