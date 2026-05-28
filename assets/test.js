@@ -5149,7 +5149,7 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo, operationalRis
   // Use breakdown.finalScore as the ONLY source for the top hero score
   const displayScore = (safeBreakdown.finalScore !== undefined && safeBreakdown.finalScore !== null)
     ? safeBreakdown.finalScore
-    : score;
+    : (_unusedScore != null ? _unusedScore : 0);
 
   // v1.11.8: Grade from displayScore (same source as top score)
   const grade = getScoreGrade(displayScore);
@@ -5880,7 +5880,7 @@ function buildReportCardHTML(result, formData, lang, modelIdInfo, operationalRis
     <div style="background:linear-gradient(135deg,#1e293b 0%,#0f172a 100%);border-radius:16px;padding:16px;margin-bottom:10px;text-align:center">
       <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:4px">
         <span style="display:inline-block;padding:4px 16px;border-radius:20px;font-size:13px;font-weight:800;color:#fff;background:${grade.color}">${grade.grade} ${grade.labelZh}</span>
-        <span data-score-hero-value data-score-hero-source="buildScoreBreakdown.finalScore" style="font-size:28px;font-weight:900;color:#fff;letter-spacing:-1px">${score}</span>
+        <span data-score-hero-value data-score-hero-source="buildScoreBreakdown.finalScore" style="font-size:28px;font-weight:900;color:#fff;letter-spacing:-1px">${displayScore}</span>
         <span style="font-size:13px;color:rgba(255,255,255,0.6)">/ 100</span>
       </div>
       <!-- 5 risk pills — compressed, unified labels -->
