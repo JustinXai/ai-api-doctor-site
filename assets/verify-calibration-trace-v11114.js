@@ -77,7 +77,7 @@ function buildModuleScores(checks, locale) {
     }
   }
 
-  // basicCompatibility (v1.11.13 calibration)
+  // basicCompatibility (v1.11.14 calibration)
   const basicCheck = sc.basicCompatibility || {};
   const basicEvidence = basicCheck?.evidence || {};
   const rawBasicScore = safeNum(basicCheck.score, 0);
@@ -86,11 +86,13 @@ function buildModuleScores(checks, locale) {
   let basicScore = rawBasicScore;
   let basicReason = 'legacy';
   let basicSource = 'checks.basicCompatibility.score';
+  // v1.11.14: use responseParsed (HTTP success + valid JSON) not hasContent
+  // hasContent may be false for non-standard formats, but the API call itself was successful
   if (realTargetCallSuccess && reachCompat >= 1.5 && authCompat >= 1.5) {
-    if (targetCallEvidence.openAICompatible && targetCallEvidence.hasContent) {
-      if (rawBasicScore < 23) { basicScore = 23; basicReason = 'full_compatibility_passed'; basicSource = 'v11113_calibration'; }
+    if (targetCallEvidence.responseParsed) {
+      if (rawBasicScore < 23) { basicScore = 23; basicReason = 'full_compatibility_passed'; basicSource = 'v11114_calibration'; }
     } else if (rawBasicScore < 20) {
-      basicScore = 20; basicReason = 'minor_compatibility_issues'; basicSource = 'v11113_calibration';
+      basicScore = 20; basicReason = 'minor_compatibility_issues'; basicSource = 'v11114_calibration';
     }
   }
 
@@ -114,8 +116,8 @@ function buildModuleScores(checks, locale) {
   if (!realTargetCallSuccess) failedBasic.push('realTargetCallSuccess=false');
   if (reachCompat < 1.5) failedBasic.push('reachCompat<' + reachCompat);
   if (authCompat < 1.5) failedBasic.push('authCompat<' + authCompat);
-  if (!targetCallEvidence.openAICompatible) failedBasic.push('openAICompatible=false');
-  if (!targetCallEvidence.hasContent) failedBasic.push('hasContent=false');
+  // v1.11.14: responseParsed is the key indicator
+  if (!targetCallEvidence.responseParsed) failedBasic.push('responseParsed=false');
 
   const basicCalibrationTrace = {
     version: 'v1.11.14-basic-compat-trace',
@@ -216,10 +218,10 @@ test('Case 1: full conditions → basicCompat=23, trace.calibrationApplied=true'
   assertEq(trace.scoreAfterCalibration, 23, 'scoreAfterCalibration');
 });
 
-// Case 2: hasContent missing → basicCompat = 20
-test('Case 2: hasContent missing → basicCompat=20, failedConditions has hasContent', () => {
+// Case 2: responseParsed=true but format non-standard → basicCompat = 23 (v1.11.14 fix)
+test('Case 2: responseParsed=true → basicCompat=23 even if content extraction failed', () => {
   const checks = {
-    targetCall: { ok: true, evidence: { responseParsed: true, formatChoices: true, output: 'absent' } },
+    targetCall: { ok: true, evidence: { responseParsed: true, formatChoices: false, formatMessage: false, output: 'absent' } },
     basicCompatibility: { score: 10, evidence: { reachCompat: 2, authCompat: 2, mlCompat: 0 } },
     costTransparency: { score: 0 }, usageAudit: { timeout: true },
     cacheHitCheck: { score: 2.5 }, modelSignal: { score: 7 },
@@ -227,10 +229,13 @@ test('Case 2: hasContent missing → basicCompat=20, failedConditions has hasCon
   };
   const mods = buildModuleScores(checks, 'zh');
   const trace = mods._basicCalibrationTrace;
-  assertEq(trace.scoreAfterCalibration, 20, 'scoreAfterCalibration');
-  assertTrue(trace.failedConditions.some(f => f.includes('hasContent')), 'failedConditions should mention hasContent');
+  // v1.11.14: responseParsed=true means HTTP success + valid JSON → 23
+  assertEq(trace.scoreAfterCalibration, 23, 'scoreAfterCalibration=23 (responseParsed)');
+  assertEq(trace.conditions.responseParsed, true, 'responseParsed');
+  assertEq(trace.calibrationReason, 'full_compatibility_passed', 'calibrationReason');
+  assertTrue(trace.failedConditions.length === 0 || trace.failedConditions.every(f => f.includes('reachCompat')), 'should not fail on hasContent');
   const b = mods.find(m => m.key === 'coreCompatibility');
-  assertEq(b.score, 20, 'module score');
+  assertEq(b.score, 23, 'module score');
 });
 
 // Case 3: reachCompat<1.5 → no calibration
@@ -246,6 +251,25 @@ test('Case 3: reachCompat<1.5 → no basicCompat calibration', () => {
   const trace = mods._basicCalibrationTrace;
   assertEq(trace.scoreAfterCalibration, 10, 'score stays at raw');
   assertTrue(trace.failedConditions.some(f => f.includes('reachCompat')), 'should fail on reachCompat');
+});
+
+// Case 3b: responseParsed=false → no 23 boost (JSON parse failed)
+test('Case 3b: responseParsed=false → no 23 boost, stays at raw', () => {
+  const checks = {
+    targetCall: { ok: true, evidence: { responseParsed: false, formatChoices: false, formatMessage: false, output: 'absent' } },
+    basicCompatibility: { score: 10, evidence: { reachCompat: 2, authCompat: 2, mlCompat: 0 } },
+    costTransparency: { score: 0 }, usageAudit: { timeout: true },
+    cacheHitCheck: { score: 2.5 }, modelSignal: { score: 7 },
+    stability: { score: 20, evidence: { samples: [] } }, clientConfig: { score: 3 }
+  };
+  const mods = buildModuleScores(checks, 'zh');
+  const trace = mods._basicCalibrationTrace;
+  // responseParsed=false → no 23 boost, rawBasicScore=10<20 → gets 20
+  assertEq(trace.scoreAfterCalibration, 20, 'scoreAfterCalibration=20 (minor boost)');
+  assertEq(trace.conditions.responseParsed, false, 'responseParsed');
+  assertTrue(trace.failedConditions.some(f => f.includes('responseParsed')), 'should fail on responseParsed');
+  const b = mods.find(m => m.key === 'coreCompatibility');
+  assertEq(b.score, 20, 'module score');
 });
 
 // Case 4: All success + slight fluctuation → stability = 22

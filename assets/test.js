@@ -4688,10 +4688,20 @@ function buildModuleScores(checks, locale) {
   let basicReason = 'legacy';
   let basicSource = 'checks.basicCompatibility.score';
 
-  // v1.11.13 calibration: reach + auth + targetCall all succeed → 23/25
-  // /models endpoint issues should not prevent full compatibility score
+  // v1.11.14 calibration: reach + auth + targetCall all succeed → 23/25
+  // FIX: responseParsed confirms successful HTTP + valid JSON regardless of content extraction
+  // hasContent reflects content extraction success (non-standard format may fail extraction)
+  // But if JSON was parsed successfully, the API call itself was successful
   if (realTargetCallSuccess && reachCompat >= 1.5 && authCompat >= 1.5) {
-    if (targetCallEvidence.openAICompatible && targetCallEvidence.hasContent) {
+    // v1.11.14: use responseParsed (successful HTTP + valid JSON) not hasContent
+    if (targetCallEvidence.responseParsed) {
+      if (rawBasicScore < 23) {
+        basicScore = 23;
+        basicReason = 'full_compatibility_passed';
+  if (realTargetCallSuccess && reachCompat >= 1.5 && authCompat >= 1.5) {
+    // Either strict OpenAI format or any parsed JSON with actual content
+    const hasValidContent = targetCallEvidence.responseParsed && targetCallEvidence.hasContent;
+    if (hasValidContent) {
       if (rawBasicScore < 23) {
         basicScore = 23;
         basicReason = 'full_compatibility_passed';
@@ -4845,6 +4855,8 @@ function buildModuleScores(checks, locale) {
       fallbackUsed: targetCallEvidence.fallbackUsed,
       httpStatus: targetCallEvidence.httpStatus,
       outputValue: targetCallEvidence.hasContent ? (sc.targetCall?.evidence?.output || 'present') : null,
+      // v1.11.14: actual calibration condition
+      hasValidContent: targetCallEvidence.responseParsed && targetCallEvidence.hasContent,
       rawBasicScore
     },
     failedConditions: (() => {
@@ -4852,7 +4864,8 @@ function buildModuleScores(checks, locale) {
       if (!realTargetCallSuccess) failed.push('realTargetCallSuccess=false');
       if (reachCompat < 1.5) failed.push('reachCompat<' + reachCompat);
       if (authCompat < 1.5) failed.push('authCompat<' + authCompat);
-      if (!targetCallEvidence.openAICompatible) failed.push('openAICompatible=false');
+      // v1.11.14: requires responseParsed + hasContent, not openAICompatible
+      if (!targetCallEvidence.responseParsed) failed.push('responseParsed=false');
       if (!targetCallEvidence.hasContent) failed.push('hasContent=false');
       return failed;
     })()

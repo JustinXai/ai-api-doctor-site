@@ -95,8 +95,9 @@ function buildModuleScores_v11112(checks) {
   const rawBasicScore = safeNum(sc.basicCompatibility?.score, 0);
   let basicScore = rawBasicScore;
   let basicReason = 'legacy';
+  // v1.11.14: use responseParsed (HTTP+JSON success) not openAICompatible+hasContent
   if (realTargetCallSuccess) {
-    if (targetCallEvidence.openAICompatible && targetCallEvidence.hasContent) {
+    if (targetCallEvidence.responseParsed) {
       if (rawBasicScore < 23) { basicScore = 23; basicReason = 'openai_compatible_response'; }
     } else if (rawBasicScore < 20) {
       basicScore = 20; basicReason = 'minor_compatibility_issues';

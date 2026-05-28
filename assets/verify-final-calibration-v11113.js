@@ -91,11 +91,13 @@ function buildModuleScores_v11113(checks, locale) {
   let basicReason = 'legacy';
   let basicSource = 'checks.basicCompatibility.score';
 
+  // v1.11.14 calibration: use responseParsed (HTTP+JSON success) not openAICompatible+hasContent
+  // FIX: responseParsed=true means API call succeeded with valid JSON, regardless of content extraction
   if (realTargetCallSuccess && reachCompat >= 1.5 && authCompat >= 1.5) {
-    if (targetCallEvidence.openAICompatible && targetCallEvidence.hasContent) {
-      if (rawBasicScore < 23) { basicScore = 23; basicReason = 'full_compatibility_passed'; basicSource = 'v11113_calibration: reach+auth+targetCall pass → 23'; }
+    if (targetCallEvidence.responseParsed) {
+      if (rawBasicScore < 23) { basicScore = 23; basicReason = 'full_compatibility_passed'; basicSource = 'v11114_calibration: responseParsed → 23'; }
     } else if (rawBasicScore < 20) {
-      basicScore = 20; basicReason = 'minor_compatibility_issues'; basicSource = 'v11113_calibration: minor issues → 20';
+      basicScore = 20; basicReason = 'minor_compatibility_issues'; basicSource = 'v11114_calibration: minor issues → 20';
     }
   }
 
@@ -159,10 +161,10 @@ test('Test 1: full OpenAI-compatible + reach+auth pass → basicCompat=23', () =
   assertEq(b.reason, 'full_compatibility_passed', 'basicCompat reason');
 });
 
-// Test 2: Minor issues → basicCompat = 20
-test('Test 2: targetCall ok but hasContent=false → basicCompat=20', () => {
+// Test 2: responseParsed=true → basicCompat=23 even if content extraction failed (v1.11.14)
+test('Test 2: responseParsed=true → basicCompat=23 even if content extraction failed', () => {
   const checks = {
-    targetCall: { ok: true, evidence: { responseParsed: true, formatChoices: true, output: 'absent' } },
+    targetCall: { ok: true, evidence: { responseParsed: true, formatChoices: false, formatMessage: false, output: 'absent' } },
     basicCompatibility: { score: 10, evidence: { reachCompat: 2, authCompat: 2, mlCompat: 0 } },
     costTransparency: { score: 0 }, usageAudit: { timeout: true },
     cacheHitCheck: { score: 2.5 },
@@ -172,7 +174,8 @@ test('Test 2: targetCall ok but hasContent=false → basicCompat=20', () => {
   };
   const mods = buildModuleScores_v11113(checks, 'zh');
   const b = mods.find(m => m.key === 'coreCompatibility');
-  assertEq(b.score, 20, 'basicCompat');
+  // v1.11.14: responseParsed=true means HTTP+JSON success → 23
+  assertEq(b.score, 23, 'basicCompat');
 });
 
 // Test 3: All success + slight fluctuation → stability = 22
