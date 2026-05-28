@@ -4990,7 +4990,7 @@ function applyFatalCapsToRaw(rawScore, checks, normalizedEvidence) {
   // Build capEvidence for debugging
   const capEvidence = {
     source: reason ? targetCallEvidence.evidenceSource : null,
-    basicCompatibilityScoreForCap,
+    basicCompatScore,
     targetCallEvidenceForCap: {
       ok: targetCallEvidence.ok,
       httpStatus: targetCallEvidence.httpStatus,
