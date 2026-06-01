@@ -38,3 +38,24 @@ jobs:
 
       - name: Verify identity logic
         run: node assets/verify-identity.js
+
+      - name: Verify risk label mapping v1.11.16
+        run: node assets/verify-risk-label-mapping-v11116.js
+
+      - name: Verify parse and fill v1.11.15
+        run: node assets/verify-parse-fill-v11115.js
+
+      - name: Verify compatibility boundary v1.11.15
+        run: node assets/verify-compatibility-boundary-v11115.js
+
+      - name: Verify calibration trace v1.11.14
+        run: node assets/verify-calibration-trace-v11114.js
+
+      - name: Verify final calibration v1.11.13
+        run: node assets/verify-final-calibration-v11113.js
+
+      - name: Verify score calibration v1.11.12
+        run: node assets/verify-score-calibration-v11112.js
+
+      - name: Verify golden cases v1.11.12
+        run: node assets/verify-golden-cases-v11112.js

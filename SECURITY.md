@@ -2,7 +2,14 @@
 
 ## Scope
 
-AI API Doctor is a browser-based OpenAI-compatible API preflight checker. It helps users test Base URL, API Key, Model ID, usage fields, cache signals, model identity signals, latency stability, and client config export.
+This security policy covers:
+- Browser-side diagnostic code in this repository
+- Public site at https://aiapidoctor.com
+- Cloudflare Pages Function `/api/public-signals`
+
+## What this project does not handle
+
+This project does not control, store, or transmit user API keys. All API requests are made directly from the user's browser to their self-specified Base URL.
 
 ## API Key handling
 
@@ -39,6 +46,18 @@ Use one of the following safe options:
 3. If a contact email exists in the project, use that email.
 
 **Security contact:** please open a minimal GitHub issue without secrets and request a private contact channel.
+
+## Security focus areas
+
+When reviewing this project, special attention should be given to:
+
+- **XSS in report rendering:** User-controlled data from API responses is rendered in the report HTML. All such data must be escaped.
+- **API key leakage:** The browser makes direct requests; keys must never leave the browser or be logged.
+- **Unsafe parse-and-fill behavior:** The JSON/ENV/curl parser should reject malformed input gracefully.
+- **Public-signal Worker abuse:** The Worker endpoint should rate-limit and not expose sensitive data.
+- **Dependency/script supply-chain risk:** External CDN scripts (e.g., html-to-image) should be pinned to specific versions.
+- **Source code leakage into UI:** Internal scoring logic, function names, or code comments must not appear in user-visible report text.
+- **Scoring and report tampering:** Scores are computed client-side; the report is for informational display only.
 
 ## Recommended user practice
 

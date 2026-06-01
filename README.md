@@ -2,7 +2,7 @@
 
 [![AI API Doctor CI](https://github.com/JustinXai/ai-api-doctor-site/actions/workflows/ci.yml/badge.svg)](https://github.com/JustinXai/ai-api-doctor-site/actions/workflows/ci.yml)
 
-AI API Doctor is an open-source OpenAI-compatible API preflight checker for testing Base URL, API Key, Model ID, usage fields, cache signals, model identity signals, latency stability, and client config export before using an API gateway or relay in developer tools.
+AI API Doctor is a privacy-first, open-source diagnostic tool for testing OpenAI-compatible API gateways and relay providers. It helps verify Base URL, API Key, Model ID, usage transparency, cache signals, model identity signals, latency stability, and client config export — before committing to a provider in developer tools.
 
 ---
 
@@ -140,32 +140,39 @@ Model Signal includes 3 sub-parts:
 
 **注意：** 能力冒烟测试是轻量信号检查，不是官方基准测试。
 
+## Traction
+
+Public site: https://aiapidoctor.com
+
+Public site traction: 2.1k unique visitors and 21.9k requests in the last 30 days, based on Cloudflare analytics.
+
 ## Local verification
 
 Run deterministic local checks without real API keys:
 
 ```bash
+# Core logic
 node assets/verify-scoring-v17.js
-node assets/test-mock-verify.js
 node assets/verify-evidence.js
 node assets/verify-identity.js
 node assets/verify-model-signal-v18.js
+node assets/test-mock-verify.js
+
+# Operational risk
 node assets/verify-operational-risk-v19.js
-node assets/verify-public-signals-v110.js
-node assets/verify-public-signals-v1101.js
+
+# v1.11.x scoring calibration and regression
+node assets/verify-risk-labels-v1112p1.js
+node assets/verify-risk-label-mapping-v11116.js
+node assets/verify-parse-fill-v11115.js
+node assets/verify-compatibility-boundary-v11115.js
+node assets/verify-calibration-trace-v11114.js
+node assets/verify-final-calibration-v11113.js
+node assets/verify-score-calibration-v11112.js
+node assets/verify-golden-cases-v11112.js
 ```
 
 These scripts are deterministic local checks and do not require real API keys.
-
-## Real API smoke test
-
-```bash
-node assets/run-tests.js
-```
-
-**Note:** This may call real API endpoints and should not be run in GitHub Actions CI.
-
-**中文：** 该脚本可能请求真实 API，不应放入 GitHub Actions CI。
 
 ## Reporting issues
 
